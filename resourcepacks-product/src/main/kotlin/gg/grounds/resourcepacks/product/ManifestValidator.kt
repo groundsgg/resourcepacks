@@ -1,11 +1,17 @@
 package gg.grounds.resourcepacks.product
 
+import java.io.StringReader
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.util.UUID
 import tools.jackson.core.JsonParser
 import tools.jackson.core.JsonToken
+import tools.jackson.core.ObjectReadContext
 import tools.jackson.core.StreamReadConstraints
 import tools.jackson.core.StreamReadFeature
 import tools.jackson.core.json.JsonFactory
@@ -23,9 +29,9 @@ internal object PackSetManifestJson {
                 ManifestProblemCode.MALFORMED_JSON,
                 "Input exceeds $MAX_DOCUMENT bytes.",
             )
-        val parsed =
+        val text =
             try {
-                parse(bytes)
+                strictUtf8(bytes)
             } catch (failure: Throwable) {
                 return invalid(
                     "",
@@ -33,10 +39,30 @@ internal object PackSetManifestJson {
                     failure.message ?: "Malformed JSON.",
                 )
             }
+        val parsed =
+            try {
+                parse(text)
+            } catch (failure: Throwable) {
+                return invalid(
+                    "/",
+                    if ((failure.message ?: "").contains("duplicate", ignoreCase = true))
+                        ManifestProblemCode.DUPLICATE_KEY
+                    else ManifestProblemCode.MALFORMED_JSON,
+                    failure.message ?: "Malformed JSON.",
+                )
+            }
         val problems = mutableListOf<ManifestProblem>()
         val manifest = decode(parsed, problems)
         if (manifest != null) {
             validate(manifest, artifacts, problems)
+            if (problems.isEmpty() && !bytes.contentEquals(encode(manifest))) {
+                problems +=
+                    ManifestProblem(
+                        "/",
+                        ManifestProblemCode.NON_CANONICAL_JSON,
+                        "JSON is not canonical.",
+                    )
+            }
             return ManifestValidationResult(
                 if (problems.isEmpty()) manifest else null,
                 problems
@@ -64,8 +90,39 @@ internal object PackSetManifestJson {
         )
     }
 
-    private fun parse(bytes: ByteArray): J =
-        FACTORY.createParser(bytes).use { parser ->
+    private fun strictUtf8(bytes: ByteArray): String {
+        if (bytes.startsWithBom()) error("Byte-order marks are not permitted.")
+        return try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (failure: CharacterCodingException) {
+            error("Malformed UTF-8.")
+        }
+    }
+
+    private fun ByteArray.startsWithBom(): Boolean =
+        (size >= 3 &&
+            this[0] == 0xEF.toByte() &&
+            this[1] == 0xBB.toByte() &&
+            this[2] == 0xBF.toByte()) ||
+            (size >= 2 &&
+                ((this[0] == 0xFE.toByte() && this[1] == 0xFF.toByte()) ||
+                    (this[0] == 0xFF.toByte() && this[1] == 0xFE.toByte()))) ||
+            (size >= 4 &&
+                ((this[0] == 0.toByte() &&
+                    this[1] == 0.toByte() &&
+                    this[2] == 0xFE.toByte() &&
+                    this[3] == 0xFF.toByte()) ||
+                    (this[0] == 0xFF.toByte() &&
+                        this[1] == 0xFE.toByte() &&
+                        this[2] == 0.toByte() &&
+                        this[3] == 0.toByte())))
+
+    private fun parse(text: String): J =
+        FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { parser ->
             val first = parser.nextToken() ?: error("Expected a JSON value.")
             val result = read(parser, first, 0)
             require(parser.nextToken() == null) { "Trailing JSON input." }
@@ -121,53 +178,56 @@ internal object PackSetManifestJson {
     private fun decode(root: J, p: MutableList<ManifestProblem>): PackSetManifest? {
         val o = root.objectAt("", ROOT, p) ?: return null
         val minecraft =
-            o.obj("minecraft", MINECRAFT, p)?.let {
-                MinecraftManifest(it.str("version", p) ?: "", it.int("resourcePackFormat", p) ?: 0)
+            o.obj("minecraft", MINECRAFT, p, "")?.let {
+                MinecraftManifest(
+                    it.str("version", p, "/minecraft") ?: "",
+                    it.int("resourcePackFormat", p, "/minecraft") ?: 0,
+                )
             }
         val catalog =
-            o.obj("catalog", CATALOG, p)?.let {
+            o.obj("catalog", CATALOG, p, "")?.let {
                 CatalogManifest(
-                    it.str("id", p) ?: "",
-                    it.str("version", p) ?: "",
-                    it.str("coordinate", p) ?: "",
-                    it.str("file", p) ?: "",
-                    it.str("sha256", p) ?: "",
-                    it.long("size", p) ?: 0,
+                    it.str("id", p, "/catalog") ?: "",
+                    it.str("version", p, "/catalog") ?: "",
+                    it.str("coordinate", p, "/catalog") ?: "",
+                    it.str("file", p, "/catalog") ?: "",
+                    it.str("sha256", p, "/catalog") ?: "",
+                    it.long("size", p, "/catalog") ?: 0,
                 )
             }
         val packs =
-            o.arr("packs", p)?.mapIndexedNotNull { index, value ->
+            o.arr("packs", p, "")?.mapIndexedNotNull { index, value ->
                 value.objectAt("/packs/$index", PACK, p)?.let { x ->
                     PackManifest(
-                        x.int("order", p) ?: 0,
-                        x.str("role", p) ?: "",
-                        x.str("id", p) ?: "",
-                        uuid(x.str("uuid", p), "/packs/$index/uuid", p),
-                        x.bool("required", p) ?: false,
-                        x.str("url", p) ?: "",
-                        x.str("sha1", p) ?: "",
-                        x.str("sha256", p) ?: "",
-                        x.long("size", p) ?: 0,
-                        x.int("resourcePackFormat", p) ?: 0,
+                        x.int("order", p, "/packs/$index") ?: 0,
+                        x.str("role", p, "/packs/$index") ?: "",
+                        x.str("id", p, "/packs/$index") ?: "",
+                        uuid(x.str("uuid", p, "/packs/$index"), "/packs/$index/uuid", p),
+                        x.bool("required", p, "/packs/$index") ?: false,
+                        x.str("url", p, "/packs/$index") ?: "",
+                        x.str("sha1", p, "/packs/$index") ?: "",
+                        x.str("sha256", p, "/packs/$index") ?: "",
+                        x.long("size", p, "/packs/$index") ?: 0,
+                        x.int("resourcePackFormat", p, "/packs/$index") ?: 0,
                     )
                 }
             } ?: emptyList()
         val provenance =
-            o.obj("provenance", PROVENANCE, p)?.let {
+            o.obj("provenance", PROVENANCE, p, "")?.let {
                 ProvenanceManifest(
-                    it.str("repository", p) ?: "",
-                    it.str("commit", p) ?: "",
-                    it.str("tag", p) ?: "",
+                    it.str("repository", p, "/provenance") ?: "",
+                    it.str("commit", p, "/provenance") ?: "",
+                    it.str("tag", p, "/provenance") ?: "",
                 )
             }
-        val schema = o.int("schemaVersion", p) ?: 0
-        val id = o.str("id", p) ?: ""
-        val version = o.str("version", p) ?: ""
+        val schema = o.int("schemaVersion", p, "") ?: 0
+        val id = o.str("id", p, "") ?: ""
+        val version = o.str("version", p, "") ?: ""
         return if (
             minecraft != null &&
                 catalog != null &&
                 provenance != null &&
-                packs.size == (o.arr("packs", p)?.size ?: -1)
+                packs.size == (o.arr("packs", p, "")?.size ?: -1)
         )
             PackSetManifest(version, minecraft, catalog, packs, provenance, schema, id)
         else null
@@ -183,7 +243,8 @@ internal object PackSetManifestJson {
         }
         if (m.schemaVersion != 1) bad("/schemaVersion", "schemaVersion must be 1.")
         if (m.id != "grounds:global") bad("/id", "id must be grounds:global.")
-        if (!SEMVER.matches(m.version)) bad("/version", "version must be strict SemVer.")
+        if (m.version.length > MAX_VERSION || !SEMVER.matches(m.version))
+            bad("/version", "version must be strict SemVer.")
         if (m.minecraft.version != "26.2")
             bad("/minecraft/version", "Minecraft version must be 26.2.")
         if (m.minecraft.resourcePackFormat != PackSetConstants.FORMAT)
@@ -271,12 +332,17 @@ internal object PackSetManifestJson {
                 )
         val digest =
             try {
-                ArtifactDigests.readRegularFile(path)
+                ArtifactDigests.readRegularFile(
+                    path,
+                    ManifestValidationHooks.afterFirstArtifactChunk,
+                )
             } catch (e: Exception) {
                 p +=
                     ManifestProblem(
                         pointer,
-                        ManifestProblemCode.ARTIFACT_NOT_REGULAR,
+                        if ((e.message ?: "").contains("changed while hashing"))
+                            ManifestProblemCode.ARTIFACT_CHANGED
+                        else ManifestProblemCode.ARTIFACT_NOT_REGULAR,
                         e.message ?: "Unreadable artifact.",
                     )
                 return
@@ -392,31 +458,50 @@ internal object PackSetManifestJson {
                 null
             }
 
-    private fun J.Obj.obj(name: String, allowed: Set<String>, p: MutableList<ManifestProblem>) =
-        (fields[name] as? J)?.objectAt("/$name", allowed, p)
+    private fun J.Obj.obj(
+        name: String,
+        allowed: Set<String>,
+        p: MutableList<ManifestProblem>,
+        base: String,
+    ) = fields[name]?.objectAt("$base/$name", allowed, p)
 
-    private fun J.Obj.arr(name: String, p: MutableList<ManifestProblem>) =
+    private fun J.Obj.arr(name: String, p: MutableList<ManifestProblem>, base: String) =
         (fields[name] as? J.Arr)?.values
             ?: run {
-                p += ManifestProblem("/$name", ManifestProblemCode.WRONG_TYPE, "Expected array.")
+                p +=
+                    ManifestProblem(
+                        "$base/$name",
+                        ManifestProblemCode.WRONG_TYPE,
+                        "Expected array.",
+                    )
                 null
             }
 
-    private fun J.Obj.str(name: String, p: MutableList<ManifestProblem>) =
+    private fun J.Obj.str(name: String, p: MutableList<ManifestProblem>, base: String) =
         (fields[name] as? J.Str)?.value
             ?: run {
-                p += ManifestProblem("/$name", ManifestProblemCode.WRONG_TYPE, "Expected string.")
+                p +=
+                    ManifestProblem(
+                        "$base/$name",
+                        ManifestProblemCode.WRONG_TYPE,
+                        "Expected string.",
+                    )
                 null
             }
 
-    private fun J.Obj.bool(name: String, p: MutableList<ManifestProblem>) =
+    private fun J.Obj.bool(name: String, p: MutableList<ManifestProblem>, base: String) =
         (fields[name] as? J.Bool)?.value
             ?: run {
-                p += ManifestProblem("/$name", ManifestProblemCode.WRONG_TYPE, "Expected boolean.")
+                p +=
+                    ManifestProblem(
+                        "$base/$name",
+                        ManifestProblemCode.WRONG_TYPE,
+                        "Expected boolean.",
+                    )
                 null
             }
 
-    private fun J.Obj.int(name: String, p: MutableList<ManifestProblem>) =
+    private fun J.Obj.int(name: String, p: MutableList<ManifestProblem>, base: String) =
         (fields[name] as? J.Num)
             ?.value
             ?.takeIf { it.matches(Regex("-?(0|[1-9][0-9]*)")) }
@@ -424,14 +509,14 @@ internal object PackSetManifestJson {
             ?: run {
                 p +=
                     ManifestProblem(
-                        "/$name",
+                        "$base/$name",
                         ManifestProblemCode.WRONG_TYPE,
                         "Expected exact integer.",
                     )
                 null
             }
 
-    private fun J.Obj.long(name: String, p: MutableList<ManifestProblem>) =
+    private fun J.Obj.long(name: String, p: MutableList<ManifestProblem>, base: String) =
         (fields[name] as? J.Num)
             ?.value
             ?.takeIf { it.matches(Regex("-?(0|[1-9][0-9]*)")) }
@@ -439,7 +524,7 @@ internal object PackSetManifestJson {
             ?: run {
                 p +=
                     ManifestProblem(
-                        "/$name",
+                        "$base/$name",
                         ManifestProblemCode.WRONG_TYPE,
                         "Expected exact integer.",
                     )
@@ -460,7 +545,7 @@ internal object PackSetManifestJson {
             .build()
     private val SEMVER =
         Regex(
-            "(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?"
+            "(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:(?:0|[1-9][0-9]*)|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?"
         )
     private val LOWER_HEX_40 = Regex("[0-9a-f]{40}")
 
@@ -499,4 +584,10 @@ internal object PackSetManifestJson {
     private const val MAX_STRING = 16_384
     private const val MAX_NUMBER = 128
     private const val MAX_DOCUMENT = 1_048_576
+    private const val MAX_VERSION = 256
+}
+
+/** Internal test seam; production leaves this no-op and exceptions are contained by digesting. */
+internal object ManifestValidationHooks {
+    @get:JvmSynthetic @set:JvmSynthetic var afterFirstArtifactChunk: () -> Unit = {}
 }

@@ -3,6 +3,7 @@ package gg.grounds.resourcepacks.product
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ManifestRoundTripTest {
@@ -16,6 +17,53 @@ class ManifestRoundTripTest {
 
             assertTrue(decoded.isValid, decoded.problems.joinToString())
             assertEquals(initial.toList(), PackSetManifestJson.encode(decoded.manifest!!).toList())
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `manifest collections are defensive snapshots`() {
+        val source = sampleManifest().packs.toMutableList()
+        val manifest = sampleManifest().copy(packs = source)
+        source.clear()
+        assertEquals(2, manifest.packs.size)
+        assertFailsWith<UnsupportedOperationException> {
+            (manifest.packs as MutableList<PackManifest>).clear()
+        }
+    }
+
+    @Test
+    fun `rejects semantically valid noncanonical bytes and malformed UTF-8`() {
+        val directory = Files.createTempDirectory("manifest-canonical-input-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val canonical = PackSetManifestJson.encode(matchingManifest(artifacts))
+            val whitespace = canonical.toString(Charsets.UTF_8).replace("\n", "\n ").toByteArray()
+            assertEquals(
+                ManifestProblemCode.NON_CANONICAL_JSON,
+                PackSetManifestJson.decodeAndValidate(whitespace, artifacts).problems.single().code,
+            )
+            assertEquals(
+                ManifestProblemCode.MALFORMED_JSON,
+                PackSetManifestJson.decodeAndValidate(
+                        byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + canonical,
+                        artifacts,
+                    )
+                    .problems
+                    .single()
+                    .code,
+            )
+            assertEquals(
+                ManifestProblemCode.MALFORMED_JSON,
+                PackSetManifestJson.decodeAndValidate(
+                        byteArrayOf(0xC3.toByte(), 0x28) + canonical,
+                        artifacts,
+                    )
+                    .problems
+                    .single()
+                    .code,
+            )
         } finally {
             directory.toFile().deleteRecursively()
         }

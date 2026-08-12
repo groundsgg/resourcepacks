@@ -167,4 +167,33 @@ class ManifestMutationTest {
             directory.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun `detects a deterministic artifact replacement while streaming`() {
+        val directory = Files.createTempDirectory("manifest-artifact-race-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            Files.write(artifacts.catalog, ByteArray(70_000) { 7 })
+            val valid = matchingManifest(artifacts)
+            val replacement = directory.resolve("replacement.jar")
+            Files.write(replacement, ByteArray(70_000) { 8 })
+            ManifestValidationHooks.afterFirstArtifactChunk = {
+                Files.move(
+                    replacement,
+                    artifacts.catalog,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+            val result =
+                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(valid), artifacts)
+            assertTrue(
+                result.problems.any {
+                    it.pointer == "/catalog" && it.code == ManifestProblemCode.ARTIFACT_CHANGED
+                }
+            )
+        } finally {
+            ManifestValidationHooks.afterFirstArtifactChunk = {}
+            directory.toFile().deleteRecursively()
+        }
+    }
 }

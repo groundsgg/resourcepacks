@@ -15,12 +15,16 @@ internal data class ArtifactDigests(val sha1: String, val sha256: String, val si
             ArtifactDigests(artifact.sha1, artifact.sha256, artifact.size)
 
         @Throws(IOException::class)
-        fun readRegularFile(path: Path): ArtifactDigests {
+        fun readRegularFile(path: Path): ArtifactDigests = readRegularFile(path, {})
+
+        @JvmSynthetic
+        internal fun readRegularFile(path: Path, afterFirstChunk: () -> Unit): ArtifactDigests {
             val before = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
             if (!before.isRegularFile) throw IOException("Artifact is not a regular file: $path")
             val sha1 = MessageDigest.getInstance("SHA-1")
             val sha256 = MessageDigest.getInstance("SHA-256")
             var size = 0L
+            var invoked = false
             Files.newInputStream(path, NOFOLLOW_LINKS).use { input ->
                 val buffer = ByteArray(64 * 1024)
                 while (true) {
@@ -29,6 +33,14 @@ internal data class ArtifactDigests(val sha1: String, val sha256: String, val si
                     sha1.update(buffer, 0, read)
                     sha256.update(buffer, 0, read)
                     size = Math.addExact(size, read.toLong())
+                    if (!invoked) {
+                        invoked = true
+                        try {
+                            afterFirstChunk()
+                        } catch (_: Throwable) {
+                            /* validation stays contained */
+                        }
+                    }
                 }
             }
             val after = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
