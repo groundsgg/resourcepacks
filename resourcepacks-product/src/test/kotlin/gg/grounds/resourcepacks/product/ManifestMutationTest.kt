@@ -1,6 +1,10 @@
 package gg.grounds.resourcepacks.product
 
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -390,50 +394,177 @@ class ManifestMutationTest {
     }
 
     @Test
-    fun `rejects missing symlink nonregular and byte-replaced artifacts`() {
-        val directory = Files.createTempDirectory("manifest-artifact-matrix-")
-        try {
-            val artifacts = sampleArtifacts(directory)
-            val valid = matchingManifest(artifacts)
-            Files.write(artifacts.packs.getValue(PackRole.CONTENT), byteArrayOf(99))
-            assertFalse(
-                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(valid), artifacts)
-                    .isValid
-            )
-
+    fun `missing catalog and each missing pack have isolated exact diagnostics`() {
+        withArtifactFixture("missing-catalog") { _, artifacts, valid ->
             Files.delete(artifacts.catalog)
-            assertFalse(
-                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(valid), artifacts)
-                    .isValid
+            assertArtifactProblems(
+                valid,
+                artifacts,
+                artifactProblem(
+                    "/catalog",
+                    ManifestProblemCode.ARTIFACT_MISSING,
+                    "Artifact missing.",
+                ),
             )
-
-            val directoryArtifact = directory.resolve("directory.zip")
-            Files.createDirectory(directoryArtifact)
-            val nonregular =
-                artifacts.copy(packs = artifacts.packs + (PackRole.CONTENT to directoryArtifact))
-            assertFalse(
-                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(valid), nonregular)
-                    .isValid
-            )
-
-            val target = directory.resolve("target.jar")
-            Files.write(target, byteArrayOf(1))
-            val symlink = directory.resolve("grounds-resourcepacks-catalog-0.1.0.jar")
-            try {
-                Files.createSymbolicLink(symlink, target.fileName)
-                assertFalse(
-                    PackSetManifestJson.decodeAndValidate(
-                            PackSetManifestJson.encode(valid),
-                            artifacts.copy(catalog = symlink),
-                        )
-                        .isValid
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("missing-${role.name.lowercase()}") { directory, artifacts, valid ->
+                val missing = directory.resolve("missing-${role.name.lowercase()}.zip")
+                assertArtifactProblems(
+                    valid,
+                    artifacts.copy(packs = artifacts.packs + (role to missing)),
+                    artifactProblem(
+                        "/packs/$index",
+                        ManifestProblemCode.ARTIFACT_MISSING,
+                        "Artifact missing.",
+                    ),
                 )
-            } catch (_: UnsupportedOperationException) {
-                // Some CI file systems do not permit symlinks; the no-follow production path
-                // remains covered above.
             }
-        } finally {
-            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `directory catalog and packs have isolated exact nonregular diagnostics`() {
+        withArtifactFixture("directory-catalog") { _, artifacts, valid ->
+            Files.delete(artifacts.catalog)
+            Files.createDirectory(artifacts.catalog)
+            assertArtifactProblems(
+                valid,
+                artifacts,
+                notRegularProblem("/catalog", artifacts.catalog),
+            )
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("directory-${role.name.lowercase()}") { _, artifacts, valid ->
+                val path = artifacts.packs.getValue(role)
+                Files.delete(path)
+                Files.createDirectory(path)
+                assertArtifactProblems(valid, artifacts, notRegularProblem("/packs/$index", path))
+            }
+        }
+    }
+
+    @Test
+    fun `symlink catalog and packs are exercised with isolated exact nonregular diagnostics`() {
+        withArtifactFixture("symlink-catalog") { directory, artifacts, valid ->
+            val target = Files.write(directory.resolve("catalog-target.jar"), byteArrayOf(1, 2, 3))
+            Files.delete(artifacts.catalog)
+            Files.createSymbolicLink(artifacts.catalog, target.fileName)
+            assertArtifactProblems(
+                valid,
+                artifacts,
+                notRegularProblem("/catalog", artifacts.catalog),
+            )
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("symlink-${role.name.lowercase()}") { directory, artifacts, valid ->
+                val path = artifacts.packs.getValue(role)
+                val target =
+                    Files.write(
+                        directory.resolve("${role.name.lowercase()}-target.zip"),
+                        Files.readAllBytes(path),
+                    )
+                Files.delete(path)
+                Files.createSymbolicLink(path, target.fileName)
+                assertArtifactProblems(valid, artifacts, notRegularProblem("/packs/$index", path))
+            }
+        }
+    }
+
+    @Test
+    fun `artifact filename mismatches are isolated from byte validation`() {
+        withArtifactFixture("filename-catalog") { directory, artifacts, valid ->
+            val renamed = directory.resolve("wrong-catalog-name.jar")
+            Files.move(artifacts.catalog, renamed)
+            assertArtifactProblems(
+                valid,
+                artifacts.copy(catalog = renamed),
+                artifactProblem(
+                    "/catalog/file",
+                    ManifestProblemCode.ARTIFACT_MISMATCH,
+                    "Artifact filename mismatch.",
+                ),
+            )
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("filename-${role.name.lowercase()}") { directory, artifacts, valid
+                ->
+                val original = artifacts.packs.getValue(role)
+                val renamed = directory.resolve("wrong-${role.name.lowercase()}.zip")
+                Files.move(original, renamed)
+                assertArtifactProblems(
+                    valid,
+                    artifacts.copy(packs = artifacts.packs + (role to renamed)),
+                    artifactProblem(
+                        "/packs/$index/file",
+                        ManifestProblemCode.ARTIFACT_MISMATCH,
+                        "Artifact filename mismatch.",
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `same-size final byte mismatches are isolated for catalog and packs`() {
+        withArtifactFixture("bytes-catalog") { _, artifacts, valid ->
+            overwriteWithDifferentSameSizeBytes(artifacts.catalog)
+            assertArtifactProblems(valid, artifacts, mismatchProblem("/catalog"))
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("bytes-${role.name.lowercase()}") { _, artifacts, valid ->
+                overwriteWithDifferentSameSizeBytes(artifacts.packs.getValue(role))
+                assertArtifactProblems(valid, artifacts, mismatchProblem("/packs/$index"))
+            }
+        }
+    }
+
+    @Test
+    fun `manifest hash mismatches are isolated for catalog and every pack hash field`() {
+        withArtifactFixture("hash-catalog") { _, artifacts, valid ->
+            val changed = valid.copy(catalog = valid.catalog.copy(sha256 = "a".repeat(64)))
+            assertArtifactProblems(changed, artifacts, mismatchProblem("/catalog"))
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("sha256-${role.name.lowercase()}") { _, artifacts, valid ->
+                val pack = valid.packs[index]
+                val changed = valid.withArtifactPack(index, pack.copy(sha256 = "a".repeat(64)))
+                assertArtifactProblems(changed, artifacts, mismatchProblem("/packs/$index"))
+            }
+            withArtifactFixture("sha1-${role.name.lowercase()}") { directory, artifacts, valid ->
+                val pack = valid.packs[index]
+                val sha1 = "a".repeat(40)
+                val renamed = directory.resolve("$sha1.zip")
+                Files.move(artifacts.packs.getValue(role), renamed)
+                val changed =
+                    valid.withArtifactPack(
+                        index,
+                        pack.copy(
+                            sha1 = sha1,
+                            url = "https://cdn.grounds.gg/resourcepacks/${pack.role}/$sha1.zip",
+                        ),
+                    )
+                assertArtifactProblems(
+                    changed,
+                    artifacts.copy(packs = artifacts.packs + (role to renamed)),
+                    mismatchProblem("/packs/$index"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `manifest size mismatches are isolated for catalog and packs`() {
+        withArtifactFixture("size-catalog") { _, artifacts, valid ->
+            val changed = valid.copy(catalog = valid.catalog.copy(size = valid.catalog.size + 1))
+            assertArtifactProblems(changed, artifacts, mismatchProblem("/catalog"))
+        }
+        PackRole.entries.forEachIndexed { index, role ->
+            withArtifactFixture("size-${role.name.lowercase()}") { _, artifacts, valid ->
+                val pack = valid.packs[index]
+                val changed = valid.withArtifactPack(index, pack.copy(size = pack.size + 1))
+                assertArtifactProblems(changed, artifacts, mismatchProblem("/packs/$index"))
+            }
         }
     }
 
@@ -457,13 +588,92 @@ class ManifestMutationTest {
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                     )
                 }
-            assertTrue(
-                result.problems.any {
-                    it.pointer == "/catalog" && it.code == ManifestProblemCode.ARTIFACT_CHANGED
-                }
+            assertEquals(
+                listOf(
+                    artifactProblem(
+                        "/catalog",
+                        ManifestProblemCode.ARTIFACT_CHANGED,
+                        "Artifact changed while hashing: ${artifacts.catalog}",
+                    )
+                ),
+                result.problems,
             )
         } finally {
-            directory.toFile().deleteRecursively()
+            deleteTreeNoFollow(directory)
         }
     }
+}
+
+private inline fun withArtifactFixture(
+    name: String,
+    block: (Path, ManifestArtifacts, PackSetManifest) -> Unit,
+) {
+    val directory = Files.createTempDirectory("manifest-artifact-$name-")
+    try {
+        val artifacts = sampleArtifacts(directory)
+        val valid = matchingManifest(artifacts)
+        assertArtifactProblems(valid, artifacts)
+        block(directory, artifacts, valid)
+    } finally {
+        deleteTreeNoFollow(directory)
+    }
+}
+
+private fun assertArtifactProblems(
+    manifest: PackSetManifest,
+    artifacts: ManifestArtifacts,
+    vararg expected: ManifestProblem,
+) {
+    assertEquals(
+        expected.toList(),
+        PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(manifest), artifacts)
+            .problems,
+    )
+}
+
+private fun artifactProblem(pointer: String, code: ManifestProblemCode, message: String) =
+    ManifestProblem(pointer, code, message)
+
+private fun mismatchProblem(pointer: String) =
+    artifactProblem(
+        pointer,
+        ManifestProblemCode.ARTIFACT_MISMATCH,
+        "Artifact bytes, hash, or size mismatch.",
+    )
+
+private fun notRegularProblem(pointer: String, path: Path) =
+    artifactProblem(
+        pointer,
+        ManifestProblemCode.ARTIFACT_NOT_REGULAR,
+        "Artifact is not a regular file: $path",
+    )
+
+private fun overwriteWithDifferentSameSizeBytes(path: Path) {
+    val size = Files.size(path).toInt()
+    Files.write(path, ByteArray(size) { 0x5A })
+}
+
+private fun PackSetManifest.withArtifactPack(index: Int, replacement: PackManifest) =
+    copy(packs = packs.toMutableList().also { it[index] = replacement })
+
+private fun deleteTreeNoFollow(root: Path) {
+    if (!Files.exists(root)) return
+    Files.walkFileTree(
+        root,
+        object : SimpleFileVisitor<Path>() {
+            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                Files.delete(file)
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun postVisitDirectory(
+                directory: Path,
+                failure: java.io.IOException?,
+            ): FileVisitResult {
+                if (failure != null) throw failure
+                Files.delete(directory)
+                return FileVisitResult.CONTINUE
+            }
+        },
+    )
 }
