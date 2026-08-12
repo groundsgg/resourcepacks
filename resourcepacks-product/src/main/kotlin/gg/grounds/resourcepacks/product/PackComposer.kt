@@ -3,11 +3,13 @@ package gg.grounds.resourcepacks.product
 import gg.grounds.resourcepack.builder.ResourcePackComposer
 import gg.grounds.resourcepack.builder.ZipPackWriter
 import java.io.IOException
-import java.nio.file.FileVisitResult
+import java.nio.file.DirectoryStream
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
+import java.nio.file.SecureDirectoryStream
+import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.BasicFileAttributes
 
 internal data class BuiltPhysicalPack(
@@ -21,7 +23,11 @@ internal data class BuiltPhysicalPack(
 /**
  * Creates one private child directory below caller-owned [stagingRoot]. On success the caller owns
  * that child (and the returned files); on failure this object removes only that child, without ever
- * following symbolic links. The caller's staging root is never created, modified, or cleaned up.
+ * following symbolic links. Cleanup uses relative, handle-based operations when the file-system
+ * provider supplies [SecureDirectoryStream]. Otherwise it fails closed: it may remove the root link
+ * or an empty identity-matching root, but never opens descendants by path. A safe leak is
+ * preferable to traversing a replaced directory. The caller's staging root is never created,
+ * modified, or cleaned up.
  */
 internal object PackComposer {
     fun build(graph: ProductGraph, stagingRoot: Path): List<BuiltPhysicalPack> {
@@ -59,8 +65,11 @@ internal object PackComposer {
         require(Files.isDirectory(stagingRoot)) { "stagingRoot must be an existing directory." }
         val child = Files.createTempDirectory(stagingRoot, ".pack-composer-")
         val childIdentity = OwnedChildIdentity.capture(child)
+        var parentDirectory: DirectoryStream<Path>? = null
         var completed = false
         try {
+            hooks.beforeCleanupParentHandleOpen(child.parent)
+            parentDirectory = Files.newDirectoryStream(child.parent)
             val composer = ResourcePackComposer()
             val writer = ZipPackWriter()
             // Compose every pack first: all validation diagnostics occur before a ZIP is written.
@@ -106,73 +115,181 @@ internal object PackComposer {
                 } catch (_: Throwable) {
                     // A test seam must never replace the original composition failure.
                 }
-                deleteOwnedChild(child, childIdentity)
+                deleteOwnedChild(child, childIdentity, parentDirectory, hooks)
+            }
+            try {
+                parentDirectory?.close()
+            } catch (_: Throwable) {
+                // Closing cleanup infrastructure must not replace a composition failure.
             }
         }
     }
 
-    private fun deleteOwnedChild(child: Path, identity: OwnedChildIdentity) {
+    private fun deleteOwnedChild(
+        child: Path,
+        identity: OwnedChildIdentity,
+        parentDirectory: DirectoryStream<Path>?,
+        hooks: PackComposerHooks,
+    ) {
         try {
-            Files.walkFileTree(
-                child,
-                object : SimpleFileVisitor<Path>() {
-                    override fun preVisitDirectory(
-                        dir: Path,
-                        attrs: BasicFileAttributes,
-                    ): FileVisitResult {
-                        if (dir == child && !identity.matches(attrs)) {
-                            return FileVisitResult.TERMINATE
-                        }
-                        return FileVisitResult.CONTINUE
-                    }
-
-                    override fun visitFile(
-                        file: Path,
-                        attrs: BasicFileAttributes,
-                    ): FileVisitResult {
-                        if (file == child && !attrs.isSymbolicLink) {
-                            return FileVisitResult.TERMINATE
-                        }
-                        Files.deleteIfExists(file)
-                        return FileVisitResult.CONTINUE
-                    }
-
-                    override fun postVisitDirectory(
-                        dir: Path,
-                        exception: IOException?,
-                    ): FileVisitResult {
-                        exception?.let { throw it }
-                        Files.deleteIfExists(dir)
-                        return FileVisitResult.CONTINUE
-                    }
-                },
-            )
+            val secureParent = parentDirectory as? SecureDirectoryStream<Path>
+            if (secureParent == null) {
+                deleteRootFailClosed(child, identity)
+                return
+            }
+            deleteSecureEntry(secureParent, child.fileName, child, identity, hooks)
         } catch (_: Throwable) {
             // Preserve the original composition failure.
         }
     }
+
+    private fun deleteRootFailClosed(child: Path, identity: OwnedChildIdentity) {
+        val attributes =
+            try {
+                Files.readAttributes(child, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+            } catch (_: NoSuchFileException) {
+                return
+            }
+        if (attributes.isSymbolicLink) {
+            Files.deleteIfExists(child)
+        } else if (attributes.isDirectory && identity.matches(attributes)) {
+            // This succeeds only for an empty directory. Never enumerate or open descendants by
+            // path on a provider without SecureDirectoryStream support.
+            Files.deleteIfExists(child)
+        }
+    }
+
+    private fun deleteSecureEntry(
+        parent: SecureDirectoryStream<Path>,
+        name: Path,
+        displayPath: Path,
+        expectedRootIdentity: OwnedChildIdentity?,
+        hooks: PackComposerHooks,
+    ): Boolean {
+        repeat(CLEANUP_ATTEMPTS) {
+            val classified = readAttributes(parent, name) ?: return true
+            if (expectedRootIdentity != null) {
+                if (classified.isSymbolicLink) {
+                    return deleteSecureFile(parent, name)
+                }
+                if (!classified.isDirectory || !expectedRootIdentity.matches(classified)) {
+                    return false
+                }
+            } else if (!classified.isDirectory) {
+                if (deleteSecureFile(parent, name)) return true
+                return@repeat
+            }
+
+            val classifiedIdentity = OwnedChildIdentity.from(classified)
+            if (expectedRootIdentity == null) {
+                try {
+                    hooks.afterCleanupDirectoryClassified(displayPath)
+                } catch (_: Throwable) {
+                    // A test seam must not weaken cleanup or replace the original failure.
+                }
+            }
+            val childDirectory =
+                try {
+                    parent.newDirectoryStream(name, NOFOLLOW_LINKS)
+                } catch (_: IOException) {
+                    return@repeat
+                } catch (_: SecurityException) {
+                    return false
+                }
+            val openedIdentity =
+                childDirectory.use { opened ->
+                    val openedAttributes = readAttributes(opened) ?: return false
+                    if (
+                        !openedAttributes.isDirectory ||
+                            !classifiedIdentity.matches(openedAttributes) ||
+                            (expectedRootIdentity != null &&
+                                !expectedRootIdentity.matches(openedAttributes))
+                    ) {
+                        return false
+                    }
+                    deleteSecureContents(opened, displayPath, hooks)
+                    OwnedChildIdentity.from(openedAttributes)
+                }
+
+            val beforeDelete = readAttributes(parent, name) ?: return true
+            if (!beforeDelete.isDirectory) return@repeat
+            if (!openedIdentity.matches(beforeDelete)) return false
+            try {
+                parent.deleteDirectory(name)
+                return true
+            } catch (_: NoSuchFileException) {
+                return true
+            } catch (_: IOException) {
+                // A concurrent addition or replacement is reclassified on the next bounded pass.
+            } catch (_: SecurityException) {
+                return false
+            }
+        }
+        return false
+    }
+
+    private fun deleteSecureContents(
+        directory: SecureDirectoryStream<Path>,
+        displayPath: Path,
+        hooks: PackComposerHooks,
+    ) {
+        val names = directory.mapNotNull(Path::getFileName).toList()
+        names.forEach { name ->
+            deleteSecureEntry(directory, name, displayPath.resolve(name), null, hooks)
+        }
+    }
+
+    private fun deleteSecureFile(parent: SecureDirectoryStream<Path>, name: Path): Boolean =
+        try {
+            parent.deleteFile(name)
+            true
+        } catch (_: NoSuchFileException) {
+            true
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+
+    private fun readAttributes(
+        parent: SecureDirectoryStream<Path>,
+        name: Path,
+    ): BasicFileAttributes? =
+        try {
+            parent
+                .getFileAttributeView(name, BasicFileAttributeView::class.java, NOFOLLOW_LINKS)
+                ?.readAttributes()
+        } catch (_: NoSuchFileException) {
+            null
+        }
+
+    private fun readAttributes(directory: SecureDirectoryStream<Path>): BasicFileAttributes? =
+        directory.getFileAttributeView(BasicFileAttributeView::class.java)?.readAttributes()
 
     private data class OwnedChildIdentity(
         val fileKey: Any?,
         val creationTime: java.nio.file.attribute.FileTime,
     ) {
         fun matches(attributes: BasicFileAttributes): Boolean =
-            if (fileKey != null) {
-                fileKey == attributes.fileKey()
-            } else {
-                attributes.fileKey() == null && creationTime == attributes.creationTime()
-            }
+            fileKey != null &&
+                fileKey == attributes.fileKey() &&
+                creationTime == attributes.creationTime()
 
         companion object {
+            fun from(attributes: BasicFileAttributes): OwnedChildIdentity =
+                OwnedChildIdentity(attributes.fileKey(), attributes.creationTime())
+
             fun capture(path: Path): OwnedChildIdentity {
                 val attributes =
                     Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
                 if (!attributes.isDirectory)
                     throw IOException("Owned child is not a directory: $path")
-                return OwnedChildIdentity(attributes.fileKey(), attributes.creationTime())
+                return from(attributes)
             }
         }
     }
+
+    private const val CLEANUP_ATTEMPTS = 4
 }
 
 /** Test-only phase hook; production callers always receive the no-op default. */
@@ -184,6 +301,8 @@ internal data class PackComposerHooks(
         },
     val afterPackPublicationVerified: (pack: PhysicalPack, finalFile: Path) -> Unit = { _, _ -> },
     val beforeFailureCleanup: (child: Path) -> Unit = {},
+    val afterCleanupDirectoryClassified: (directory: Path) -> Unit = {},
+    val beforeCleanupParentHandleOpen: (parent: Path) -> Unit = {},
 )
 
 internal class ProductValidationException(val result: ProductValidationResult) :

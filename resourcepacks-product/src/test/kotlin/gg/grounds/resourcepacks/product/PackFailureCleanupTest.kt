@@ -282,6 +282,85 @@ class PackFailureCleanupTest {
     }
 
     @Test
+    fun `secure cleanup never opens a descendant replaced by an external symlink`() {
+        withRoot("pack-descendant-swap-failure") { root ->
+            withRoot("pack-descendant-swap-external") { external ->
+                val sentinel = Files.writeString(external.resolve("sentinel.txt"), "outside")
+                val source = Files.writeString(root.resolve("source.bin"), "source")
+                val callerFile = Files.writeString(root.resolve("caller-owned.txt"), "keep")
+                val existing = existingComposerSibling(root)
+                val platform =
+                    ProductGraph.packs
+                        .last()
+                        .copy(
+                            contributions = listOf(fileContribution("grounds:descendant", source))
+                        )
+                var secureClassifiedPhaseObserved = false
+
+                val failure =
+                    assertFailsWith<PackBuildException> {
+                        PackComposer.build(
+                            listOf(ProductGraph.packs.first(), platform),
+                            root,
+                            PackComposerHooks(
+                                afterComposeBeforeWrite = { pack, pending ->
+                                    if (pack.role == PackRole.PLATFORM) {
+                                        val nested =
+                                            Files.createDirectory(
+                                                pending.parent.resolve("nested-owned")
+                                            )
+                                        Files.writeString(nested.resolve("owned.txt"), "owned")
+                                        Files.delete(source)
+                                    }
+                                },
+                                afterCleanupDirectoryClassified = { directory ->
+                                    if (directory.fileName.toString() == "nested-owned") {
+                                        secureClassifiedPhaseObserved = true
+                                        deleteTreeNoFollow(directory)
+                                        Files.createSymbolicLink(directory, external)
+                                    }
+                                },
+                            ),
+                        )
+                    }
+
+                assertEquals(
+                    listOf(PackProblemCode.SOURCE_READ_FAILED),
+                    failure.problems.map { it.code },
+                )
+                assertTrue(secureClassifiedPhaseObserved)
+                assertEquals("outside", Files.readString(sentinel))
+                assertEquals(1L, Files.list(external).use { it.count() })
+                assertCallerState(root, callerFile, existing)
+            }
+        }
+    }
+
+    @Test
+    fun `parent handle acquisition failure remains cleanup protected`() {
+        withRoot("pack-parent-handle-failure") { root ->
+            val callerFile = Files.writeString(root.resolve("caller-owned.txt"), "keep")
+            val existing = existingComposerSibling(root)
+
+            val failure =
+                assertFailsWith<IOException> {
+                    PackComposer.build(
+                        ProductGraph.packs,
+                        root,
+                        PackComposerHooks(
+                            beforeCleanupParentHandleOpen = {
+                                throw IOException("parent handle unavailable")
+                            }
+                        ),
+                    )
+                }
+
+            assertEquals("parent handle unavailable", failure.message)
+            assertCallerState(root, callerFile, existing)
+        }
+    }
+
+    @Test
     fun `a cleanup hook failure cannot replace the writer failure or skip cleanup`() {
         withRoot("pack-cleanup-hook-failure") { root ->
             val source = Files.writeString(root.resolve("source.bin"), "source")
@@ -291,23 +370,34 @@ class PackFailureCleanupTest {
                 ProductGraph.packs
                     .last()
                     .copy(contributions = listOf(fileContribution("grounds:hook", source)))
+            var secureCleanupHookObserved = false
 
             val failure = assertFails {
                 PackComposer.build(
                     listOf(ProductGraph.packs.first(), platform),
                     root,
                     PackComposerHooks(
-                        afterComposeBeforeWrite = { pack, _ ->
-                            if (pack.role == PackRole.PLATFORM) Files.delete(source)
+                        afterComposeBeforeWrite = { pack, pending ->
+                            if (pack.role == PackRole.PLATFORM) {
+                                val nested =
+                                    Files.createDirectory(pending.parent.resolve("nested-owned"))
+                                Files.writeString(nested.resolve("owned.txt"), "owned")
+                                Files.delete(source)
+                            }
                         },
                         beforeFailureCleanup = {
                             throw IllegalStateException("cleanup hook must not escape")
+                        },
+                        afterCleanupDirectoryClassified = {
+                            secureCleanupHookObserved = true
+                            throw IllegalStateException("secure cleanup hook must not escape")
                         },
                     ),
                 )
             }
 
             assertTrue(failure is PackBuildException)
+            assertTrue(secureCleanupHookObserved)
             assertFalse(failure.message.orEmpty().contains("cleanup hook must not escape"))
             assertCallerState(root, callerFile, existing)
         }
