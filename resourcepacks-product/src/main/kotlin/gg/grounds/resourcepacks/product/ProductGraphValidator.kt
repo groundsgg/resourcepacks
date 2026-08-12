@@ -1,11 +1,29 @@
 package gg.grounds.resourcepacks.product
 
-internal data class ProductProblem(
+import java.util.Collections
+
+internal class ProductProblem(
     val code: ProductProblemCode,
     val pack: String? = null,
     val path: String? = null,
     val detail: String? = null,
-)
+    contributionIds: Collection<String> = emptyList(),
+) {
+    val contributionIds: List<String> = Collections.unmodifiableList(contributionIds.sorted())
+
+    override fun equals(other: Any?): Boolean =
+        other is ProductProblem &&
+            code == other.code &&
+            pack == other.pack &&
+            path == other.path &&
+            detail == other.detail &&
+            contributionIds == other.contributionIds
+
+    override fun hashCode(): Int = listOf(code, pack, path, detail, contributionIds).hashCode()
+
+    override fun toString(): String =
+        "ProductProblem(code=$code, pack=$pack, path=$path, detail=$detail, contributionIds=$contributionIds)"
+}
 
 internal enum class ProductProblemCode {
     PACK_COUNT,
@@ -16,12 +34,16 @@ internal enum class ProductProblemCode {
     LOCKED_PACK_MISMATCH,
     INVALID_FORMAT,
     INVALID_LIMITS,
+    ENTRY_LIMIT_EXCEEDED,
+    UNCOMPRESSED_SIZE_LIMIT_EXCEEDED,
     CROSS_PACK_PATH,
     CONTENT_VANILLA_PATH,
     CONTENT_VANILLA_CLAIM,
 }
 
-internal data class ProductValidationResult(val problems: List<ProductProblem>) {
+internal class ProductValidationResult(problems: Collection<ProductProblem>) {
+    val problems: List<ProductProblem> = Collections.unmodifiableList(problems.toList())
+
     val isValid: Boolean
         get() = problems.isEmpty()
 }
@@ -46,7 +68,7 @@ internal object ProductGraphValidator {
         }
 
         packs.forEach { pack ->
-            lockedPackProblem(pack)?.let(problems::add)
+            lockedPackProblems(pack).let(problems::addAll)
             if (
                 pack.definition.format.format != PackSetConstants.FORMAT ||
                     pack.definition.format.range.minInclusive != PackSetConstants.FORMAT ||
@@ -56,21 +78,48 @@ internal object ProductGraphValidator {
             if (pack.definition.policy.limits != expectedLimits(pack.role)) {
                 problems += ProductProblem(ProductProblemCode.INVALID_LIMITS, pack = pack.id)
             }
+            val entries = pack.contributions.flatMap { it.entries }
+            val limits = pack.definition.policy.limits
+            if (entries.size > requireNotNull(limits.maxEntries)) {
+                problems += ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack = pack.id)
+            }
+            if (entries.sumOf { it.source.size() } > requireNotNull(limits.maxUncompressedBytes)) {
+                problems +=
+                    ProductProblem(
+                        ProductProblemCode.UNCOMPRESSED_SIZE_LIMIT_EXCEEDED,
+                        pack = pack.id,
+                    )
+            }
             if (pack.role == PackRole.CONTENT) {
                 pack.contributions
-                    .flatMap { it.entries }
-                    .map { it.path.toString() }
-                    .filter(::isVanillaPath)
+                    .flatMap { contribution ->
+                        contribution.entries
+                            .map { contribution.id.toString() to it.path.toString() }
+                            .filter { (_, path) -> isVanillaPath(path) }
+                    }
                     .forEach {
                         problems +=
-                            ProductProblem(ProductProblemCode.CONTENT_VANILLA_PATH, pack.id, it)
+                            ProductProblem(
+                                ProductProblemCode.CONTENT_VANILLA_PATH,
+                                pack.id,
+                                it.second,
+                                contributionIds = listOf(it.first),
+                            )
                     }
                 pack.contributions
-                    .flatMap { it.vanillaClaims }
-                    .map { it.path.toString() }
+                    .flatMap { contribution ->
+                        contribution.vanillaClaims.map {
+                            contribution.id.toString() to it.path.toString()
+                        }
+                    }
                     .forEach {
                         problems +=
-                            ProductProblem(ProductProblemCode.CONTENT_VANILLA_CLAIM, pack.id, it)
+                            ProductProblem(
+                                ProductProblemCode.CONTENT_VANILLA_CLAIM,
+                                pack.id,
+                                it.second,
+                                contributionIds = listOf(it.first),
+                            )
                     }
             }
         }
@@ -99,22 +148,20 @@ internal object ProductGraphValidator {
             PackRole.PLATFORM -> PackSetConstants.platformLimits
         }
 
-    private fun lockedPackProblem(pack: PhysicalPack): ProductProblem? {
+    private fun lockedPackProblems(pack: PhysicalPack): List<ProductProblem> {
         val expected =
             when (pack.role) {
                 PackRole.CONTENT -> LockedPack(0, "grounds-content", PackSetConstants.contentUuid)
                 PackRole.PLATFORM ->
                     LockedPack(1, "grounds-platform", PackSetConstants.platformUuid)
             }
-        val mismatch =
-            when {
-                pack.order != expected.order -> "order"
-                pack.id != expected.id -> "id"
-                pack.uuid != expected.uuid -> "uuid"
-                !pack.required -> "required"
-                else -> return null
+        return buildList {
+                if (pack.order != expected.order) add("order")
+                if (pack.id != expected.id) add("id")
+                if (pack.uuid != expected.uuid) add("uuid")
+                if (!pack.required) add("required")
             }
-        return ProductProblem(ProductProblemCode.LOCKED_PACK_MISMATCH, pack.id, detail = mismatch)
+            .map { ProductProblem(ProductProblemCode.LOCKED_PACK_MISMATCH, pack.id, detail = it) }
     }
 
     private data class LockedPack(val order: Int, val id: String, val uuid: java.util.UUID)

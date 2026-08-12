@@ -51,7 +51,10 @@ class PackDefinitionsTest {
     fun `platform vanilla paths have same-owner exact claims`() {
         val contribution = ProductGraph.packs.last().contributions.single()
         val vanillaEntries =
-            contribution.entries.map { it.path.toString() }.filter { it.startsWith("assets/minecraft/") }.toSet()
+            contribution.entries
+                .map { it.path.toString() }
+                .filter { it.startsWith("assets/minecraft/") }
+                .toSet()
         val claims = contribution.vanillaClaims.map { it.path.toString() }.toSet()
 
         assertEquals(vanillaEntries, claims)
