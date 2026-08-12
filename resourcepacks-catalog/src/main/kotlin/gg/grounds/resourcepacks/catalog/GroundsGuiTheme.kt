@@ -8,7 +8,7 @@ object GroundsGuiTheme {
     val theme: Theme =
         theme(GroundsGuiIds.NAMESPACE, PackFormat(88)) {
             description = "Grounds platform UI"
-            panel(GroundsGuiIds.PANEL_MENU, "panels/menu.png", 176, 166, offsetY = -6)
+            panel(GroundsGuiIds.PANEL_MENU, "panels/menu.png", 176, 168, offsetY = -6)
             icon(GroundsGuiIds.ICON_CLOSE, "icons/close.png")
             icon(GroundsGuiIds.ICON_BACK, "icons/back.png")
             icon(GroundsGuiIds.ICON_NEXT, "icons/next.png")
