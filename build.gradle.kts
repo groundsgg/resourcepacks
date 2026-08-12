@@ -13,10 +13,29 @@ plugins {
 
 group = "gg.grounds"
 
-val semanticVersion = Regex("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$")
-val versionFromFile = layout.projectDirectory.file("version.txt").asFile.readText().trim()
-require(semanticVersion.matches(versionFromFile)) { "version.txt must contain an ASCII SemVer value" }
+val semanticVersion =
+    Regex(
+        "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+    )
+val versionFileContents = layout.projectDirectory.file("version.txt").asFile.readText()
+val versionFromFile = versionFileContents.removeSuffix("\n")
+require(semanticVersion.matches(versionFromFile) && versionFileContents == "$versionFromFile\n") {
+    "version.txt must contain an exact ASCII SemVer value"
+}
 version = versionFromFile
+
+tasks.register("verifyDependencyLocks") {
+    group = "verification"
+    description = "Verifies that every subproject has committed dependency lock state."
+    doLast {
+        subprojects.forEach { project ->
+            val lockFile = project.layout.projectDirectory.file("gradle.lockfile").asFile
+            check(lockFile.isFile && lockFile.readLines().any { it.isNotBlank() && !it.startsWith("#") }) {
+                "${project.path} is missing committed dependency lock state"
+            }
+        }
+    }
+}
 
 subprojects {
     apply(plugin = "gg.grounds.base-conventions")
@@ -53,4 +72,8 @@ subprojects {
     }
 
     dependencyLocking { lockAllConfigurations() }
+}
+
+subprojects {
+    tasks.named("check") { dependsOn(rootProject.tasks.named("verifyDependencyLocks")) }
 }

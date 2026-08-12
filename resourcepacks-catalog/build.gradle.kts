@@ -15,6 +15,47 @@ dependencies {
 
 java { withSourcesJar() }
 
+val forbiddenRuntimeCoordinateFragments =
+    listOf(
+        "paper",
+        "bukkit",
+        "minestom",
+        "velocity",
+        "config",
+        "portal",
+        "testkit",
+        "test-support",
+        "junit",
+        "kotest",
+        "resource-pack-builder",
+    )
+
+tasks.register("verifyCatalogRuntimeClasspath") {
+    group = "verification"
+    description =
+        "Rejects server, configuration, portal, test, and product dependencies from the catalog runtime graph."
+    doLast {
+        val forbiddenCoordinates =
+            configurations.runtimeClasspath
+                .get()
+                .incoming
+                .resolutionResult
+                .allComponents
+                .mapNotNull { it.moduleVersion }
+                .map { "${it.group}:${it.name}:${it.version}" }
+                .filter { coordinate ->
+                    val normalizedCoordinate = coordinate.lowercase()
+                    forbiddenRuntimeCoordinateFragments.any(normalizedCoordinate::contains)
+                }
+
+        check(forbiddenCoordinates.isEmpty()) {
+            "Catalog runtime classpath has forbidden components: ${forbiddenCoordinates.sorted().joinToString()}."
+        }
+    }
+}
+
+tasks.named("check") { dependsOn("verifyCatalogRuntimeClasspath") }
+
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {

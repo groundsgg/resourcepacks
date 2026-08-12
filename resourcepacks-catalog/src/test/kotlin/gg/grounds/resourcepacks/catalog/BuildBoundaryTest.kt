@@ -3,10 +3,10 @@ package gg.grounds.resourcepacks.catalog
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import org.gradle.testkit.runner.GradleRunner
 
 class BuildBoundaryTest {
@@ -41,29 +41,54 @@ class BuildBoundaryTest {
 
     @Test
     fun `the catalog runtime classpath excludes server config portal test and product builder libraries`() {
-        val output =
-            runGradle(":resourcepacks-catalog:dependencies", "--configuration", "runtimeClasspath")
+        runGradle(":resourcepacks-catalog:verifyCatalogRuntimeClasspath")
+    }
 
-        listOf(
-                "paper",
-                "bukkit",
-                "minestom",
-                "velocity",
-                "portal",
-                "junit",
-                "kotest",
-                "resource-pack-builder",
+    @Test
+    fun `the build requires committed dependency locks`() {
+        runGradle("verifyDependencyLocks")
+    }
+
+    @Test
+    fun `the catalog runtime verification rejects a testkit control mutation by resolved coordinate`() {
+        val buildFile = rootDirectory.resolve("resourcepacks-catalog/build.gradle.kts")
+        val originalBuild = buildFile.readText()
+
+        try {
+            buildFile.writeText(
+                originalBuild +
+                    "\n dependencies { runtimeOnly(\"gg.grounds:resource-pack-testkit:0.1.0\") }\n"
             )
-            .forEach { forbidden ->
-                assertFalse(
-                    output.contains(forbidden, ignoreCase = true),
-                    "catalog runtime graph contains $forbidden",
-                )
-            }
-        assertFalse(
-            Regex("gg\\.grounds:[^:\\n]*config", RegexOption.IGNORE_CASE).containsMatchIn(output),
-            "catalog runtime graph contains a Grounds config library",
-        )
+
+            val failure = runGradleAndFail(":resourcepacks-catalog:verifyCatalogRuntimeClasspath")
+
+            assertContains(failure, "gg.grounds:resource-pack-testkit:0.1.0")
+        } finally {
+            buildFile.writeText(originalBuild)
+        }
+    }
+
+    @Test
+    fun `version txt rejects prerelease numeric identifiers with leading zeroes`() {
+        assertInvalidVersion("1.0.0-01\n")
+    }
+
+    @Test
+    fun `version txt rejects leading whitespace instead of trimming it`() {
+        assertInvalidVersion(" 1.0.0\n")
+    }
+
+    private fun assertInvalidVersion(contents: String) {
+        val versionFile = rootDirectory.resolve("version.txt")
+        val originalVersion = versionFile.readText()
+
+        try {
+            versionFile.writeText(contents)
+            val failure = runGradleAndFail("help")
+            assertContains(failure, "version.txt must contain an exact ASCII SemVer value")
+        } finally {
+            versionFile.writeText(originalVersion)
+        }
     }
 
     private fun runGradle(vararg arguments: String): String =
@@ -77,5 +102,17 @@ class BuildBoundaryTest {
             )
             .forwardOutput()
             .build()
+            .output
+
+    private fun runGradleAndFail(vararg arguments: String): String =
+        GradleRunner.create()
+            .withProjectDir(rootDirectory.toFile())
+            .withArguments(
+                "--gradle-user-home",
+                Path.of(System.getProperty("user.home"), ".gradle").toString(),
+                "--stacktrace",
+                *arguments,
+            )
+            .buildAndFail()
             .output
 }
