@@ -73,12 +73,12 @@ class BuildBoundaryTest {
             runGradle(fixtureDirectory, ":resourcepacks-catalog:dependencies", "--write-locks")
 
             val failure =
-                runGradleAndFail(fixtureDirectory, ":resourcepacks-catalog:verifyCatalogRuntimeClasspath")
+                runGradleAndFail(
+                    fixtureDirectory,
+                    ":resourcepacks-catalog:verifyCatalogRuntimeClasspath",
+                )
 
-            assertContains(
-                failure,
-                "Forbidden catalog runtime components:",
-            )
+            assertContains(failure, "Forbidden catalog runtime components:")
             assertContains(failure, "gg.grounds:resource-pack-testkit:0.1.0")
         } finally {
             fixtureDirectory.toFile().deleteRecursively()
@@ -108,8 +108,7 @@ class BuildBoundaryTest {
         }
     }
 
-    private fun runGradle(vararg arguments: String): String =
-        runGradle(rootDirectory, *arguments)
+    private fun runGradle(vararg arguments: String): String = runGradle(rootDirectory, *arguments)
 
     private fun runGradle(projectDirectory: Path, vararg arguments: String): String =
         GradleRunner.create()
