@@ -5,6 +5,7 @@ import gg.grounds.resourcepack.builder.ZipPackWriter
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
@@ -69,6 +70,7 @@ internal object PackComposer {
             val built =
                 composed.map { (pack, composedPack) ->
                     val pending = child.resolve(".${pack.id}.pending.zip")
+                    hooks.afterComposeBeforeWrite(pack, pending)
                     val artifact = writer.write(composedPack, pending)
                     val digests = ArtifactDigests.from(artifact)
                     val finalFile = child.resolve("${digests.sha1}.zip")
@@ -78,6 +80,7 @@ internal object PackComposer {
                         throw IOException(
                             "Published artifact is not the pending artifact: $finalFile"
                         )
+                    hooks.afterPublicationBeforeVerify(pack, pending, finalFile)
                     val published = ArtifactDigests.readRegularFile(finalFile)
                     if (published != digests)
                         throw IOException(
@@ -95,12 +98,24 @@ internal object PackComposer {
             completed = true
             return built
         } finally {
-            if (!completed) deleteOwnedChild(child)
+            if (!completed) {
+                hooks.beforeFailureCleanup(child)
+                deleteOwnedChild(child)
+            }
         }
     }
 
     private fun deleteOwnedChild(child: Path) {
         try {
+            if (Files.isSymbolicLink(child)) {
+                Files.deleteIfExists(child)
+                return
+            }
+            val root = Files.readAttributes(child, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+            if (!root.isDirectory) {
+                Files.deleteIfExists(child)
+                return
+            }
             Files.walkFileTree(
                 child,
                 object : SimpleFileVisitor<Path>() {
@@ -132,7 +147,12 @@ internal object PackComposer {
 
 /** Test-only phase hook; production callers always receive the no-op default. */
 internal data class PackComposerHooks(
-    val beforePublication: (pending: Path, finalFile: Path) -> Unit = { _, _ -> }
+    val beforePublication: (pending: Path, finalFile: Path) -> Unit = { _, _ -> },
+    val afterComposeBeforeWrite: (pack: PhysicalPack, pending: Path) -> Unit = { _, _ -> },
+    val afterPublicationBeforeVerify: (pack: PhysicalPack, pending: Path, finalFile: Path) -> Unit =
+        { _, _, _ ->
+        },
+    val beforeFailureCleanup: (child: Path) -> Unit = {},
 )
 
 internal class ProductValidationException(val result: ProductValidationResult) :

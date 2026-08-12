@@ -53,7 +53,11 @@ class PackFailureCleanupTest {
                 PackComposer.build(
                     ProductGraph.packs,
                     root,
-                    PackComposerHooks { _, finalFile -> Files.createLink(finalFile, sentinel) },
+                    PackComposerHooks(
+                        beforePublication = { _, finalFile ->
+                            Files.createLink(finalFile, sentinel)
+                        }
+                    ),
                 )
             }
 
