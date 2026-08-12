@@ -6,10 +6,12 @@ import java.awt.image.BufferedImage
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.Comparator
 import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertTrue
 
 class ThemeAssetContractTest {
@@ -17,6 +19,7 @@ class ThemeAssetContractTest {
 
     @Test
     fun `theme art has the required dimensions alpha and native icon palette`() {
+        validatePlatformArt(platformArt)
         assertImage("panels/menu.png", 176, 168, hasOpaquePixel = true)
         assertImage("icons/close.png", 16, 16, hasOpaquePixel = true)
         assertImage("icons/back.png", 16, 16, hasOpaquePixel = true)
@@ -32,7 +35,10 @@ class ThemeAssetContractTest {
             assertTrue(palette.size in 2..3, "$icon palette: $palette")
             assertTrue(palette.all { it in NATIVE_ICON_PALETTE }, "$icon palette: $palette")
         }
-        assertTrue(readImage("icons/blank.png").pixels().all { it == 0 }, "blank icon must be fully transparent")
+        assertTrue(
+            readImage("icons/blank.png").pixels().all { it == 0 },
+            "blank icon must be fully transparent",
+        )
     }
 
     @Test
@@ -46,6 +52,45 @@ class ThemeAssetContractTest {
                     )
                 }
             }
+    }
+
+    @Test
+    fun `platform art rejects an unlisted regular file`() {
+        val copiedArt = copyPlatformArt()
+        try {
+            Files.writeString(copiedArt.resolve("unlisted.txt"), "not an asset")
+
+            assertFails { validatePlatformArt(copiedArt) }
+        } finally {
+            deleteTree(copiedArt)
+        }
+    }
+
+    @Test
+    fun `platform art rejects unexpected directories`() {
+        val copiedArt = copyPlatformArt()
+        try {
+            Files.createDirectories(copiedArt.resolve("unlisted/nested"))
+
+            assertFails { validatePlatformArt(copiedArt) }
+        } finally {
+            deleteTree(copiedArt)
+        }
+    }
+
+    @Test
+    fun `platform art rejects symbolic links without following them`() {
+        val copiedArt = copyPlatformArt()
+        try {
+            Files.createSymbolicLink(
+                copiedArt.resolve("linked.png"),
+                copiedArt.resolve("icons/blank.png"),
+            )
+
+            assertFails { validatePlatformArt(copiedArt) }
+        } finally {
+            deleteTree(copiedArt)
+        }
     }
 
     @Test
@@ -65,6 +110,7 @@ class ThemeAssetContractTest {
                 )
             }
         }
+        exampleArtRootOrNull()?.let(::assertNoUnlistedExampleCopy)
     }
 
     @Test
@@ -88,6 +134,82 @@ class ThemeAssetContractTest {
         requireNotNull(ImageIO.read(platformArt.resolve(path).toFile())) {
             "Unreadable image: $path"
         }
+
+    private fun validatePlatformArt(art: Path) {
+        val normalizedRoot = art.toAbsolutePath().normalize()
+        require(Files.isDirectory(normalizedRoot)) {
+            "Platform art root is not a directory: $normalizedRoot"
+        }
+        val actualFiles = linkedSetOf<String>()
+        val actualDirectories = linkedSetOf<String>()
+
+        Files.walk(normalizedRoot).use { paths ->
+            paths.forEach { path ->
+                if (path == normalizedRoot) return@forEach
+                val relative = safeRelativePath(normalizedRoot, path)
+                when {
+                    Files.isSymbolicLink(path) ->
+                        error("Platform art must not contain symbolic links: $relative")
+                    Files.isDirectory(path) -> actualDirectories += relative
+                    Files.isRegularFile(path) -> actualFiles += relative
+                    else -> error("Platform art contains a non-regular file: $relative")
+                }
+            }
+        }
+
+        require(EXPECTED_PLATFORM_DIRECTORIES == actualDirectories) {
+            "Unexpected platform art directories: expected $EXPECTED_PLATFORM_DIRECTORIES, got $actualDirectories"
+        }
+        require(EXPECTED_PLATFORM_FILES == actualFiles) {
+            "Unexpected platform art files: expected $EXPECTED_PLATFORM_FILES, got $actualFiles"
+        }
+    }
+
+    private fun safeRelativePath(root: Path, path: Path): String {
+        val relative = root.relativize(path.toAbsolutePath().normalize()).normalize()
+        require(!relative.isAbsolute && !relative.startsWith("..")) {
+            "Unsafe platform art path: $path"
+        }
+        return relative.joinToString("/") { it.toString() }
+    }
+
+    private fun assertNoUnlistedExampleCopy(exampleArt: Path) {
+        val exampleHashes =
+            Files.walk(exampleArt).use { paths ->
+                paths.filter(Files::isRegularFile).toList().associateBy(::sha256)
+            }
+        actualPlatformFiles().forEach { destination ->
+            val approved = APPROVED_ORIGINS[destination]
+            val matchingExample = exampleHashes[sha256(platformArt.resolve(destination))]
+            require(
+                matchingExample == null ||
+                    approved?.sha256 == sha256(platformArt.resolve(destination))
+            ) {
+                "Unlisted library-gui Example asset copied to $destination from $matchingExample"
+            }
+        }
+    }
+
+    private fun actualPlatformFiles(): Set<String> {
+        validatePlatformArt(platformArt)
+        return EXPECTED_PLATFORM_FILES - "ASSET_ORIGINS.json"
+    }
+
+    private fun copyPlatformArt(): Path {
+        val copy = Files.createTempDirectory("grounds-platform-art-")
+        Files.walk(platformArt).use { paths ->
+            paths.forEach { source ->
+                val destination = copy.resolve(platformArt.relativize(source).toString())
+                if (Files.isDirectory(source)) Files.createDirectories(destination)
+                else Files.copy(source, destination)
+            }
+        }
+        return copy
+    }
+
+    private fun deleteTree(path: Path) {
+        Files.walk(path).sorted(Comparator.reverseOrder()).forEach(Files::delete)
+    }
 
     private fun BufferedImage.pixels(): Sequence<Int> = sequence {
         for (y in 0 until height) for (x in 0 until width) yield(getRGB(x, y))
@@ -122,6 +244,8 @@ class ThemeAssetContractTest {
                 "tooltips/default_frame.png",
                 "frames/hover.png",
             )
+        val EXPECTED_PLATFORM_FILES = ART_FILES.toSet() + "ASSET_ORIGINS.json"
+        val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames")
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
