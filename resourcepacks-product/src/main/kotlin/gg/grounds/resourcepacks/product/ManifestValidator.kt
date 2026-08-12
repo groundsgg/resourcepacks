@@ -286,7 +286,7 @@ internal object PackSetManifestJson {
         validateSemantics(m, p)
         artifact(
             a.catalog,
-            m.catalog.file,
+            setOf(m.catalog.file),
             m.catalog.size,
             null,
             m.catalog.sha256,
@@ -300,7 +300,7 @@ internal object PackSetManifestJson {
                 ?.let { role ->
                     artifact(
                         a.packs[role],
-                        "${pack.sha1}.zip",
+                        setOf("${pack.id}-${pack.sha1}.zip", "${pack.sha1}.zip"),
                         pack.size,
                         pack.sha1,
                         pack.sha256,
@@ -378,7 +378,7 @@ internal object PackSetManifestJson {
 
     private fun artifact(
         path: java.nio.file.Path?,
-        file: String,
+        files: Set<String>,
         size: Long,
         sha1: String?,
         sha256: String,
@@ -390,7 +390,7 @@ internal object PackSetManifestJson {
             p += ManifestProblem(pointer, ManifestProblemCode.ARTIFACT_MISSING, "Artifact missing.")
             return
         }
-        if (path.fileName.toString() != file)
+        if (path.fileName.toString() !in files)
             p +=
                 ManifestProblem(
                     "$pointer/file",
