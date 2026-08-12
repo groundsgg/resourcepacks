@@ -2,6 +2,7 @@ package gg.grounds.resourcepacks.product
 
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -25,6 +26,165 @@ class ManifestMutationTest {
                     assertFalse(result.isValid)
                     assertTrue(result.problems.isNotEmpty())
                 }
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `duplicate and unknown keys retain RFC6901 contextual pointers`() {
+        val directory = Files.createTempDirectory("manifest-pointer-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val duplicate =
+                PackSetManifestJson.decodeAndValidate(
+                    "{\"minecraft\":{\"x\":1,\"x\":2}}".toByteArray(),
+                    artifacts,
+                )
+            assertTrue(
+                duplicate.problems.single().pointer == "/minecraft",
+                duplicate.problems.toString(),
+            )
+            assertTrue(duplicate.problems.single().code == ManifestProblemCode.DUPLICATE_KEY)
+            val unknown =
+                PackSetManifestJson.decodeAndValidate(
+                    "{\"a/b\":1,\"a~b\":2}".toByteArray(),
+                    artifacts,
+                )
+            assertTrue(
+                unknown.problems.any {
+                    it.pointer == "/a~1b" && it.code == ManifestProblemCode.UNKNOWN_FIELD
+                }
+            )
+            assertTrue(
+                unknown.problems.any {
+                    it.pointer == "/a~0b" && it.code == ManifestProblemCode.UNKNOWN_FIELD
+                }
+            )
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `strict parser matrix has stable diagnostic codes pointers and messages`() {
+        val directory = Files.createTempDirectory("manifest-parser-matrix-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val cases =
+                listOf(
+                    Triple(
+                        "{\"schemaVersion\":1,\"schemaVersion\":2}",
+                        "/",
+                        ManifestProblemCode.DUPLICATE_KEY,
+                    ),
+                    Triple(
+                        "{\"minecraft\":{\"a/b\":1}}",
+                        "/minecraft/a~1b",
+                        ManifestProblemCode.UNKNOWN_FIELD,
+                    ),
+                    Triple(
+                        "{\"catalog\":{\"a~b\":1}}",
+                        "/catalog/a~0b",
+                        ManifestProblemCode.UNKNOWN_FIELD,
+                    ),
+                    Triple("[]", "", ManifestProblemCode.WRONG_TYPE),
+                    Triple("{\"packs\":null}", "/packs", ManifestProblemCode.WRONG_TYPE),
+                    Triple(
+                        "{\"schemaVersion\":1} trailing",
+                        "/",
+                        ManifestProblemCode.MALFORMED_JSON,
+                    ),
+                )
+            cases.forEach { (input, pointer, code) ->
+                val result = PackSetManifestJson.decodeAndValidate(input.toByteArray(), artifacts)
+                assertTrue(
+                    result.problems.any { it.pointer == pointer && it.code == code },
+                    result.problems.toString(),
+                )
+            }
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `semantic matrix covers SemVer sizes hashes URLs and duplicate identities`() {
+        val directory = Files.createTempDirectory("manifest-semantic-matrix-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val valid = matchingManifest(artifacts)
+            val versions =
+                listOf(
+                    "1.2.3-alpha.1+build.7" to true,
+                    "1.2.3-01" to false,
+                    "1.2.3-alpha.01" to false,
+                    "01.2.3" to false,
+                )
+            versions.forEach { (version, accepted) ->
+                val result =
+                    PackSetManifestJson.decodeAndValidate(
+                        PackSetManifestJson.encode(
+                            valid.copy(
+                                version = version,
+                                catalog =
+                                    valid.catalog.copy(
+                                        version = version,
+                                        coordinate = "gg.grounds:resourcepacks-catalog:$version",
+                                        file = "grounds-resourcepacks-catalog-$version.jar",
+                                    ),
+                                provenance = valid.provenance.copy(tag = "v$version"),
+                            )
+                        ),
+                        artifacts,
+                    )
+                assertEquals(
+                    accepted,
+                    result.problems.none { it.pointer == "/version" },
+                    result.problems.toString(),
+                )
+            }
+            val broken =
+                valid.copy(
+                    packs =
+                        valid.packs.map {
+                            it.copy(
+                                url = "http://user@cdn.grounds.gg:443/bad?x#f",
+                                sha1 = "A",
+                                sha256 = "z",
+                                size = -1,
+                            )
+                        }
+                )
+            val problems =
+                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(broken), artifacts)
+                    .problems
+            valid.packs.indices.forEach { index ->
+                assertTrue(
+                    problems.any {
+                        it.pointer == "/packs/$index/url" &&
+                            it.code == ManifestProblemCode.INVALID_VALUE
+                    }
+                )
+                assertTrue(
+                    problems.any {
+                        it.pointer == "/packs/$index/sha1" &&
+                            it.code == ManifestProblemCode.INVALID_VALUE
+                    }
+                )
+                assertTrue(
+                    problems.any {
+                        it.pointer == "/packs/$index/sha256" &&
+                            it.code == ManifestProblemCode.INVALID_VALUE
+                    }
+                )
+                assertTrue(
+                    problems.any {
+                        it.pointer == "/packs/$index/size" &&
+                            it.code == ManifestProblemCode.INVALID_VALUE
+                    }
+                )
+            }
         } finally {
             directory.toFile().deleteRecursively()
         }
@@ -177,22 +337,23 @@ class ManifestMutationTest {
             val valid = matchingManifest(artifacts)
             val replacement = directory.resolve("replacement.jar")
             Files.write(replacement, ByteArray(70_000) { 8 })
-            ManifestValidationHooks.afterFirstArtifactChunk = {
-                Files.move(
-                    replacement,
-                    artifacts.catalog,
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                )
-            }
             val result =
-                PackSetManifestJson.decodeAndValidate(PackSetManifestJson.encode(valid), artifacts)
+                PackSetManifestJson.decodeAndValidate(
+                    PackSetManifestJson.encode(valid),
+                    artifacts,
+                ) {
+                    Files.move(
+                        replacement,
+                        artifacts.catalog,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                }
             assertTrue(
                 result.problems.any {
                     it.pointer == "/catalog" && it.code == ManifestProblemCode.ARTIFACT_CHANGED
                 }
             )
         } finally {
-            ManifestValidationHooks.afterFirstArtifactChunk = {}
             directory.toFile().deleteRecursively()
         }
     }

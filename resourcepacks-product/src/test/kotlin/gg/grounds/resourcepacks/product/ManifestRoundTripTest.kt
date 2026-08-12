@@ -34,6 +34,24 @@ class ManifestRoundTripTest {
     }
 
     @Test
+    fun `artifact and result collections are defensive snapshots`() {
+        val paths = mutableMapOf(PackRole.CONTENT to java.nio.file.Path.of("content.zip"))
+        val artifacts = ManifestArtifacts(java.nio.file.Path.of("catalog.jar"), paths)
+        paths.clear()
+        assertEquals(1, artifacts.packs.size)
+        assertFailsWith<UnsupportedOperationException> {
+            (artifacts.packs as MutableMap<PackRole, java.nio.file.Path>).clear()
+        }
+        val source = mutableListOf(ManifestProblem("/x", ManifestProblemCode.INVALID_VALUE, "x"))
+        val result = ManifestValidationResult(null, source)
+        source.clear()
+        assertEquals(1, result.problems.size)
+        assertFailsWith<UnsupportedOperationException> {
+            (result.problems as MutableList<ManifestProblem>).clear()
+        }
+    }
+
+    @Test
     fun `rejects semantically valid noncanonical bytes and malformed UTF-8`() {
         val directory = Files.createTempDirectory("manifest-canonical-input-")
         try {

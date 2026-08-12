@@ -22,6 +22,13 @@ internal object PackSetManifestJson {
     fun decodeAndValidate(
         bytes: ByteArray,
         artifacts: ManifestArtifacts,
+    ): ManifestValidationResult = decodeAndValidate(bytes, artifacts, {})
+
+    @JvmSynthetic
+    internal fun decodeAndValidate(
+        bytes: ByteArray,
+        artifacts: ManifestArtifacts,
+        hook: () -> Unit,
     ): ManifestValidationResult {
         if (bytes.size > MAX_DOCUMENT)
             return invalid(
@@ -32,6 +39,12 @@ internal object PackSetManifestJson {
         val text =
             try {
                 strictUtf8(bytes)
+            } catch (failure: DuplicateJsonKey) {
+                return invalid(
+                    failure.pointer.ifEmpty { "/" },
+                    ManifestProblemCode.DUPLICATE_KEY,
+                    "Duplicate key.",
+                )
             } catch (failure: Throwable) {
                 return invalid(
                     "",
@@ -42,6 +55,12 @@ internal object PackSetManifestJson {
         val parsed =
             try {
                 parse(text)
+            } catch (failure: DuplicateJsonKey) {
+                return invalid(
+                    failure.pointer.ifEmpty { "/" },
+                    ManifestProblemCode.DUPLICATE_KEY,
+                    "Duplicate key.",
+                )
             } catch (failure: Throwable) {
                 return invalid(
                     "/",
@@ -54,7 +73,7 @@ internal object PackSetManifestJson {
         val problems = mutableListOf<ManifestProblem>()
         val manifest = decode(parsed, problems)
         if (manifest != null) {
-            validate(manifest, artifacts, problems)
+            validate(manifest, artifacts, problems, hook)
             if (problems.isEmpty() && !bytes.contentEquals(encode(manifest))) {
                 problems +=
                     ManifestProblem(
@@ -124,12 +143,12 @@ internal object PackSetManifestJson {
     private fun parse(text: String): J =
         FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { parser ->
             val first = parser.nextToken() ?: error("Expected a JSON value.")
-            val result = read(parser, first, 0)
+            val result = read(parser, first, 0, "")
             require(parser.nextToken() == null) { "Trailing JSON input." }
             result
         }
 
-    private fun read(parser: JsonParser, token: JsonToken, depth: Int): J {
+    private fun read(parser: JsonParser, token: JsonToken, depth: Int, pointer: String): J {
         require(depth <= MAX_DEPTH) { "Maximum nesting depth exceeded." }
         return when (token) {
             JsonToken.START_OBJECT -> {
@@ -142,21 +161,21 @@ internal object PackSetManifestJson {
                     require(name.length <= MAX_STRING && !hasUnpairedSurrogate(name)) {
                         "Invalid property name."
                     }
-                    require(
-                        fields.put(
-                            name,
-                            read(parser, parser.nextToken() ?: error("Missing value."), depth + 1),
-                        ) == null
-                    ) {
-                        "Duplicate key: $name"
-                    }
+                    if (fields.containsKey(name)) throw DuplicateJsonKey(pointer)
+                    fields[name] =
+                        read(
+                            parser,
+                            parser.nextToken() ?: error("Missing value."),
+                            depth + 1,
+                            "$pointer/${escape(name)}",
+                        )
                 }
                 J.Obj(fields)
             }
             JsonToken.START_ARRAY -> {
                 val values = mutableListOf<J>()
                 while (parser.nextToken() != JsonToken.END_ARRAY) values +=
-                    read(parser, parser.currentToken(), depth + 1)
+                    read(parser, parser.currentToken(), depth + 1, "$pointer/${values.size}")
                 J.Arr(values)
             }
             JsonToken.VALUE_STRING -> J.Str(parser.stringChecked())
@@ -167,6 +186,10 @@ internal object PackSetManifestJson {
             else -> error("Unsupported JSON token: $token")
         }
     }
+
+    private data class DuplicateJsonKey(val pointer: String) : RuntimeException()
+
+    private fun escape(value: String): String = value.replace("~", "~0").replace("/", "~1")
 
     private fun JsonParser.stringChecked(): String =
         getString().also {
@@ -237,6 +260,7 @@ internal object PackSetManifestJson {
         m: PackSetManifest,
         a: ManifestArtifacts,
         p: MutableList<ManifestProblem>,
+        hook: () -> Unit,
     ) {
         fun bad(pointer: String, message: String) {
             p += ManifestProblem(pointer, ManifestProblemCode.INVALID_VALUE, message)
@@ -292,8 +316,8 @@ internal object PackSetManifestJson {
             bad("/provenance/commit", "Commit must be lowercase 40-hex.")
         if (m.provenance.tag != "v${m.version}")
             bad("/provenance/tag", "Tag must equal v<version>.")
-        artifact(a.catalog, c.file, c.size, null, c.sha256, "/catalog", p)
-        m.packs.forEach { pack ->
+        artifact(a.catalog, c.file, c.size, null, c.sha256, "/catalog", p, hook)
+        m.packs.forEachIndexed { index, pack ->
             PackRole.entries
                 .find { it.name.equals(pack.role, true) }
                 ?.let { role ->
@@ -303,8 +327,9 @@ internal object PackSetManifestJson {
                         pack.size,
                         pack.sha1,
                         pack.sha256,
-                        "/packs/${pack.order}",
+                        "/packs/$index",
                         p,
+                        hook,
                     )
                 }
         }
@@ -318,6 +343,7 @@ internal object PackSetManifestJson {
         sha256: String,
         pointer: String,
         p: MutableList<ManifestProblem>,
+        hook: () -> Unit,
     ) {
         if (path == null || !Files.exists(path, NOFOLLOW_LINKS)) {
             p += ManifestProblem(pointer, ManifestProblemCode.ARTIFACT_MISSING, "Artifact missing.")
@@ -332,10 +358,7 @@ internal object PackSetManifestJson {
                 )
         val digest =
             try {
-                ArtifactDigests.readRegularFile(
-                    path,
-                    ManifestValidationHooks.afterFirstArtifactChunk,
-                )
+                ArtifactDigests.readRegularFile(path, hook)
             } catch (e: Exception) {
                 p +=
                     ManifestProblem(
@@ -439,7 +462,7 @@ internal object PackSetManifestJson {
             x.fields.keys.filterNot(allowed::contains).forEach {
                 p +=
                     ManifestProblem(
-                        "$pointer/$it",
+                        "$pointer/${escape(it)}",
                         ManifestProblemCode.UNKNOWN_FIELD,
                         "Unknown field.",
                     )
@@ -533,7 +556,7 @@ internal object PackSetManifestJson {
 
     private val FACTORY =
         JsonFactory.builder()
-            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .disable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(
                 StreamReadConstraints.builder()
                     .maxNestingDepth(MAX_DEPTH)
@@ -585,9 +608,4 @@ internal object PackSetManifestJson {
     private const val MAX_NUMBER = 128
     private const val MAX_DOCUMENT = 1_048_576
     private const val MAX_VERSION = 256
-}
-
-/** Internal test seam; production leaves this no-op and exceptions are contained by digesting. */
-internal object ManifestValidationHooks {
-    @get:JvmSynthetic @set:JvmSynthetic var afterFirstArtifactChunk: () -> Unit = {}
 }
