@@ -208,7 +208,9 @@ class ThemeAssetContractTest {
     }
 
     private fun deleteTree(path: Path) {
-        Files.walk(path).sorted(Comparator.reverseOrder()).forEach(Files::delete)
+        Files.walk(path).use { paths ->
+            paths.sorted(Comparator.reverseOrder()).forEach(Files::delete)
+        }
     }
 
     private fun BufferedImage.pixels(): Sequence<Int> = sequence {
