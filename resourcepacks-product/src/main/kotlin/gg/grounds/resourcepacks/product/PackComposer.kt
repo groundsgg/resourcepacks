@@ -5,6 +5,7 @@ import gg.grounds.resourcepack.builder.ZipPackWriter
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
@@ -64,8 +65,21 @@ internal object PackComposer {
                     val artifact = writer.write(composedPack, pending)
                     val digests = ArtifactDigests.from(artifact)
                     val finalFile = child.resolve("${digests.sha1}.zip")
+                    if (Files.exists(finalFile, NOFOLLOW_LINKS))
+                        throw IOException("Refusing to overwrite an existing artifact: $finalFile")
                     Files.move(pending, finalFile, ATOMIC_MOVE)
-                    BuiltPhysicalPack(pack, finalFile, digests.sha1, digests.sha256, digests.size)
+                    val published = ArtifactDigests.readRegularFile(finalFile)
+                    if (published != digests)
+                        throw IOException(
+                            "Published artifact digest differs from writer result: $finalFile"
+                        )
+                    BuiltPhysicalPack(
+                        pack,
+                        finalFile,
+                        published.sha1,
+                        published.sha256,
+                        published.size,
+                    )
                 }
             completed = true
             return built

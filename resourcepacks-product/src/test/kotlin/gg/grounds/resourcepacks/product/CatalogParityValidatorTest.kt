@@ -36,6 +36,17 @@ class CatalogParityValidatorTest {
     }
 
     @Test
+    fun `legitimate non asset content paths are outside catalog parity projection`() {
+        val result =
+            CatalogParityValidator.validate(
+                GroundsAssetCatalog.catalog,
+                setOf(PackPath.of("assets/grounds/lang/en_us.json")),
+            )
+
+        assertTrue(result.isValid)
+    }
+
+    @Test
     fun `future fixture detects missing extra and wrong kind content mappings`() {
         val catalog =
             AssetCatalog(

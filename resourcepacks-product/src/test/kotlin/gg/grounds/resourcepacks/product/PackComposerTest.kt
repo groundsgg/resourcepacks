@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.product
 
 import java.nio.file.Files
+import java.time.LocalDateTime
 import java.util.zip.ZipFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -26,7 +27,10 @@ class PackComposerTest {
                     .sorted(),
                 platformEntries.map { it.name },
             )
-            assertEquals(1, (contentEntries + platformEntries).map { it.time }.distinct().size)
+            assertEquals(
+                setOf(LocalDateTime.of(1980, 1, 1, 0, 0)),
+                (contentEntries + platformEntries).map { it.timeLocal }.toSet(),
+            )
             assertTrue(built.all { it.file.fileName.toString() == "${it.sha1}.zip" })
             assertTrue(built.all { it.sha1.matches(Regex("[0-9a-f]{40}")) })
             assertTrue(built.all { it.sha256.matches(Regex("[0-9a-f]{64}")) })
