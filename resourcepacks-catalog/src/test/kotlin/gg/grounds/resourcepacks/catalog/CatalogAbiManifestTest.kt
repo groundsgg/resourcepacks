@@ -1,6 +1,8 @@
 package gg.grounds.resourcepacks.catalog
 
+import java.lang.classfile.Attributes
 import java.lang.classfile.ClassFile
+import java.lang.classfile.ClassModel
 import java.lang.constant.MethodTypeDesc
 import java.lang.reflect.AccessFlag
 import java.nio.file.Path
@@ -35,6 +37,28 @@ class CatalogAbiManifestTest {
         }
     }
 
+    @Test
+    fun `public inner under package private outer is not ABI`() {
+        val mutated =
+            copyWithExtraClass(
+                "injected.HiddenOuter",
+                "class HiddenOuter { public static final class Inner {} }",
+            )
+        assertEquals(expectedManifest(), effectivePublicAbi(mutated))
+    }
+
+    @Test
+    fun `public inner under public outer is ABI`() {
+        val mutated =
+            copyWithExtraClass(
+                "injected.PublicOuter",
+                "public class PublicOuter { public static final class Inner {} }",
+            )
+        assertFailsWith<AssertionError> {
+            assertEquals(expectedManifest(), effectivePublicAbi(mutated))
+        }
+    }
+
     private fun expectedManifest() =
         requireNotNull(javaClass.classLoader.getResource("catalog-public-api.txt"))
             .readText()
@@ -46,16 +70,23 @@ class CatalogAbiManifestTest {
 
     private fun effectivePublicAbi(jar: Path): Set<String> =
         JarFile(jar.toFile()).use { archive ->
-            archive
-                .entries()
+            val models =
+                archive
+                    .entries()
+                    .asSequence()
+                    .filter { it.name.endsWith(".class") }
+                    .associate { entry ->
+                        val model = ClassFile.of().parse(archive.getInputStream(entry).readBytes())
+                        model.thisClass().asInternalName() to model
+                    }
+            models.values
                 .asSequence()
-                .filter { it.name.endsWith(".class") }
-                .flatMap { entry ->
-                    val model = ClassFile.of().parse(archive.getInputStream(entry).readBytes())
+                .flatMap { model ->
                     val owner = model.thisClass().asInternalName().replace('/', '.')
                     if (
                         !model.flags().has(AccessFlag.PUBLIC) &&
-                            !model.flags().has(AccessFlag.PROTECTED)
+                            !model.flags().has(AccessFlag.PROTECTED) ||
+                            !isEffectivelyAccessible(model, models)
                     )
                         emptySequence()
                     else
@@ -103,6 +134,30 @@ class CatalogAbiManifestTest {
                 .toSet()
         }
 
+    private fun isEffectivelyAccessible(
+        model: ClassModel,
+        models: Map<String, ClassModel>,
+    ): Boolean {
+        if (!model.flags().has(AccessFlag.PUBLIC) && !model.flags().has(AccessFlag.PROTECTED))
+            return false
+        val name = model.thisClass().asInternalName()
+        val relation =
+            model.findAttribute(Attributes.innerClasses()).orElse(null)?.classes()?.firstOrNull {
+                it.innerClass().asInternalName() == name
+            }
+        val enclosing = model.findAttribute(Attributes.enclosingMethod())
+        if (relation == null && enclosing.isPresent) error("Malformed enclosing relation for $name")
+        if (relation == null && '$' in name) error("Missing InnerClasses relation for $name")
+        if (relation == null) return true
+        if (!relation.has(AccessFlag.PUBLIC) && !relation.has(AccessFlag.PROTECTED)) return false
+        val outer =
+            relation
+                .outerClass()
+                .orElseThrow { error("Missing outer relation for $name") }
+                .asInternalName()
+        return isEffectivelyAccessible(models[outer] ?: error("Missing outer $outer"), models)
+    }
+
     private fun descriptorType(descriptor: String): String =
         if (descriptor.startsWith('L'))
             descriptor.removePrefix("L").removeSuffix(";").replace('/', '.')
@@ -147,10 +202,14 @@ class CatalogAbiManifestTest {
                         output.closeEntry()
                     }
             }
-            val classFile = root.resolve(name.replace('.', '/') + ".class")
-            output.putNextEntry(java.util.zip.ZipEntry(replacement))
-            java.nio.file.Files.newInputStream(classFile).copyTo(output)
-            output.closeEntry()
+            java.nio.file.Files.walk(root)
+                .filter { it.toString().endsWith(".class") }
+                .forEach { classFile ->
+                    val entryName = root.relativize(classFile).toString().replace('\\', '/')
+                    output.putNextEntry(java.util.zip.ZipEntry(entryName))
+                    java.nio.file.Files.newInputStream(classFile).copyTo(output)
+                    output.closeEntry()
+                }
         }
         return target
     }
