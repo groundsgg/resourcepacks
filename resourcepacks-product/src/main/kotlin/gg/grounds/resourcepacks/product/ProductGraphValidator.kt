@@ -42,6 +42,9 @@ internal enum class ProductProblemCode {
     CROSS_PACK_PATH,
     CONTENT_VANILLA_PATH,
     CONTENT_VANILLA_CLAIM,
+    CATALOG_MISSING_CONTENT,
+    CATALOG_EXTRA_CONTENT,
+    CATALOG_WRONG_KIND,
 }
 
 internal class ProductValidationResult(problems: Collection<ProductProblem>) {
