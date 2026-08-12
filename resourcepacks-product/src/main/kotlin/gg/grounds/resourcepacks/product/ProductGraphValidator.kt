@@ -83,7 +83,7 @@ internal object ProductGraphValidator {
             }
             val entries = pack.contributions.flatMap { it.entries }
             val limits = pack.definition.policy.limits
-            val enforcementLimits = limits.takeIf(::isCompleteLimits) ?: expectedLimits(pack.role)
+            val enforcementLimits = expectedLimits(pack.role)
             if (entries.size > requireNotNull(enforcementLimits.maxEntries)) {
                 problems += ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack = pack.id)
             }
@@ -154,11 +154,6 @@ internal object ProductGraphValidator {
             PackRole.CONTENT -> PackSetConstants.contentLimits
             PackRole.PLATFORM -> PackSetConstants.platformLimits
         }
-
-    private fun isCompleteLimits(limits: gg.grounds.resourcepack.api.PackLimits): Boolean =
-        limits.maxEntries != null &&
-            limits.maxUncompressedBytes != null &&
-            limits.maxArtifactBytes != null
 
     private fun sourceSize(pack: PhysicalPack, problems: MutableList<ProductProblem>): TotalSize {
         var total = 0L

@@ -232,12 +232,63 @@ class ProductGraphValidatorTest {
 
     @Test
     fun `validator accumulates malformed limits and source size failures without throwing`() {
-        val missing = Files.createTempDirectory("product-validator-missing").resolve("missing.bin")
+        val root = Files.createTempDirectory("product-validator-missing")
+        try {
+            val missing = root.resolve("missing.bin")
+            val contribution =
+                PackContribution(
+                    ContributionId.of("grounds:missing"),
+                    PackFormatRange(88, 88),
+                    listOf(PackEntry.file("assets/grounds/missing.bin", missing)),
+                    emptySet(),
+                    emptySet(),
+                    emptySet(),
+                )
+            val content =
+                ProductGraph.packs
+                    .first()
+                    .copy(
+                        definition =
+                            ProductGraph.packs
+                                .first()
+                                .definition
+                                .copy(
+                                    policy =
+                                        ProductGraph.packs
+                                            .first()
+                                            .definition
+                                            .policy
+                                            .copy(limits = PackLimits(null, null, null))
+                                ),
+                        contributions = listOf(contribution),
+                    )
+
+            assertEquals(
+                listOf(
+                    ProductProblem(ProductProblemCode.INVALID_LIMITS, "grounds-content"),
+                    ProductProblem(
+                        ProductProblemCode.SOURCE_SIZE_FAILURE,
+                        "grounds-content",
+                        "assets/grounds/missing.bin",
+                        contributionIds = listOf("grounds:missing"),
+                    ),
+                ),
+                ProductGraphValidator.validate(listOf(content, ProductGraph.packs.last())).problems,
+            )
+        } finally {
+            Files.walk(root).use { paths ->
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(Files::delete)
+            }
+        }
+    }
+
+    @Test
+    fun `validator enforces locked content entry limit despite permissive configured limits`() {
         val contribution =
             PackContribution(
-                ContributionId.of("grounds:missing"),
+                ContributionId.of("grounds:too-many"),
                 PackFormatRange(88, 88),
-                listOf(PackEntry.file("assets/grounds/missing.bin", missing)),
+                List(50_001) { index -> PackEntry.text("assets/grounds/$index.txt", "") },
                 emptySet(),
                 emptySet(),
                 emptySet(),
@@ -256,7 +307,14 @@ class ProductGraphValidatorTest {
                                         .first()
                                         .definition
                                         .policy
-                                        .copy(limits = PackLimits(null, null, null))
+                                        .copy(
+                                            limits =
+                                                PackLimits(
+                                                    Int.MAX_VALUE,
+                                                    Long.MAX_VALUE,
+                                                    Long.MAX_VALUE,
+                                                )
+                                        )
                             ),
                     contributions = listOf(contribution),
                 )
@@ -264,12 +322,7 @@ class ProductGraphValidatorTest {
         assertEquals(
             listOf(
                 ProductProblem(ProductProblemCode.INVALID_LIMITS, "grounds-content"),
-                ProductProblem(
-                    ProductProblemCode.SOURCE_SIZE_FAILURE,
-                    "grounds-content",
-                    "assets/grounds/missing.bin",
-                    contributionIds = listOf("grounds:missing"),
-                ),
+                ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, "grounds-content"),
             ),
             ProductGraphValidator.validate(listOf(content, ProductGraph.packs.last())).problems,
         )
