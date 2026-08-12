@@ -39,13 +39,13 @@ class ProductLimitsTest {
                 ProductGraph.packs.last() to Triple(4_096, 64L * 1024 * 1024, "platform"),
             )
             .forEach { (pack, bounds) ->
-                val atBoundary =
-                    pack.copy(contributions = listOf(contribution(bounds.first, bounds.second)))
-
-                assertTrue(
-                    ProductGraphValidator.validate(listOf(atBoundary, otherPack(pack))).isValid,
-                    bounds.third,
-                )
+                withContribution(bounds.first, bounds.second) { contribution ->
+                    val atBoundary = pack.copy(contributions = listOf(contribution))
+                    assertTrue(
+                        ProductGraphValidator.validate(listOf(atBoundary, otherPack(pack))).isValid,
+                        bounds.third,
+                    )
+                }
             }
     }
 
@@ -56,47 +56,60 @@ class ProductLimitsTest {
                 ProductGraph.packs.last() to Triple(4_096, 64L * 1024 * 1024, "platform"),
             )
             .forEach { (pack, bounds) ->
-                val entriesOver =
-                    pack.copy(contributions = listOf(contribution(bounds.first + 1, 0)))
-                val bytesOver =
-                    pack.copy(contributions = listOf(contribution(1, bounds.second + 1)))
-
-                assertEquals(
-                    listOf(ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack.id)),
-                    ProductGraphValidator.validate(listOf(entriesOver, otherPack(pack))).problems,
-                    "${bounds.third} entries",
-                )
-                assertEquals(
-                    listOf(
-                        ProductProblem(ProductProblemCode.UNCOMPRESSED_SIZE_LIMIT_EXCEEDED, pack.id)
-                    ),
-                    ProductGraphValidator.validate(listOf(bytesOver, otherPack(pack))).problems,
-                    "${bounds.third} bytes",
-                )
+                withContribution(bounds.first + 1, 0) { contribution ->
+                    val entriesOver = pack.copy(contributions = listOf(contribution))
+                    assertEquals(
+                        listOf(ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack.id)),
+                        ProductGraphValidator.validate(listOf(entriesOver, otherPack(pack)))
+                            .problems,
+                        "${bounds.third} entries",
+                    )
+                }
+                withContribution(1, bounds.second + 1) { contribution ->
+                    val bytesOver = pack.copy(contributions = listOf(contribution))
+                    assertEquals(
+                        listOf(
+                            ProductProblem(
+                                ProductProblemCode.UNCOMPRESSED_SIZE_LIMIT_EXCEEDED,
+                                pack.id,
+                            )
+                        ),
+                        ProductGraphValidator.validate(listOf(bytesOver, otherPack(pack))).problems,
+                        "${bounds.third} bytes",
+                    )
+                }
             }
     }
 
     private fun otherPack(pack: PhysicalPack): PhysicalPack =
         if (pack.role == PackRole.CONTENT) ProductGraph.packs.last() else ProductGraph.packs.first()
 
-    private fun contribution(entryCount: Int, bytes: Long): PackContribution {
-        val fixture = Files.createTempFile("resourcepack-limit", ".bin")
-        val emptyFixture = Files.createTempFile("resourcepack-limit-empty", ".bin")
-        fixture.toFile().deleteOnExit()
-        emptyFixture.toFile().deleteOnExit()
-        java.io.RandomAccessFile(fixture.toFile(), "rw").use { it.setLength(bytes) }
-        return PackContribution(
-            ContributionId.of("grounds:limit-fixture"),
-            PackFormatRange(88, 88),
-            List(entryCount) { index ->
-                PackEntry.file(
-                    "assets/grounds/limit-$index.bin",
-                    if (index == 0) fixture else emptyFixture,
+    private fun withContribution(entryCount: Int, bytes: Long, block: (PackContribution) -> Unit) {
+        val root = Files.createTempDirectory("resourcepack-limit")
+        try {
+            val fixture = root.resolve("sized.bin")
+            val emptyFixture = root.resolve("empty.bin")
+            java.io.RandomAccessFile(fixture.toFile(), "rw").use { it.setLength(bytes) }
+            Files.createFile(emptyFixture)
+            block(
+                PackContribution(
+                    ContributionId.of("grounds:limit-fixture"),
+                    PackFormatRange(88, 88),
+                    List(entryCount) { index ->
+                        PackEntry.file(
+                            "assets/grounds/limit-$index.bin",
+                            if (index == 0) fixture else emptyFixture,
+                        )
+                    },
+                    emptySet(),
+                    emptySet(),
+                    emptySet(),
                 )
-            },
-            emptySet(),
-            emptySet(),
-            emptySet(),
-        )
+            )
+        } finally {
+            Files.walk(root).use { paths ->
+                paths.sorted(java.util.Comparator.reverseOrder()).forEach(Files::delete)
+            }
+        }
     }
 }

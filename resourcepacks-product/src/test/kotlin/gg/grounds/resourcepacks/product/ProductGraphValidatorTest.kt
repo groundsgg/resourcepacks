@@ -8,6 +8,7 @@ import gg.grounds.resourcepack.api.PackFormatRange
 import gg.grounds.resourcepack.api.PackLimits
 import gg.grounds.resourcepack.api.PackPath
 import gg.grounds.resourcepack.api.VanillaPathClaim
+import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -214,6 +215,69 @@ class ProductGraphValidatorTest {
             ),
             ProductGraphValidator.validate(listOf(content, ProductGraph.packs.last())).problems,
         )
+    }
+
+    @Test
+    fun `validator orders equal diagnostics independently of contribution input order`() {
+        val first = vanillaContribution("grounds:first")
+        val second = vanillaContribution("grounds:second")
+        val forward = ProductGraph.packs.first().copy(contributions = listOf(first, second))
+        val reversed = ProductGraph.packs.first().copy(contributions = listOf(second, first))
+
+        assertEquals(
+            ProductGraphValidator.validate(listOf(forward, ProductGraph.packs.last())).problems,
+            ProductGraphValidator.validate(listOf(reversed, ProductGraph.packs.last())).problems,
+        )
+    }
+
+    @Test
+    fun `validator accumulates malformed limits and source size failures without throwing`() {
+        val missing = Files.createTempDirectory("product-validator-missing").resolve("missing.bin")
+        val contribution =
+            PackContribution(
+                ContributionId.of("grounds:missing"),
+                PackFormatRange(88, 88),
+                listOf(PackEntry.file("assets/grounds/missing.bin", missing)),
+                emptySet(),
+                emptySet(),
+                emptySet(),
+            )
+        val content =
+            ProductGraph.packs
+                .first()
+                .copy(
+                    definition =
+                        ProductGraph.packs
+                            .first()
+                            .definition
+                            .copy(
+                                policy =
+                                    ProductGraph.packs
+                                        .first()
+                                        .definition
+                                        .policy
+                                        .copy(limits = PackLimits(null, null, null))
+                            ),
+                    contributions = listOf(contribution),
+                )
+
+        assertEquals(
+            listOf(
+                ProductProblem(ProductProblemCode.INVALID_LIMITS, "grounds-content"),
+                ProductProblem(
+                    ProductProblemCode.SOURCE_SIZE_FAILURE,
+                    "grounds-content",
+                    "assets/grounds/missing.bin",
+                    contributionIds = listOf("grounds:missing"),
+                ),
+            ),
+            ProductGraphValidator.validate(listOf(content, ProductGraph.packs.last())).problems,
+        )
+    }
+
+    @Test
+    fun `validator reports source size overflow without wrapping`() {
+        assertFailsWith<ArithmeticException> { checkedSizeAdd(Long.MAX_VALUE, 1) }
     }
 
     private fun contribution(id: String, bytes: String) =

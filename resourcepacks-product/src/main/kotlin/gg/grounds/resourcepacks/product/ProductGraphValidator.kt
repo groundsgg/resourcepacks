@@ -1,5 +1,6 @@
 package gg.grounds.resourcepacks.product
 
+import java.io.IOException
 import java.util.Collections
 
 internal class ProductProblem(
@@ -36,6 +37,8 @@ internal enum class ProductProblemCode {
     INVALID_LIMITS,
     ENTRY_LIMIT_EXCEEDED,
     UNCOMPRESSED_SIZE_LIMIT_EXCEEDED,
+    SIZE_LIMIT_EXCEEDED,
+    SOURCE_SIZE_FAILURE,
     CROSS_PACK_PATH,
     CONTENT_VANILLA_PATH,
     CONTENT_VANILLA_CLAIM,
@@ -80,10 +83,14 @@ internal object ProductGraphValidator {
             }
             val entries = pack.contributions.flatMap { it.entries }
             val limits = pack.definition.policy.limits
-            if (entries.size > requireNotNull(limits.maxEntries)) {
+            val enforcementLimits = limits.takeIf(::isCompleteLimits) ?: expectedLimits(pack.role)
+            if (entries.size > requireNotNull(enforcementLimits.maxEntries)) {
                 problems += ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack = pack.id)
             }
-            if (entries.sumOf { it.source.size() } > requireNotNull(limits.maxUncompressedBytes)) {
+            val totalSize = sourceSize(pack, problems)
+            if (totalSize.overflowed) {
+                problems += ProductProblem(ProductProblemCode.SIZE_LIMIT_EXCEEDED, pack = pack.id)
+            } else if (totalSize.bytes > requireNotNull(enforcementLimits.maxUncompressedBytes)) {
                 problems +=
                     ProductProblem(
                         ProductProblemCode.UNCOMPRESSED_SIZE_LIMIT_EXCEEDED,
@@ -148,6 +155,61 @@ internal object ProductGraphValidator {
             PackRole.PLATFORM -> PackSetConstants.platformLimits
         }
 
+    private fun isCompleteLimits(limits: gg.grounds.resourcepack.api.PackLimits): Boolean =
+        limits.maxEntries != null &&
+            limits.maxUncompressedBytes != null &&
+            limits.maxArtifactBytes != null
+
+    private fun sourceSize(pack: PhysicalPack, problems: MutableList<ProductProblem>): TotalSize {
+        var total = 0L
+        pack.contributions.forEach { contribution ->
+            contribution.entries.forEach { entry ->
+                val size =
+                    try {
+                        entry.source.size()
+                    } catch (_: IOException) {
+                        problems +=
+                            sourceSizeFailure(
+                                pack,
+                                contribution.id.toString(),
+                                entry.path.toString(),
+                            )
+                        return@forEach
+                    } catch (_: SecurityException) {
+                        problems +=
+                            sourceSizeFailure(
+                                pack,
+                                contribution.id.toString(),
+                                entry.path.toString(),
+                            )
+                        return@forEach
+                    } catch (_: ArithmeticException) {
+                        problems +=
+                            sourceSizeFailure(
+                                pack,
+                                contribution.id.toString(),
+                                entry.path.toString(),
+                            )
+                        return@forEach
+                    }
+                try {
+                    total = checkedSizeAdd(total, size)
+                } catch (_: ArithmeticException) {
+                    return TotalSize(Long.MAX_VALUE, overflowed = true)
+                }
+            }
+        }
+        return TotalSize(total, overflowed = false)
+    }
+
+    private fun sourceSizeFailure(pack: PhysicalPack, contributionId: String, path: String) =
+        ProductProblem(
+            ProductProblemCode.SOURCE_SIZE_FAILURE,
+            pack.id,
+            path,
+            contributionIds = listOf(contributionId),
+        )
+
     private fun lockedPackProblems(pack: PhysicalPack): List<ProductProblem> {
         val expected =
             when (pack.role) {
@@ -179,5 +241,10 @@ internal object ProductGraphValidator {
             { it.pack.orEmpty() },
             { it.path.orEmpty() },
             { it.detail.orEmpty() },
+            { it.contributionIds.joinToString("\u0000") },
         )
+
+    private data class TotalSize(val bytes: Long, val overflowed: Boolean)
 }
+
+internal fun checkedSizeAdd(total: Long, next: Long): Long = Math.addExact(total, next)
