@@ -13,7 +13,11 @@ object GroundsGuiTheme {
             icon(GroundsGuiIds.ICON_BACK, "icons/back.png")
             icon(GroundsGuiIds.ICON_NEXT, "icons/next.png")
             icon(GroundsGuiIds.ICON_BLANK, "icons/blank.png")
-            tooltip(GroundsGuiIds.TOOLTIP_DEFAULT, "tooltips/default_bg.png", "tooltips/default_frame.png")
+            tooltip(
+                GroundsGuiIds.TOOLTIP_DEFAULT,
+                "tooltips/default_bg.png",
+                "tooltips/default_frame.png",
+            )
             frame(GroundsGuiIds.FRAME_HOVER, "frames/hover.png")
         }
 }

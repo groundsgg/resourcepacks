@@ -18,12 +18,13 @@ java { withSourcesJar() }
 
 val generatedCatalogSources = layout.buildDirectory.dir("generated/sources/catalog/kotlin")
 
-val generateCatalogBuildInfo by tasks.registering(Copy::class) {
-    from(rootProject.layout.projectDirectory.file("version.txt"))
-    into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
-    rename { "CatalogBuildInfo.kt" }
-    filter {
-        """
+val generateCatalogBuildInfo by
+    tasks.registering(Copy::class) {
+        from(rootProject.layout.projectDirectory.file("version.txt"))
+        into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
+        rename { "CatalogBuildInfo.kt" }
+        filter {
+            """
         package gg.grounds.resourcepacks.catalog
 
         import gg.grounds.scene.format.AssetCatalog
@@ -31,9 +32,9 @@ val generateCatalogBuildInfo by tasks.registering(Copy::class) {
         import gg.grounds.scene.format.CatalogVersionRange
         import java.util.Collections
 
-        private const val CATALOG_VERSION = "${rootProject.version}"
-
         object GroundsAssetCatalog {
+            private const val CATALOG_VERSION = "${rootProject.version}"
+
             val catalog: AssetCatalog =
                 AssetCatalog(
                     CatalogId("grounds:assets"),
@@ -42,9 +43,10 @@ val generateCatalogBuildInfo by tasks.registering(Copy::class) {
                     Collections.unmodifiableMap(linkedMapOf()),
                 )
         }
-        """.trimIndent()
+        """
+                .trimIndent()
+        }
     }
-}
 
 kotlin { sourceSets.named("main") { kotlin.srcDir(generatedCatalogSources) } }
 
@@ -52,15 +54,16 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     dependsOn(generateCatalogBuildInfo)
 }
 
-tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
-    dependsOn(generateCatalogBuildInfo)
-}
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach { dependsOn(generateCatalogBuildInfo) }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     dependsOn(tasks.named("jar"))
     systemProperty("catalog.version", rootProject.version.toString())
     doFirst {
-        systemProperty("catalog.jar", tasks.named<org.gradle.jvm.tasks.Jar>("jar").get().archiveFile.get().asFile.absolutePath)
+        systemProperty(
+            "catalog.jar",
+            tasks.named<org.gradle.jvm.tasks.Jar>("jar").get().archiveFile.get().asFile.absolutePath,
+        )
     }
 }
 

@@ -12,7 +12,8 @@ class CatalogImmutabilityTest {
         }
         assertFailsWith<UnsupportedOperationException> {
             @Suppress("UNCHECKED_CAST")
-            (GroundsAssetCatalog.catalog.assets as MutableMap<Any?, Any?>)["grounds:unexpected"] = Any()
+            (GroundsAssetCatalog.catalog.assets as MutableMap<Any?, Any?>)["grounds:unexpected"] =
+                Any()
         }
     }
 }

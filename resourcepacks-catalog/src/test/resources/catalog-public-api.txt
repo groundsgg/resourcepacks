@@ -1,7 +1,10 @@
+OWNER|gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
 gg.grounds.resourcepacks.catalog.GroundsAssetCatalog|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
 gg.grounds.resourcepacks.catalog.GroundsAssetCatalog|METHOD|getCatalog()|gg.grounds.scene.format.AssetCatalog
+OWNER|gg.grounds.resourcepacks.catalog.GroundsAssets
 gg.grounds.resourcepacks.catalog.GroundsAssets|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsAssets
 gg.grounds.resourcepacks.catalog.GroundsAssets|METHOD|getAll()|java.util.Set
+OWNER|gg.grounds.resourcepacks.catalog.GroundsGuiIds
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|FRAME_HOVER|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|ICON_BACK|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|ICON_BLANK|java.lang.String
@@ -11,5 +14,6 @@ gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|INSTANCE|gg.grounds.resourc
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|NAMESPACE|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|PANEL_MENU|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|TOOLTIP_DEFAULT|java.lang.String
+OWNER|gg.grounds.resourcepacks.catalog.GroundsGuiTheme
 gg.grounds.resourcepacks.catalog.GroundsGuiTheme|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsGuiTheme
 gg.grounds.resourcepacks.catalog.GroundsGuiTheme|METHOD|getTheme()|gg.grounds.gui.theme.Theme
