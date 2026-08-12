@@ -67,6 +67,37 @@ class ManifestMutationTest {
     }
 
     @Test
+    fun `duplicate pointers cover each schema object`() {
+        val directory = Files.createTempDirectory("manifest-duplicate-pointers-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val cases =
+                listOf(
+                    "{\"x\":1,\"x\":2}" to "/",
+                    "{\"minecraft\":{\"x\":1,\"x\":2}}" to "/minecraft",
+                    "{\"catalog\":{\"x\":1,\"x\":2}}" to "/catalog",
+                    "{\"packs\":[{\"x\":1,\"x\":2}]}" to "/packs/0",
+                    "{\"packs\":[{}, {\"x\":1,\"x\":2}]}" to "/packs/1",
+                    "{\"provenance\":{\"x\":1,\"x\":2}}" to "/provenance",
+                )
+            cases.forEach { (json, pointer) ->
+                assertEquals(
+                    listOf(
+                        ManifestProblem(
+                            pointer,
+                            ManifestProblemCode.DUPLICATE_KEY,
+                            "Duplicate key.",
+                        )
+                    ),
+                    PackSetManifestJson.decodeAndValidate(json.toByteArray(), artifacts).problems,
+                )
+            }
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `strict parser matrix has stable diagnostic codes pointers and messages`() {
         val directory = Files.createTempDirectory("manifest-parser-matrix-")
         try {
@@ -185,6 +216,84 @@ class ManifestMutationTest {
                     }
                 )
             }
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `independent identity and catalog branches have exact diagnostics`() {
+        val directory = Files.createTempDirectory("manifest-exact-branches-")
+        try {
+            val artifacts = sampleArtifacts(directory)
+            val valid = matchingManifest(artifacts)
+            val cases =
+                listOf(
+                    valid.copy(schemaVersion = 2) to
+                        ManifestProblem(
+                            "/schemaVersion",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "schemaVersion must be 1.",
+                        ),
+                    valid.copy(id = "other") to
+                        ManifestProblem(
+                            "/id",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "id must be grounds:global.",
+                        ),
+                    valid.copy(minecraft = valid.minecraft.copy(version = "x")) to
+                        ManifestProblem(
+                            "/minecraft/version",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "Minecraft version must be 26.2.",
+                        ),
+                    valid.copy(minecraft = valid.minecraft.copy(resourcePackFormat = 1)) to
+                        ManifestProblem(
+                            "/minecraft/resourcePackFormat",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "Resource pack format must be 88.",
+                        ),
+                    valid.copy(catalog = valid.catalog.copy(id = "x")) to
+                        ManifestProblem(
+                            "/catalog/id",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "Catalog id mismatch.",
+                        ),
+                    valid.copy(provenance = valid.provenance.copy(repository = "x")) to
+                        ManifestProblem(
+                            "/provenance/repository",
+                            ManifestProblemCode.INVALID_VALUE,
+                            "Repository mismatch.",
+                        ),
+                )
+            cases.forEach { (manifest, expected) ->
+                val result =
+                    PackSetManifestJson.decodeAndValidate(
+                        PackSetManifestJson.encode(manifest),
+                        artifacts,
+                    )
+                assertTrue(expected in result.problems, result.problems.toString())
+            }
+            val duplicateRole =
+                valid.copy(
+                    packs =
+                        listOf(
+                            valid.packs[0],
+                            valid.packs[0].copy(
+                                order = 1,
+                                id = "grounds-platform",
+                                uuid = PackSetConstants.platformUuid,
+                            ),
+                        )
+                )
+            assertTrue(
+                ManifestProblem("/packs", ManifestProblemCode.INVALID_VALUE, "Duplicate roles.") in
+                    PackSetManifestJson.decodeAndValidate(
+                            PackSetManifestJson.encode(duplicateRole),
+                            artifacts,
+                        )
+                        .problems
+            )
         } finally {
             directory.toFile().deleteRecursively()
         }

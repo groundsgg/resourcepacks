@@ -70,6 +70,18 @@ internal object PackSetManifestJson {
                     failure.message ?: "Malformed JSON.",
                 )
             }
+        try {
+            STRICT_FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { parser
+                ->
+                while (parser.nextToken() != null) Unit
+            }
+        } catch (failure: Throwable) {
+            return invalid(
+                "/",
+                ManifestProblemCode.MALFORMED_JSON,
+                failure.message ?: "Malformed JSON.",
+            )
+        }
         val problems = mutableListOf<ManifestProblem>()
         val manifest = decode(parsed, problems)
         if (manifest != null) {
@@ -141,7 +153,8 @@ internal object PackSetManifestJson {
                         this[3] == 0.toByte())))
 
     private fun parse(text: String): J =
-        FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { parser ->
+        CONTEXTUAL_FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { parser
+            ->
             val first = parser.nextToken() ?: error("Expected a JSON value.")
             val result = read(parser, first, 0, "")
             require(parser.nextToken() == null) { "Trailing JSON input." }
@@ -554,9 +567,21 @@ internal object PackSetManifestJson {
                 null
             }
 
-    private val FACTORY =
+    private val CONTEXTUAL_FACTORY =
         JsonFactory.builder()
             .disable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .streamReadConstraints(
+                StreamReadConstraints.builder()
+                    .maxNestingDepth(MAX_DEPTH)
+                    .maxStringLength(MAX_STRING)
+                    .maxNumberLength(MAX_NUMBER)
+                    .maxDocumentLength(MAX_DOCUMENT.toLong())
+                    .build()
+            )
+            .build()
+    private val STRICT_FACTORY =
+        JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(
                 StreamReadConstraints.builder()
                     .maxNestingDepth(MAX_DEPTH)
