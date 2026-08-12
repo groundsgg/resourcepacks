@@ -22,10 +22,10 @@ class CatalogApiTest {
         val catalog = GroundsAssetCatalog.catalog
 
         assertEquals("grounds:assets", catalog.id.value)
-        assertEquals(CatalogBuildInfo.VERSION, catalog.version)
+        assertEquals(versionFromBuild(), catalog.version)
         assertEquals("grounds:resourcepacks", catalog.resourcePackCompatibility.catalog.value)
-        assertEquals(CatalogBuildInfo.VERSION, catalog.resourcePackCompatibility.minInclusive)
-        assertEquals(CatalogBuildInfo.VERSION, catalog.resourcePackCompatibility.maxInclusive)
+        assertEquals(versionFromBuild(), catalog.resourcePackCompatibility.minInclusive)
+        assertEquals(versionFromBuild(), catalog.resourcePackCompatibility.maxInclusive)
     }
 
     @Test
@@ -47,4 +47,6 @@ class CatalogApiTest {
         assertEquals(listOf("default"), theme.tooltips.map { it.id })
         assertEquals(listOf("hover"), theme.frames.map { it.id })
     }
+
+    private fun versionFromBuild(): String = System.getProperty("catalog.version")
 }

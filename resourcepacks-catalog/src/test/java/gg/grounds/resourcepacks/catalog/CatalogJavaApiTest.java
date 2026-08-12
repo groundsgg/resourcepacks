@@ -13,7 +13,7 @@ class CatalogJavaApiTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void exposesTheCatalogToJavaWithoutMutableCollections() {
         assertEquals("grounds", GroundsGuiIds.NAMESPACE);
-        assertEquals("0.0.0", CatalogBuildInfo.VERSION);
+        assertEquals(System.getProperty("catalog.version"), GroundsAssetCatalog.INSTANCE.getCatalog().getVersion());
         assertTrue(GroundsAssetCatalog.INSTANCE.getCatalog().toString().contains("grounds:assets"));
         assertTrue(GroundsAssets.INSTANCE.getAll().isEmpty());
 

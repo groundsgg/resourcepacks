@@ -1,5 +1,3 @@
-gg.grounds.resourcepacks.catalog.CatalogBuildInfo|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.CatalogBuildInfo
-gg.grounds.resourcepacks.catalog.CatalogBuildInfo|FIELD|VERSION|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsAssetCatalog|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
 gg.grounds.resourcepacks.catalog.GroundsAssetCatalog|METHOD|getCatalog()|gg.grounds.scene.format.AssetCatalog
 gg.grounds.resourcepacks.catalog.GroundsAssets|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsAssets

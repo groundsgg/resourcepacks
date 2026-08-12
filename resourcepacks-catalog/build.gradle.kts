@@ -22,12 +22,27 @@ val generateCatalogBuildInfo by tasks.registering(Copy::class) {
     from(rootProject.layout.projectDirectory.file("version.txt"))
     into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
     rename { "CatalogBuildInfo.kt" }
-    filter { line ->
-        when (line) {
-            rootProject.version.toString() ->
-                "package gg.grounds.resourcepacks.catalog\n\nobject CatalogBuildInfo {\n    const val VERSION = \"$line\"\n}"
-            else -> line
+    filter {
+        """
+        package gg.grounds.resourcepacks.catalog
+
+        import gg.grounds.scene.format.AssetCatalog
+        import gg.grounds.scene.format.CatalogId
+        import gg.grounds.scene.format.CatalogVersionRange
+        import java.util.Collections
+
+        private const val CATALOG_VERSION = "${rootProject.version}"
+
+        object GroundsAssetCatalog {
+            val catalog: AssetCatalog =
+                AssetCatalog(
+                    CatalogId("grounds:assets"),
+                    CATALOG_VERSION,
+                    CatalogVersionRange(CatalogId("grounds:resourcepacks"), CATALOG_VERSION, CATALOG_VERSION),
+                    Collections.unmodifiableMap(linkedMapOf()),
+                )
         }
+        """.trimIndent()
     }
 }
 
@@ -39,6 +54,14 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
     dependsOn(generateCatalogBuildInfo)
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(tasks.named("jar"))
+    systemProperty("catalog.version", rootProject.version.toString())
+    doFirst {
+        systemProperty("catalog.jar", tasks.named<org.gradle.jvm.tasks.Jar>("jar").get().archiveFile.get().asFile.absolutePath)
+    }
 }
 
 val forbiddenRuntimeCoordinateFragments =
