@@ -30,11 +30,29 @@ internal object PackSetManifestJson {
         artifacts: ManifestArtifacts,
         hook: () -> Unit,
     ): ManifestValidationResult {
-        if (bytes.size > MAX_DOCUMENT)
+        val structure = decodeStructure(bytes)
+        val manifest = structure.manifest ?: return structure
+        val problems = structure.problems.toMutableList()
+        validate(manifest, artifacts, problems, hook)
+        if (problems.isEmpty() && !bytes.contentEquals(encode(manifest))) {
+            problems +=
+                ManifestProblem(
+                    "/",
+                    ManifestProblemCode.NON_CANONICAL_JSON,
+                    "JSON is not canonical.",
+                )
+        }
+        return result(if (problems.isEmpty()) manifest else null, problems)
+    }
+
+    /** Internal parser-and-binding seam; it intentionally performs no semantic or file checks. */
+    @JvmSynthetic
+    internal fun decodeStructure(bytes: ByteArray): ManifestValidationResult {
+        if (bytes.size > ManifestParserLimits.MAX_DOCUMENT)
             return invalid(
                 "",
                 ManifestProblemCode.MALFORMED_JSON,
-                "Input exceeds $MAX_DOCUMENT bytes.",
+                "Input exceeds ${ManifestParserLimits.MAX_DOCUMENT} bytes.",
             )
         val text =
             try {
@@ -84,31 +102,12 @@ internal object PackSetManifestJson {
         }
         val problems = mutableListOf<ManifestProblem>()
         val manifest = decode(parsed, problems)
-        if (manifest != null) {
-            validate(manifest, artifacts, problems, hook)
-            if (problems.isEmpty() && !bytes.contentEquals(encode(manifest))) {
-                problems +=
-                    ManifestProblem(
-                        "/",
-                        ManifestProblemCode.NON_CANONICAL_JSON,
-                        "JSON is not canonical.",
-                    )
-            }
-            return ManifestValidationResult(
-                if (problems.isEmpty()) manifest else null,
-                problems
-                    .distinct()
-                    .sortedWith(
-                        compareBy(
-                            ManifestProblem::pointer,
-                            ManifestProblem::code,
-                            ManifestProblem::message,
-                        )
-                    ),
-            )
-        }
-        return ManifestValidationResult(
-            null,
+        return result(manifest, problems)
+    }
+
+    private fun result(manifest: PackSetManifest?, problems: List<ManifestProblem>) =
+        ManifestValidationResult(
+            manifest,
             problems
                 .distinct()
                 .sortedWith(
@@ -119,7 +118,6 @@ internal object PackSetManifestJson {
                     )
                 ),
         )
-    }
 
     private fun strictUtf8(bytes: ByteArray): String {
         if (bytes.startsWithBom()) error("Byte-order marks are not permitted.")
@@ -162,7 +160,7 @@ internal object PackSetManifestJson {
         }
 
     private fun read(parser: JsonParser, token: JsonToken, depth: Int, pointer: String): J {
-        require(depth <= MAX_DEPTH) { "Maximum nesting depth exceeded." }
+        require(depth <= ManifestParserLimits.MAX_DEPTH) { "Maximum nesting depth exceeded." }
         return when (token) {
             JsonToken.START_OBJECT -> {
                 val fields = linkedMapOf<String, J>()
@@ -171,9 +169,10 @@ internal object PackSetManifestJson {
                         "Expected object property."
                     }
                     val name = parser.currentName()
-                    require(name.length <= MAX_STRING && !hasUnpairedSurrogate(name)) {
-                        "Invalid property name."
+                    require(name.length <= ManifestParserLimits.MAX_STRING) {
+                        "String exceeds ${ManifestParserLimits.MAX_STRING} characters."
                     }
+                    require(!hasUnpairedSurrogate(name)) { "Invalid property name." }
                     if (fields.containsKey(name)) throw DuplicateJsonKey(pointer)
                     fields[name] =
                         read(
@@ -192,7 +191,8 @@ internal object PackSetManifestJson {
                 J.Arr(values)
             }
             JsonToken.VALUE_STRING -> J.Str(parser.stringChecked())
-            JsonToken.VALUE_NUMBER_INT -> J.Num(parser.stringChecked())
+            JsonToken.VALUE_NUMBER_INT -> J.Num(parser.numberChecked())
+            JsonToken.VALUE_NUMBER_FLOAT -> J.Decimal(parser.numberChecked())
             JsonToken.VALUE_TRUE -> J.Bool(true)
             JsonToken.VALUE_FALSE -> J.Bool(false)
             JsonToken.VALUE_NULL -> J.Null
@@ -206,8 +206,16 @@ internal object PackSetManifestJson {
 
     private fun JsonParser.stringChecked(): String =
         getString().also {
-            require(it.length <= MAX_STRING && !hasUnpairedSurrogate(it)) {
-                "Malformed or overlong string."
+            require(it.length <= ManifestParserLimits.MAX_STRING) {
+                "String exceeds ${ManifestParserLimits.MAX_STRING} characters."
+            }
+            require(!hasUnpairedSurrogate(it)) { "Malformed or overlong string." }
+        }
+
+    private fun JsonParser.numberChecked(): String =
+        getString().also {
+            require(it.length <= ManifestParserLimits.MAX_NUMBER) {
+                "Number exceeds ${ManifestParserLimits.MAX_NUMBER} characters."
             }
         }
 
@@ -275,6 +283,43 @@ internal object PackSetManifestJson {
         p: MutableList<ManifestProblem>,
         hook: () -> Unit,
     ) {
+        validateSemantics(m, p)
+        artifact(
+            a.catalog,
+            m.catalog.file,
+            m.catalog.size,
+            null,
+            m.catalog.sha256,
+            "/catalog",
+            p,
+            hook,
+        )
+        m.packs.forEachIndexed { index, pack ->
+            PackRole.entries
+                .find { it.name.equals(pack.role, true) }
+                ?.let { role ->
+                    artifact(
+                        a.packs[role],
+                        "${pack.sha1}.zip",
+                        pack.size,
+                        pack.sha1,
+                        pack.sha256,
+                        "/packs/$index",
+                        p,
+                        hook,
+                    )
+                }
+        }
+    }
+
+    @JvmSynthetic
+    internal fun semanticProblems(manifest: PackSetManifest): List<ManifestProblem> {
+        val problems = mutableListOf<ManifestProblem>()
+        validateSemantics(manifest, problems)
+        return result(null, problems).problems
+    }
+
+    private fun validateSemantics(m: PackSetManifest, p: MutableList<ManifestProblem>) {
         fun bad(pointer: String, message: String) {
             p += ManifestProblem(pointer, ManifestProblemCode.INVALID_VALUE, message)
         }
@@ -329,23 +374,6 @@ internal object PackSetManifestJson {
             bad("/provenance/commit", "Commit must be lowercase 40-hex.")
         if (m.provenance.tag != "v${m.version}")
             bad("/provenance/tag", "Tag must equal v<version>.")
-        artifact(a.catalog, c.file, c.size, null, c.sha256, "/catalog", p, hook)
-        m.packs.forEachIndexed { index, pack ->
-            PackRole.entries
-                .find { it.name.equals(pack.role, true) }
-                ?.let { role ->
-                    artifact(
-                        a.packs[role],
-                        "${pack.sha1}.zip",
-                        pack.size,
-                        pack.sha1,
-                        pack.sha256,
-                        "/packs/$index",
-                        p,
-                        hook,
-                    )
-                }
-        }
     }
 
     private fun artifact(
@@ -461,6 +489,8 @@ internal object PackSetManifestJson {
 
         data class Num(val value: String) : J
 
+        data class Decimal(val value: String) : J
+
         data class Bool(val value: Boolean) : J
 
         data object Null : J
@@ -572,10 +602,10 @@ internal object PackSetManifestJson {
             .disable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(
                 StreamReadConstraints.builder()
-                    .maxNestingDepth(MAX_DEPTH)
-                    .maxStringLength(MAX_STRING)
-                    .maxNumberLength(MAX_NUMBER)
-                    .maxDocumentLength(MAX_DOCUMENT.toLong())
+                    .maxNestingDepth(ManifestParserLimits.MAX_DEPTH + 1)
+                    .maxStringLength(ManifestParserLimits.MAX_STRING + 1)
+                    .maxNumberLength(ManifestParserLimits.MAX_NUMBER + 1)
+                    .maxDocumentLength(ManifestParserLimits.MAX_DOCUMENT.toLong())
                     .build()
             )
             .build()
@@ -584,10 +614,10 @@ internal object PackSetManifestJson {
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(
                 StreamReadConstraints.builder()
-                    .maxNestingDepth(MAX_DEPTH)
-                    .maxStringLength(MAX_STRING)
-                    .maxNumberLength(MAX_NUMBER)
-                    .maxDocumentLength(MAX_DOCUMENT.toLong())
+                    .maxNestingDepth(ManifestParserLimits.MAX_DEPTH + 1)
+                    .maxStringLength(ManifestParserLimits.MAX_STRING + 1)
+                    .maxNumberLength(ManifestParserLimits.MAX_NUMBER + 1)
+                    .maxDocumentLength(ManifestParserLimits.MAX_DOCUMENT.toLong())
                     .build()
             )
             .build()
@@ -628,9 +658,13 @@ internal object PackSetManifestJson {
             "resourcePackFormat",
         )
     private val PROVENANCE = setOf("repository", "commit", "tag")
-    private const val MAX_DEPTH = 64
-    private const val MAX_STRING = 16_384
-    private const val MAX_NUMBER = 128
-    private const val MAX_DOCUMENT = 1_048_576
     private const val MAX_VERSION = 256
+}
+
+/** Internal parser contract seam used to prove exact hostile-input boundaries. */
+internal object ManifestParserLimits {
+    const val MAX_DEPTH = 64
+    const val MAX_STRING = 16_384
+    const val MAX_NUMBER = 128
+    const val MAX_DOCUMENT = 1_048_576
 }
