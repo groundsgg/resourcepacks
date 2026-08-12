@@ -13,7 +13,9 @@ class PackSetBuilderTest {
         val output = parent.resolve("release")
         try {
             val artifacts =
-                PackSetBuilder.build(ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output))
+                PackSetBuilder.build(
+                    ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output, catalogJar())
+                )
 
             assertEquals(
                 setOf(
@@ -44,11 +46,37 @@ class PackSetBuilderTest {
         val output = parent.resolve("release")
         try {
             assertFailsWith<IllegalArgumentException> {
-                PackSetBuilder.build(ReleaseInputs("0.0.0", "A".repeat(40), "v0.0.0", output))
+                PackSetBuilder.build(
+                    ReleaseInputs("0.0.0", "A".repeat(40), "v0.0.0", output, catalogJar())
+                )
             }
             assertTrue(Files.notExists(output))
         } finally {
             parent.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun `atomic publication never replaces a concurrently existing target`() {
+        val parent = Files.createTempDirectory("packset-builder-collision-")
+        val stage = Files.createDirectory(parent.resolve("stage"))
+        val target = Files.createDirectory(parent.resolve("release"))
+        val sentinel = Files.writeString(target.resolve("sentinel.txt"), "keep")
+        try {
+            val failure =
+                assertFailsWith<java.io.IOException> {
+                    AtomicNoReplaceRename.publish(stage, target)
+                }
+            assertEquals("Release output already exists.", failure.message)
+            assertEquals("keep", Files.readString(sentinel))
+            assertTrue(Files.isDirectory(stage))
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
 }
+
+private fun catalogJar(): java.nio.file.Path =
+    generateSequence(java.nio.file.Path.of(System.getProperty("user.dir"))) { it.parent }
+        .first { it.resolve("settings.gradle.kts").toFile().isFile }
+        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")

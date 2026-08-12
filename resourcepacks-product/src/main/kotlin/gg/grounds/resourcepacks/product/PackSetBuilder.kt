@@ -2,14 +2,16 @@ package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
 import java.io.IOException
-import java.nio.file.FileVisitResult
+import java.lang.foreign.Arena
+import java.lang.foreign.FunctionDescriptor
+import java.lang.foreign.Linker
+import java.lang.foreign.MemoryLayout
+import java.lang.foreign.ValueLayout
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
-import java.nio.file.attribute.BasicFileAttributes
 
 /** Builds all release bytes in an owned sibling and publishes them as one directory rename. */
 internal object PackSetBuilder {
@@ -31,7 +33,7 @@ internal object PackSetBuilder {
             removeEmptyOwnedDirectory(content.file.parent)
 
             val catalogFile = stage.resolve("grounds-resourcepacks-catalog-${inputs.version}.jar")
-            val catalogSource = catalogJar(inputs.version)
+            val catalogSource = catalogJar(inputs)
             Files.copy(catalogSource, catalogFile, COPY_ATTRIBUTES)
             val catalogDigest = ArtifactDigests.readRegularFile(catalogFile)
             val manifest = manifest(inputs, catalogFile, catalogDigest, contentFile, platformFile)
@@ -49,11 +51,7 @@ internal object PackSetBuilder {
             if (!validation.isValid)
                 throw IOException("Generated manifest failed validation: ${validation.problems}")
             verifyStage(stage, setOf(contentFile, platformFile, catalogFile, manifestFile))
-            try {
-                Files.move(stage, output, ATOMIC_MOVE)
-            } catch (failure: Exception) {
-                throw IOException("Atomic release directory publication failed.", failure)
-            }
+            AtomicNoReplaceRename.publish(stage, output)
             published = true
             return ReleaseArtifacts(
                 artifact(output.resolve(contentFile.fileName)),
@@ -90,17 +88,11 @@ internal object PackSetBuilder {
         return output
     }
 
-    private fun catalogJar(version: String): Path {
-        val location =
-            Path.of(GroundsAssetCatalog::class.java.protectionDomain.codeSource.location.toURI())
-                .toAbsolutePath()
-                .normalize()
-        if (Files.isRegularFile(location, NOFOLLOW_LINKS)) return location
-        var cursor: Path? = location
-        while (cursor != null && cursor.fileName?.toString() != "resourcepacks-catalog") cursor =
-            cursor.parent
-        val module = cursor ?: throw IOException("Cannot locate the catalog module output.")
-        val jar = module.resolve("build/libs/resourcepacks-catalog-$version.jar")
+    private fun catalogJar(inputs: ReleaseInputs): Path {
+        val jar = inputs.catalogJar.toAbsolutePath().normalize()
+        require(jar.fileName.toString() == "resourcepacks-catalog-${inputs.version}.jar") {
+            "Catalog JAR filename/version mismatch."
+        }
         if (!Files.isRegularFile(jar, NOFOLLOW_LINKS) || Files.isSymbolicLink(jar))
             throw IOException("Current catalog JAR is missing or unsafe: $jar")
         return jar
@@ -181,28 +173,67 @@ internal object PackSetBuilder {
         if (Files.isDirectory(directory, NOFOLLOW_LINKS)) Files.delete(directory)
     }
 
-    private fun deleteOwnedStage(stage: Path) {
-        if (!Files.exists(stage, NOFOLLOW_LINKS)) return
-        Files.walkFileTree(
-            stage,
-            object : SimpleFileVisitor<Path>() {
-                override fun visitFile(
-                    file: Path,
-                    attributes: BasicFileAttributes,
-                ): FileVisitResult {
-                    Files.deleteIfExists(file)
-                    return FileVisitResult.CONTINUE
-                }
+    private fun deleteOwnedStage(stage: Path) = PackComposer.deleteOwnedStagingDirectory(stage)
+}
 
-                override fun postVisitDirectory(
-                    directory: Path,
-                    failure: IOException?,
-                ): FileVisitResult {
-                    if (failure != null) throw failure
-                    Files.deleteIfExists(directory)
-                    return FileVisitResult.CONTINUE
+/** Linux kernel `renameat2(RENAME_NOREPLACE)` with a deliberate fail-closed fallback. */
+internal object AtomicNoReplaceRename {
+    private const val AT_FDCWD = -100
+    private const val RENAME_NOREPLACE = 1L
+
+    fun publish(stage: Path, output: Path) {
+        if (System.getProperty("os.name").lowercase() != "linux") {
+            throw IOException("Atomic no-replace directory publication is supported only on Linux.")
+        }
+        if (stage.parent != output.parent) throw IOException("Stage and output must be siblings.")
+        try {
+            Arena.ofConfined().use { arena ->
+                val symbol =
+                    Linker.nativeLinker().defaultLookup().find("renameat2").orElseThrow {
+                        IOException("renameat2 is unavailable.")
+                    }
+                val options = Linker.Option.captureCallState("errno")
+                val handle =
+                    Linker.nativeLinker()
+                        .downcallHandle(
+                            symbol,
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_LONG,
+                            ),
+                            options,
+                        )
+                val errno = arena.allocate(Linker.Option.captureStateLayout())
+                val result =
+                    handle.invoke(
+                        errno,
+                        AT_FDCWD,
+                        arena.allocateFrom(stage.toString()),
+                        AT_FDCWD,
+                        arena.allocateFrom(output.toString()),
+                        RENAME_NOREPLACE,
+                    ) as Int
+                if (result != 0) {
+                    val error =
+                        errno.get(
+                            ValueLayout.JAVA_INT,
+                            Linker.Option.captureStateLayout()
+                                .byteOffset(MemoryLayout.PathElement.groupElement("errno")),
+                        )
+                    if (error == 17) throw IOException("Release output already exists.")
+                    throw IOException(
+                        "Atomic no-replace directory publication failed (errno $error)."
+                    )
                 }
-            },
-        )
+            }
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Atomic no-replace directory publication unavailable.", failure)
+        }
     }
 }

@@ -2,6 +2,8 @@ plugins { application }
 
 application { mainClass = "gg.grounds.resourcepacks.product.MainKt" }
 
+application { applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED") }
+
 val buildPackSet by
     tasks.registering(JavaExec::class) {
         group = "build"
@@ -9,6 +11,7 @@ val buildPackSet by
         dependsOn(":resourcepacks-catalog:jar", "jar")
         classpath = sourceSets.main.get().runtimeClasspath
         mainClass.set(application.mainClass)
+        jvmArgs("--enable-native-access=ALL-UNNAMED")
         val required =
             listOf("packSetVersion", "provenanceCommit", "provenanceTag", "releaseOutput")
         doFirst {
@@ -26,6 +29,17 @@ val buildPackSet by
                 "--output",
                 values.getValue("releaseOutput")!!,
             )
+            systemProperty(
+                "grounds.catalog.jar",
+                project(":resourcepacks-catalog")
+                    .tasks
+                    .named<org.gradle.jvm.tasks.Jar>("jar")
+                    .get()
+                    .archiveFile
+                    .get()
+                    .asFile
+                    .absolutePath,
+            )
         }
     }
 
@@ -37,4 +51,8 @@ dependencies {
     testImplementation("gg.grounds:resource-pack-testkit:0.1.0")
     testImplementation(kotlin("test"))
     testImplementation(gradleTestKit())
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
