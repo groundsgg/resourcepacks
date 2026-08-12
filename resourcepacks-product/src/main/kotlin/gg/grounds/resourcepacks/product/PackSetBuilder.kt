@@ -25,7 +25,8 @@ internal object PackSetBuilder {
         val output = validateDestination(inputs.outputDirectory)
         val parent =
             output.parent ?: throw IllegalArgumentException("Release output must have a parent.")
-        val stage = Files.createTempDirectory(parent, ".packset-stage-")
+        val ownedStage = SecureOwnedDirectory.create(parent, ".packset-stage-")
+        val stage = ownedStage.path
         var published = false
         try {
             val packs = PackComposer.build(ProductGraph, stage)
@@ -55,8 +56,11 @@ internal object PackSetBuilder {
                 )
             if (!validation.isValid)
                 throw IOException("Generated manifest failed validation: ${validation.problems}")
-            verifyStage(stage, setOf(contentFile, platformFile, catalogFile, manifestFile))
+            verifyStage(ownedStage, setOf(contentFile, platformFile, catalogFile, manifestFile))
+            if (!ownedStage.verify()) throw IOException("Owned staging directory identity changed.")
             AtomicNoReplaceRename.publish(stage, output)
+            if (!Files.isDirectory(output, NOFOLLOW_LINKS) || Files.isSymbolicLink(output))
+                throw IOException("Published release directory is unsafe.")
             published = true
             return ReleaseArtifacts(
                 artifact(output.resolve(contentFile.fileName)),
@@ -65,7 +69,8 @@ internal object PackSetBuilder {
                 output.resolve("manifest.json"),
             )
         } finally {
-            if (!published) deleteOwnedStage(stage)
+            if (!published) ownedStage.deleteOwned()
+            ownedStage.close()
         }
     }
 
@@ -163,8 +168,8 @@ internal object PackSetBuilder {
         return ReleaseArtifact(file, digest.sha1, digest.sha256, digest.size)
     }
 
-    private fun verifyStage(stage: Path, expected: Set<Path>) {
-        val entries = Files.list(stage).use { it.toList() }.toSet()
+    private fun verifyStage(stage: SecureOwnedDirectory, expected: Set<Path>) {
+        val entries = stage.entries().map { stage.path.resolve(it) }.toSet()
         if (
             entries != expected ||
                 entries.any { !Files.isRegularFile(it, NOFOLLOW_LINKS) || Files.isSymbolicLink(it) }
@@ -177,8 +182,6 @@ internal object PackSetBuilder {
     private fun removeEmptyOwnedDirectory(directory: Path) {
         if (Files.isDirectory(directory, NOFOLLOW_LINKS)) Files.delete(directory)
     }
-
-    private fun deleteOwnedStage(stage: Path) = PackComposer.deleteOwnedStagingDirectory(stage)
 }
 
 /** Build wiring may inject a current catalog artifact; the public CLI never accepts it. */

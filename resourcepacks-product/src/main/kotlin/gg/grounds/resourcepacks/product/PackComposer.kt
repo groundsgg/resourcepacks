@@ -30,28 +30,6 @@ internal data class BuiltPhysicalPack(
  * modified, or cleaned up.
  */
 internal object PackComposer {
-    internal fun deleteOwnedStagingDirectory(child: Path) {
-        val identity =
-            try {
-                OwnedChildIdentity.capture(child)
-            } catch (_: Throwable) {
-                return
-            }
-        val parent =
-            try {
-                Files.newDirectoryStream(child.parent)
-            } catch (_: Throwable) {
-                return
-            }
-        try {
-            deleteOwnedChild(child, identity, parent, PackComposerHooks())
-        } finally {
-            try {
-                parent.close()
-            } catch (_: Throwable) {}
-        }
-    }
-
     fun build(graph: ProductGraph, stagingRoot: Path): List<BuiltPhysicalPack> {
         return build(graph.packs, stagingRoot)
     }
