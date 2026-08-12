@@ -1,111 +1,255 @@
 package gg.grounds.resourcepacks.product
 
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.lang.foreign.Arena
+import java.lang.foreign.FunctionDescriptor
+import java.lang.foreign.Linker
+import java.lang.foreign.MemoryLayout
+import java.lang.foreign.ValueLayout
+import java.nio.ByteBuffer
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.DirectoryStream
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
+import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.SecureDirectoryStream
+import java.nio.file.StandardOpenOption.READ
 import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.BasicFileAttributes
+import java.security.MessageDigest
+import java.util.UUID
 
-/** A creation-time identity plus a held secure parent handle; never recaptured during cleanup. */
+/**
+ * One Linux directory created and addressed through a retained parent descriptor. The display path
+ * is diagnostics-only; all owned reads, publication, verification, and cleanup are relative to the
+ * held parent handles.
+ */
 internal class SecureOwnedDirectory
 private constructor(
     val path: Path,
+    val stablePath: Path,
+    private val nativeParent: LinuxDirectoryHandle,
     private val parent: SecureDirectoryStream<Path>,
-    private val name: Path,
+    private var name: Path,
     private val identity: Identity,
 ) : AutoCloseable {
-    fun verify(): Boolean =
-        attributes(parent, name)?.let {
+    fun verify(): Boolean = verify(name)
+
+    fun verify(candidate: Path): Boolean =
+        attributes(parent, candidate)?.let {
             it.isDirectory && !it.isSymbolicLink && identity.matches(it)
         } == true
 
-    fun entries(): List<Path> {
-        if (!verify()) throw IOException("Owned staging directory identity changed.")
-        return parent.newDirectoryStream(name, NOFOLLOW_LINKS).use { child ->
-            child.mapNotNull(Path::getFileName).toList()
-        }
-    }
-
-    fun deleteOwned() {
-        if (!verify()) return
-        delete(parent, name, identity)
-    }
-
-    override fun close() = parent.close()
-
-    private fun delete(directory: SecureDirectoryStream<Path>, entry: Path, expected: Identity?) {
-        val attrs = attributes(directory, entry) ?: return
-        if (expected != null && (!attrs.isDirectory || !expected.matches(attrs))) return
-        if (!attrs.isDirectory || attrs.isSymbolicLink) {
-            try {
-                directory.deleteFile(entry)
-            } catch (_: Throwable) {}
-            return
-        }
-        val actual = Identity.from(attrs)
-        val child =
-            try {
-                directory.newDirectoryStream(entry, NOFOLLOW_LINKS)
-            } catch (_: Throwable) {
-                return
+    fun snapshot(expectedNames: Set<String>, afterOpen: () -> Unit = {}): DirectorySnapshot =
+        openVerified(name).use { opened ->
+            afterOpen()
+            val stillOpened = readAttributes(opened)
+            if (stillOpened == null || !identity.matches(stillOpened)) {
+                throw IOException("Owned release directory identity changed after opening it.")
             }
-        child.use { opened ->
-            opened.mapNotNull(Path::getFileName).toList().forEach { delete(opened, it, null) }
+            val names = opened.names().map(Path::toString)
+            if (names.toSet() != expectedNames || names.size != expectedNames.size) {
+                throw IOException("Release directory does not contain exactly the expected files.")
+            }
+            val files =
+                names.sorted().associateWith { entryName ->
+                    readRegularFile(opened, Path.of(entryName))
+                }
+            val after = readAttributes(opened)
+            if (after == null || !identity.matches(after)) {
+                throw IOException("Owned release directory identity changed.")
+            }
+            DirectorySnapshot(files)
         }
-        val before = attributes(directory, entry) ?: return
-        if (!before.isDirectory || !actual.matches(before)) return
-        try {
-            directory.deleteDirectory(entry)
-        } catch (_: Throwable) {}
+
+    fun publish(
+        outputName: Path,
+        expected: DirectorySnapshot,
+        hooks: PackSetBuilderHooks,
+        rename: SecureRename,
+    ) {
+        require(outputName.nameCount == 1) { "Release output must be one parent-relative name." }
+        hooks.immediatelyBeforeRename(path)
+        if (!expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))) {
+            throw IOException("Owned staging directory changed immediately before publication.")
+        }
+        hooks.afterPreRenameIdentityVerified(path)
+        if (!expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))) {
+            throw IOException("Owned staging directory changed before native publication.")
+        }
+        rename.rename(nativeParent, name, outputName)
+        name = outputName
     }
 
-    private data class Identity(
-        val fileKey: Any?,
-        val creationTime: java.nio.file.attribute.FileTime,
-    ) {
-        fun matches(attrs: BasicFileAttributes) =
-            fileKey != null && fileKey == attrs.fileKey() && creationTime == attrs.creationTime()
+    fun publishedStablePath(): Path = nativeParent.anchor.resolve(name)
 
-        companion object {
-            fun from(attrs: BasicFileAttributes) = Identity(attrs.fileKey(), attrs.creationTime())
+    fun deleteOwned(hooks: PackSetBuilderHooks = PackSetBuilderHooks()) {
+        if (!verify(name)) return
+        delete(parent, name, identity, path.parent.resolve(name), hooks)
+    }
+
+    fun displayParentStillHeldIdentity(): Boolean = nativeParent.sameDirectory(path.parent)
+
+    override fun close() {
+        var failure: Throwable? = null
+        try {
+            parent.close()
+        } catch (caught: Throwable) {
+            failure = caught
         }
+        try {
+            nativeParent.close()
+        } catch (caught: Throwable) {
+            if (failure == null) failure = caught else failure.addSuppressed(caught)
+        }
+        failure?.let { throw it }
+    }
+
+    private fun openVerified(entry: Path): SecureDirectoryStream<Path> {
+        if (!verify(entry)) throw IOException("Owned release directory identity changed.")
+        val opened = parent.newDirectoryStream(entry, NOFOLLOW_LINKS)
+        val attrs = readAttributes(opened)
+        if (attrs == null || !attrs.isDirectory || !identity.matches(attrs)) {
+            opened.close()
+            throw IOException("Owned release directory identity changed while opening it.")
+        }
+        return opened
+    }
+
+    private fun delete(
+        directory: SecureDirectoryStream<Path>,
+        entry: Path,
+        expected: Identity?,
+        display: Path,
+        hooks: PackSetBuilderHooks,
+    ): Boolean {
+        repeat(4) {
+            val attrs = attributes(directory, entry) ?: return true
+            if (expected != null && (!attrs.isDirectory || !expected.matches(attrs))) return false
+            if (!attrs.isDirectory || attrs.isSymbolicLink) return deleteFile(directory, entry)
+            val classified = Identity.from(attrs)
+            try {
+                hooks.afterCleanupDirectoryClassified(display)
+            } catch (_: Throwable) {
+                // A cleanup seam cannot obscure the primary build failure.
+            }
+            val child =
+                try {
+                    directory.newDirectoryStream(entry, NOFOLLOW_LINKS)
+                } catch (_: IOException) {
+                    return@repeat
+                } catch (_: SecurityException) {
+                    return false
+                }
+            val openedIdentity =
+                child.use { opened ->
+                    val openedAttrs = readAttributes(opened) ?: return false
+                    if (!openedAttrs.isDirectory || !classified.matches(openedAttrs)) return false
+                    opened.names().forEach { childName ->
+                        if (!delete(opened, childName, null, display.resolve(childName), hooks)) {
+                            return false
+                        }
+                    }
+                    Identity.from(openedAttrs)
+                }
+            val beforeDelete = attributes(directory, entry) ?: return true
+            if (!beforeDelete.isDirectory || !openedIdentity.matches(beforeDelete)) return false
+            try {
+                directory.deleteDirectory(entry)
+                return true
+            } catch (_: NoSuchFileException) {
+                return true
+            } catch (_: IOException) {
+                // Reclassify a concurrent change on the next bounded attempt.
+            } catch (_: SecurityException) {
+                return false
+            }
+        }
+        return false
+    }
+
+    private fun readRegularFile(
+        directory: SecureDirectoryStream<Path>,
+        entry: Path,
+    ): SecureFileSnapshot {
+        val before =
+            attributes(directory, entry) ?: throw IOException("Release entry vanished: $entry")
+        if (!before.isRegularFile || before.isSymbolicLink || before.fileKey() == null) {
+            throw IOException("Release entry is not a no-follow regular file: $entry")
+        }
+        val identity = Identity.from(before)
+        val bytes =
+            directory
+                .newByteChannel(entry, setOf<OpenOption>(READ, NOFOLLOW_LINKS))
+                .use(::readAllBytes)
+        val after =
+            attributes(directory, entry)
+                ?: throw IOException("Release entry vanished while reading: $entry")
+        if (
+            !after.isRegularFile || !identity.matches(after) || after.size() != bytes.size.toLong()
+        ) {
+            throw IOException("Release entry changed while reading: $entry")
+        }
+        return SecureFileSnapshot(
+            bytes,
+            ArtifactDigests(bytes.sha1(), bytes.sha256(), bytes.size.toLong()),
+            identity,
+        )
     }
 
     companion object {
         fun create(parentPath: Path, prefix: String): SecureOwnedDirectory {
-            require(
-                Files.isDirectory(parentPath, NOFOLLOW_LINKS) && !Files.isSymbolicLink(parentPath)
-            ) {
-                "Release output parent must be a real directory."
-            }
-            val rawParent: DirectoryStream<Path> = Files.newDirectoryStream(parentPath)
-            val parent =
-                rawParent as? SecureDirectoryStream<Path>
-                    ?: run {
-                        rawParent.close()
-                        throw IOException("Secure staging directory handles are required.")
-                    }
-            val child =
-                try {
-                    Files.createTempDirectory(parentPath, prefix)
-                } catch (failure: Throwable) {
-                    parent.close()
-                    throw failure
-                }
+            val normalizedParent = parentPath.toAbsolutePath().normalize()
+            val nativeParent = LinuxDirectoryHandle.open(normalizedParent)
+            var parent: SecureDirectoryStream<Path>? = null
+            var childName: Path? = null
             try {
+                val rawParent: DirectoryStream<Path> = Files.newDirectoryStream(nativeParent.anchor)
+                parent =
+                    rawParent as? SecureDirectoryStream<Path>
+                        ?: run {
+                            rawParent.close()
+                            throw IOException("Secure staging directory handles are required.")
+                        }
+                if (!nativeParent.sameDirectory(normalizedParent)) {
+                    throw IOException("Release output parent identity changed while opening it.")
+                }
+                childName = Path.of("$prefix${UUID.randomUUID()}")
+                nativeParent.createDirectory(childName)
                 val attrs =
-                    attributes(parent, child.fileName)
+                    attributes(parent, childName)
                         ?: throw IOException("Owned staging directory vanished.")
-                if (!attrs.isDirectory || attrs.isSymbolicLink || attrs.fileKey() == null)
+                if (!attrs.isDirectory || attrs.isSymbolicLink || attrs.fileKey() == null) {
                     throw IOException("Owned staging directory is unsafe.")
-                return SecureOwnedDirectory(child, parent, child.fileName, Identity.from(attrs))
+                }
+                val displayPath = normalizedParent.resolve(childName)
+                return SecureOwnedDirectory(
+                    displayPath,
+                    nativeParent.anchor.resolve(childName),
+                    nativeParent,
+                    parent,
+                    childName,
+                    Identity.from(attrs),
+                )
             } catch (failure: Throwable) {
+                if (childName != null && parent != null) {
+                    try {
+                        parent.deleteDirectory(childName)
+                    } catch (_: Throwable) {}
+                }
                 try {
-                    parent.close()
-                } catch (_: Throwable) {}
+                    parent?.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
+                try {
+                    nativeParent.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
                 throw failure
             }
         }
@@ -118,8 +262,281 @@ private constructor(
                 parent
                     .getFileAttributeView(name, BasicFileAttributeView::class.java, NOFOLLOW_LINKS)
                     ?.readAttributes()
-            } catch (_: Throwable) {
+            } catch (_: NoSuchFileException) {
                 null
+            }
+
+        private fun readAttributes(directory: SecureDirectoryStream<Path>): BasicFileAttributes? =
+            try {
+                directory.getFileAttributeView(BasicFileAttributeView::class.java)?.readAttributes()
+            } catch (_: NoSuchFileException) {
+                null
+            }
+
+        private fun SecureDirectoryStream<Path>.names(): List<Path> =
+            mapNotNull(Path::getFileName).toList()
+
+        private fun readAllBytes(channel: SeekableByteChannel): ByteArray {
+            val output = ByteArrayOutputStream()
+            val buffer = ByteBuffer.allocate(64 * 1024)
+            while (true) {
+                val count = channel.read(buffer)
+                if (count < 0) break
+                if (count == 0) continue
+                output.write(buffer.array(), 0, count)
+                buffer.clear()
+            }
+            return output.toByteArray()
+        }
+
+        private fun deleteFile(parent: SecureDirectoryStream<Path>, name: Path): Boolean =
+            try {
+                parent.deleteFile(name)
+                true
+            } catch (_: NoSuchFileException) {
+                true
+            } catch (_: IOException) {
+                false
+            } catch (_: SecurityException) {
+                false
             }
     }
 }
+
+internal class DirectorySnapshot(files: Map<String, SecureFileSnapshot>) {
+    val files: Map<String, SecureFileSnapshot> =
+        java.util.Collections.unmodifiableMap(LinkedHashMap(files))
+
+    fun sameBytesDigestsAndIdentities(other: DirectorySnapshot): Boolean =
+        files.keys == other.files.keys &&
+            files.all { (name, file) ->
+                val compared = other.files.getValue(name)
+                file.identity == compared.identity &&
+                    file.digests == compared.digests &&
+                    file.contentEquals(compared)
+            }
+}
+
+internal class SecureFileSnapshot(
+    bytes: ByteArray,
+    val digests: ArtifactDigests,
+    val identity: Identity,
+) {
+    private val storedBytes: ByteArray = bytes.copyOf()
+    val bytes: ByteArray
+        get() = storedBytes.copyOf()
+
+    fun contentEquals(other: SecureFileSnapshot): Boolean =
+        storedBytes.contentEquals(other.storedBytes)
+}
+
+internal data class Identity(
+    val fileKey: Any?,
+    val creationTime: java.nio.file.attribute.FileTime,
+) {
+    fun matches(attributes: BasicFileAttributes): Boolean =
+        fileKey != null &&
+            fileKey == attributes.fileKey() &&
+            creationTime == attributes.creationTime()
+
+    companion object {
+        fun from(attributes: BasicFileAttributes): Identity =
+            Identity(attributes.fileKey(), attributes.creationTime())
+    }
+}
+
+internal fun interface SecureRename {
+    fun rename(parent: LinuxDirectoryHandle, from: Path, to: Path)
+}
+
+/** Linux parent descriptor used for mkdirat/renameat2 and a stable /proc/self/fd anchor. */
+internal class LinuxDirectoryHandle private constructor(private val descriptor: Int) :
+    AutoCloseable {
+    val anchor: Path = Path.of("/proc/self/fd/$descriptor")
+    private var closed = false
+
+    fun createDirectory(name: Path) {
+        requireRelativeName(name)
+        invokePath("mkdirat", "mkdirat", descriptor, name, 0x1c0)
+    }
+
+    fun renameNoReplace(from: Path, to: Path) {
+        requireRelativeName(from)
+        requireRelativeName(to)
+        try {
+            Arena.ofConfined().use { arena ->
+                val errno = arena.allocate(errnoLayout())
+                val result =
+                    handle(
+                            "renameat2",
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT,
+                            ),
+                            true,
+                        )
+                        .invoke(
+                            errno,
+                            descriptor,
+                            arena.allocateFrom(from.toString()),
+                            descriptor,
+                            arena.allocateFrom(to.toString()),
+                            1,
+                        ) as Int
+                if (result != 0) {
+                    val error = errno(errno)
+                    if (error == 17) throw IOException("Release output already exists.")
+                    throw IOException(
+                        "Atomic no-replace directory publication failed (errno $error)."
+                    )
+                }
+            }
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Atomic no-replace directory publication unavailable.", failure)
+        }
+    }
+
+    fun sameDirectory(path: Path): Boolean =
+        try {
+            Files.isSameFile(anchor, path)
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        try {
+            val result =
+                handle(
+                        "close",
+                        FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+                        false,
+                    )
+                    .invoke(descriptor) as Int
+            if (result != 0) throw IOException("Cannot close release parent directory handle.")
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Cannot close release parent directory handle.", failure)
+        }
+    }
+
+    companion object {
+        private const val O_DIRECTORY = 0x10000
+        private const val O_NOFOLLOW = 0x20000
+        private const val O_CLOEXEC = 0x80000
+
+        fun open(path: Path): LinuxDirectoryHandle {
+            if (System.getProperty("os.name").lowercase() != "linux") {
+                throw IOException("Secure release directory handles are supported only on Linux.")
+            }
+            try {
+                Arena.ofConfined().use { arena ->
+                    val fd =
+                        handle(
+                                "open",
+                                FunctionDescriptor.of(
+                                    ValueLayout.JAVA_INT,
+                                    ValueLayout.ADDRESS,
+                                    ValueLayout.JAVA_INT,
+                                ),
+                                false,
+                            )
+                            .invoke(
+                                arena.allocateFrom(path.toString()),
+                                O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC,
+                            ) as Int
+                    if (fd < 0) throw IOException("Release output parent must be a real directory.")
+                    return LinuxDirectoryHandle(fd)
+                }
+            } catch (failure: IOException) {
+                throw failure
+            } catch (failure: Throwable) {
+                throw IOException("Secure release directory handles are unavailable.", failure)
+            }
+        }
+
+        private fun invokePath(
+            operation: String,
+            symbol: String,
+            descriptor: Int,
+            name: Path,
+            mode: Int,
+        ) {
+            try {
+                Arena.ofConfined().use { arena ->
+                    val errno = arena.allocate(errnoLayout())
+                    val result =
+                        handle(
+                                symbol,
+                                FunctionDescriptor.of(
+                                    ValueLayout.JAVA_INT,
+                                    ValueLayout.JAVA_INT,
+                                    ValueLayout.ADDRESS,
+                                    ValueLayout.JAVA_INT,
+                                ),
+                                true,
+                            )
+                            .invoke(errno, descriptor, arena.allocateFrom(name.toString()), mode)
+                            as Int
+                    if (result != 0) {
+                        throw IOException("$operation failed (errno ${errno(errno)}).")
+                    }
+                }
+            } catch (failure: IOException) {
+                throw failure
+            } catch (failure: Throwable) {
+                throw IOException("$operation is unavailable.", failure)
+            }
+        }
+
+        private fun handle(
+            symbol: String,
+            descriptor: FunctionDescriptor,
+            captureErrno: Boolean,
+        ): java.lang.invoke.MethodHandle {
+            val linker = Linker.nativeLinker()
+            val address = linker.defaultLookup().find(symbol).orElseThrow()
+            return if (captureErrno) {
+                linker.downcallHandle(address, descriptor, Linker.Option.captureCallState("errno"))
+            } else {
+                linker.downcallHandle(address, descriptor)
+            }
+        }
+
+        private fun errnoLayout(): MemoryLayout = Linker.Option.captureStateLayout()
+
+        private fun errno(state: java.lang.foreign.MemorySegment): Int =
+            state.get(
+                ValueLayout.JAVA_INT,
+                errnoLayout().byteOffset(MemoryLayout.PathElement.groupElement("errno")),
+            )
+
+        private fun requireRelativeName(name: Path) {
+            require(
+                !name.isAbsolute &&
+                    name.nameCount == 1 &&
+                    name.toString() != "." &&
+                    name.toString() != ".."
+            ) {
+                "Native release operations require one safe parent-relative name."
+            }
+        }
+    }
+}
+
+private fun ByteArray.sha1(): String = digest("SHA-1")
+
+private fun ByteArray.sha256(): String = digest("SHA-256")
+
+private fun ByteArray.digest(algorithm: String): String =
+    MessageDigest.getInstance(algorithm).digest(this).joinToString("") { "%02x".format(it) }

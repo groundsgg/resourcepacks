@@ -1,9 +1,15 @@
 package gg.grounds.resourcepacks.product
 
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PackSetBuilderTest {
@@ -29,13 +35,24 @@ class PackSetBuilderTest {
                     paths.map { it.fileName.toString() }.toList().toSet()
                 },
             )
-            assertTrue(Files.isRegularFile(artifacts.manifest))
+            assertTrue(Files.isRegularFile(artifacts.manifest.file))
             assertTrue(artifacts.content.file.fileName.toString().startsWith("grounds-content-"))
             assertTrue(artifacts.platform.file.fileName.toString().startsWith("grounds-platform-"))
             assertTrue(
                 artifacts.catalog.file.fileName.toString() ==
                     "grounds-resourcepacks-catalog-0.0.0.jar"
             )
+            listOf(artifacts.content, artifacts.platform, artifacts.catalog, artifacts.manifest)
+                .forEach { artifact ->
+                    assertTrue(Files.isRegularFile(artifact.file, NOFOLLOW_LINKS))
+                    assertFalse(Files.isSymbolicLink(artifact.file))
+                    assertEquals(ArtifactDigests.readRegularFile(artifact.file).sha1, artifact.sha1)
+                    assertEquals(
+                        ArtifactDigests.readRegularFile(artifact.file).sha256,
+                        artifact.sha256,
+                    )
+                    assertEquals(Files.size(artifact.file), artifact.size)
+                }
         } finally {
             parent.toFile().deleteRecursively()
         }
@@ -76,9 +93,105 @@ class PackSetBuilderTest {
             parent.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun `catalog provider rejects missing wrong-name and stale jar bytes without publication`() {
+        val parent = Files.createTempDirectory("packset-catalog-input-")
+        val correctName = "resourcepacks-catalog-0.0.0.jar"
+        try {
+            val cases =
+                listOf(
+                    parent.resolve(correctName),
+                    Files.copy(catalogJar(), parent.resolve("wrong-name.jar")),
+                    staleCatalogJar(parent.resolve("stale").resolve(correctName)),
+                )
+            cases.forEachIndexed { index, candidate ->
+                val output = parent.resolve("release-$index")
+                assertFailsWith<Exception>(candidate.toString()) {
+                    PackSetBuilder.build(
+                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        candidate,
+                    )
+                }
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            }
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `same explicit inputs are byte identical and changed commit changes only manifest`() {
+        val parent = Files.createTempDirectory("packset-determinism-")
+        try {
+            val first = parent.resolve("first")
+            val second = parent.resolve("second")
+            val changed = parent.resolve("changed")
+            PackSetBuilder.build(
+                ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", first),
+                catalogJar(),
+            )
+            PackSetBuilder.build(
+                ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", second),
+                catalogJar(),
+            )
+            PackSetBuilder.build(
+                ReleaseInputs("0.0.0", "b".repeat(40), "v0.0.0", changed),
+                catalogJar(),
+            )
+
+            val names =
+                Files.list(first).use {
+                    it.map { path -> path.fileName.toString() }.sorted().toList()
+                }
+            assertEquals(
+                names,
+                Files.list(second).use {
+                    it.map { path -> path.fileName.toString() }.sorted().toList()
+                },
+            )
+            assertEquals(
+                names,
+                Files.list(changed).use {
+                    it.map { path -> path.fileName.toString() }.sorted().toList()
+                },
+            )
+            names.forEach { name ->
+                assertContentEquals(
+                    Files.readAllBytes(first.resolve(name)),
+                    Files.readAllBytes(second.resolve(name)),
+                    name,
+                )
+                if (name == "manifest.json") {
+                    assertFalse(
+                        Files.readAllBytes(first.resolve(name))
+                            .contentEquals(Files.readAllBytes(changed.resolve(name)))
+                    )
+                } else {
+                    assertContentEquals(
+                        Files.readAllBytes(first.resolve(name)),
+                        Files.readAllBytes(changed.resolve(name)),
+                        name,
+                    )
+                }
+            }
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
 }
 
 private fun catalogJar(): java.nio.file.Path =
     generateSequence(java.nio.file.Path.of(System.getProperty("user.dir"))) { it.parent }
         .first { it.resolve("settings.gradle.kts").toFile().isFile }
         .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+
+private fun staleCatalogJar(path: Path): Path {
+    Files.createDirectories(path.parent)
+    JarOutputStream(Files.newOutputStream(path)).use { jar ->
+        jar.putNextEntry(JarEntry("gg/grounds/resourcepacks/catalog/GroundsAssetCatalog.class"))
+        jar.write("stale".toByteArray())
+        jar.closeEntry()
+    }
+    return path
+}

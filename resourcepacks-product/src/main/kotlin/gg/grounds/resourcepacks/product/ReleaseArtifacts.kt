@@ -14,5 +14,5 @@ internal class ReleaseArtifacts(
     val content: ReleaseArtifact,
     val platform: ReleaseArtifact,
     val catalog: ReleaseArtifact,
-    val manifest: Path,
+    val manifest: ReleaseArtifact,
 )
