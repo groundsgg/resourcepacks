@@ -337,7 +337,7 @@ class PackFailureCleanupTest {
     }
 
     @Test
-    fun `parent handle acquisition failure remains cleanup protected`() {
+    fun `parent handle acquisition failure preserves caller data and fails closed`() {
         withRoot("pack-parent-handle-failure") { root ->
             val callerFile = Files.writeString(root.resolve("caller-owned.txt"), "keep")
             val existing = existingComposerSibling(root)
@@ -356,7 +356,54 @@ class PackFailureCleanupTest {
                 }
 
             assertEquals("parent handle unavailable", failure.message)
+            val leakedChild =
+                Files.list(root).use { paths ->
+                    paths
+                        .filter {
+                            it.fileName.toString().startsWith(".pack-composer-") && it != existing
+                        }
+                        .toList()
+                        .single()
+                }
+            // Without a secure parent handle, deleting even an empty root by path has a race.
+            assertEquals(emptyList(), Files.list(leakedChild).use { it.toList() })
+            Files.delete(leakedChild)
             assertCallerState(root, callerFile, existing)
+        }
+    }
+
+    @Test
+    fun `identity capture failure is protected and fails closed without deleting replacement`() {
+        withRoot("pack-identity-capture-failure") { root ->
+            val external = Files.createTempDirectory("pack-identity-external")
+            val sentinel = Files.writeString(external.resolve("sentinel.txt"), "outside")
+            var replacement: Path? = null
+            try {
+                val failure =
+                    assertFailsWith<IOException> {
+                        PackComposer.build(
+                            ProductGraph.packs,
+                            root,
+                            PackComposerHooks(
+                                afterOwnedChildCreatedBeforeIdentityCapture = { child ->
+                                    Files.delete(child)
+                                    Files.createSymbolicLink(child, external)
+                                    replacement = child
+                                }
+                            ),
+                        )
+                    }
+
+                assertTrue(failure.message.orEmpty().contains("Owned child is not a directory"))
+                assertEquals("outside", Files.readString(sentinel))
+                val replacementPath = requireNotNull(replacement)
+                assertTrue(Files.isSymbolicLink(replacementPath))
+                // No identity was captured, so cleanup deliberately leaves the ambiguous root.
+                Files.delete(replacementPath)
+                assertEquals(emptyList(), Files.list(root).use { it.toList() })
+            } finally {
+                deleteTreeNoFollow(external)
+            }
         }
     }
 

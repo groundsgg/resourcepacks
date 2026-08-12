@@ -64,10 +64,12 @@ internal object PackComposer {
 
         require(Files.isDirectory(stagingRoot)) { "stagingRoot must be an existing directory." }
         val child = Files.createTempDirectory(stagingRoot, ".pack-composer-")
-        val childIdentity = OwnedChildIdentity.capture(child)
+        var childIdentity: OwnedChildIdentity? = null
         var parentDirectory: DirectoryStream<Path>? = null
         var completed = false
         try {
+            hooks.afterOwnedChildCreatedBeforeIdentityCapture(child)
+            childIdentity = OwnedChildIdentity.capture(child)
             hooks.beforeCleanupParentHandleOpen(child.parent)
             parentDirectory = Files.newDirectoryStream(child.parent)
             val composer = ResourcePackComposer()
@@ -127,35 +129,21 @@ internal object PackComposer {
 
     private fun deleteOwnedChild(
         child: Path,
-        identity: OwnedChildIdentity,
+        identity: OwnedChildIdentity?,
         parentDirectory: DirectoryStream<Path>?,
         hooks: PackComposerHooks,
     ) {
         try {
+            // Without the creation-time identity there is no safe way to distinguish the owned
+            // child from a replacement. A bounded temp leak is preferable to deleting caller data.
+            if (identity == null) return
             val secureParent = parentDirectory as? SecureDirectoryStream<Path>
-            if (secureParent == null) {
-                deleteRootFailClosed(child, identity)
-                return
-            }
+            // Path-based inspect-then-delete has a replacement race. Providers without a secure
+            // parent handle therefore fail closed and never traverse or delete the root by path.
+            if (secureParent == null) return
             deleteSecureEntry(secureParent, child.fileName, child, identity, hooks)
         } catch (_: Throwable) {
             // Preserve the original composition failure.
-        }
-    }
-
-    private fun deleteRootFailClosed(child: Path, identity: OwnedChildIdentity) {
-        val attributes =
-            try {
-                Files.readAttributes(child, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
-            } catch (_: NoSuchFileException) {
-                return
-            }
-        if (attributes.isSymbolicLink) {
-            Files.deleteIfExists(child)
-        } else if (attributes.isDirectory && identity.matches(attributes)) {
-            // This succeeds only for an empty directory. Never enumerate or open descendants by
-            // path on a provider without SecureDirectoryStream support.
-            Files.deleteIfExists(child)
         }
     }
 
@@ -303,6 +291,7 @@ internal data class PackComposerHooks(
     val beforeFailureCleanup: (child: Path) -> Unit = {},
     val afterCleanupDirectoryClassified: (directory: Path) -> Unit = {},
     val beforeCleanupParentHandleOpen: (parent: Path) -> Unit = {},
+    val afterOwnedChildCreatedBeforeIdentityCapture: (child: Path) -> Unit = {},
 )
 
 internal class ProductValidationException(val result: ProductValidationResult) :
