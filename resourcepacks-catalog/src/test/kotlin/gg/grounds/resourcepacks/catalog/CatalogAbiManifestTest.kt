@@ -3,14 +3,19 @@ package gg.grounds.resourcepacks.catalog
 import java.lang.classfile.Attributes
 import java.lang.classfile.ClassFile
 import java.lang.classfile.ClassModel
+import java.lang.classfile.ClassTransform
+import java.lang.constant.ConstantDescs
 import java.lang.constant.MethodTypeDesc
 import java.lang.reflect.AccessFlag
 import java.nio.file.Path
 import java.util.jar.JarFile
 import kotlin.io.path.readText
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class CatalogAbiManifestTest {
     @Test
@@ -27,24 +32,36 @@ class CatalogAbiManifestTest {
 
     @Test
     fun `ABI gate rejects a real JAR mutation adding a public member to an approved owner`() {
+        val baselineAbi = effectivePublicAbi(catalogJar())
         val mutated =
-            copyWithExtraClass(
-                "gg.grounds.resourcepacks.catalog.GroundsAssets",
-                "public final class GroundsAssets { public static final String LEAK = \"x\"; }",
-            )
-        assertFailsWith<AssertionError> {
-            assertEquals(expectedManifest(), effectivePublicAbi(mutated))
-        }
+            copyWithAddedPublicStaticField("gg/grounds/resourcepacks/catalog/GroundsAssets.class")
+        val mutatedAbi = effectivePublicAbi(mutated)
+        assertTrue(mutatedAbi.containsAll(baselineAbi), "Mutation must preserve the baseline ABI")
+        assertEquals(
+            setOf("gg.grounds.resourcepacks.catalog.GroundsAssets|FIELD|LEAK|java.lang.String"),
+            mutatedAbi - baselineAbi,
+        )
+        assertFailsWith<AssertionError> { assertEquals(expectedManifest(), mutatedAbi) }
     }
 
     @Test
-    fun `public inner under package private outer is not ABI`() {
+    fun `top level public owner containing dollar is ABI without InnerClasses`() {
+        val mutated =
+            copyWithExtraClass("injected.Legal\$Owner", "public final class Legal\$Owner {}")
+        val mutatedAbi = effectivePublicAbi(mutated)
+        assertContains(mutatedAbi, "OWNER|injected.Legal\$Owner")
+        assertFailsWith<AssertionError> { assertEquals(expectedManifest(), mutatedAbi) }
+    }
+
+    @Test
+    fun `public inner under private outer is not ABI`() {
         val mutated =
             copyWithExtraClass(
-                "injected.HiddenOuter",
-                "class HiddenOuter { public static final class Inner {} }",
+                "injected.PublicRoot",
+                "public class PublicRoot { private static class HiddenOuter { public static final class Inner {} } }",
             )
-        assertEquals(expectedManifest(), effectivePublicAbi(mutated))
+        val mutatedAbi = effectivePublicAbi(mutated)
+        assertFalse("OWNER|injected.PublicRoot\$HiddenOuter\$Inner" in mutatedAbi)
     }
 
     @Test
@@ -54,9 +71,48 @@ class CatalogAbiManifestTest {
                 "injected.PublicOuter",
                 "public class PublicOuter { public static final class Inner {} }",
             )
-        assertFailsWith<AssertionError> {
-            assertEquals(expectedManifest(), effectivePublicAbi(mutated))
+        val mutatedAbi = effectivePublicAbi(mutated)
+        assertContains(mutatedAbi, "OWNER|injected.PublicOuter\$Inner")
+        assertFailsWith<AssertionError> { assertEquals(expectedManifest(), mutatedAbi) }
+    }
+
+    @Test
+    fun `duplicate class internal names fail closed with stable diagnostic`() {
+        val duplicate =
+            copyWithConflictingClassEntry(
+                "gg/grounds/resourcepacks/catalog/GroundsAssets.class",
+                "conflict/GroundsAssets.class",
+            )
+        val failure = assertFailsWith<IllegalStateException> { effectivePublicAbi(duplicate) }
+        assertEquals(
+            "Duplicate class internal name gg/grounds/resourcepacks/catalog/GroundsAssets in JAR entries: conflict/GroundsAssets.class, gg/grounds/resourcepacks/catalog/GroundsAssets.class",
+            failure.message,
+        )
+    }
+
+    private fun copyWithConflictingClassEntry(sourceEntry: String, duplicateEntry: String): Path {
+        val root = kotlin.io.path.createTempDirectory("catalog-abi-duplicate")
+        val target = root.resolve("duplicate.jar")
+        JarFile(catalogJar().toFile()).use { original ->
+            val duplicateBytes =
+                addPublicStaticLeak(
+                    original
+                        .getInputStream(checkNotNull(original.getJarEntry(sourceEntry)))
+                        .readBytes()
+                )
+            java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(target)).use { output
+                ->
+                original.entries().asSequence().forEach { entry ->
+                    output.putNextEntry(java.util.zip.ZipEntry(entry.name))
+                    original.getInputStream(entry).copyTo(output)
+                    output.closeEntry()
+                }
+                output.putNextEntry(java.util.zip.ZipEntry(duplicateEntry))
+                output.write(duplicateBytes)
+                output.closeEntry()
+            }
         }
+        return target
     }
 
     private fun expectedManifest() =
@@ -70,15 +126,27 @@ class CatalogAbiManifestTest {
 
     private fun effectivePublicAbi(jar: Path): Set<String> =
         JarFile(jar.toFile()).use { archive ->
-            val models =
+            val classes =
                 archive
                     .entries()
                     .asSequence()
                     .filter { it.name.endsWith(".class") }
-                    .associate { entry ->
+                    .map { entry ->
                         val model = ClassFile.of().parse(archive.getInputStream(entry).readBytes())
-                        model.thisClass().asInternalName() to model
+                        ParsedClass(entry.name, model)
                     }
+                    .toList()
+            val duplicate =
+                classes
+                    .groupBy { it.model.thisClass().asInternalName() }
+                    .filterValues { it.size > 1 }
+                    .toSortedMap()
+                    .entries
+                    .firstOrNull()
+            check(duplicate == null) {
+                "Duplicate class internal name ${duplicate!!.key} in JAR entries: ${duplicate.value.map(ParsedClass::entryName).sorted().joinToString()}"
+            }
+            val models = classes.associate { it.model.thisClass().asInternalName() to it.model }
             models.values
                 .asSequence()
                 .flatMap { model ->
@@ -147,7 +215,6 @@ class CatalogAbiManifestTest {
             }
         val enclosing = model.findAttribute(Attributes.enclosingMethod())
         if (relation == null && enclosing.isPresent) error("Malformed enclosing relation for $name")
-        if (relation == null && '$' in name) error("Missing InnerClasses relation for $name")
         if (relation == null) return true
         if (!relation.has(AccessFlag.PUBLIC) && !relation.has(AccessFlag.PROTECTED)) return false
         val outer =
@@ -202,15 +269,58 @@ class CatalogAbiManifestTest {
                         output.closeEntry()
                     }
             }
-            java.nio.file.Files.walk(root)
-                .filter { it.toString().endsWith(".class") }
-                .forEach { classFile ->
-                    val entryName = root.relativize(classFile).toString().replace('\\', '/')
-                    output.putNextEntry(java.util.zip.ZipEntry(entryName))
-                    java.nio.file.Files.newInputStream(classFile).copyTo(output)
-                    output.closeEntry()
-                }
+            java.nio.file.Files.walk(root).use { classFiles ->
+                classFiles
+                    .filter { it.toString().endsWith(".class") }
+                    .forEach { classFile ->
+                        val entryName = root.relativize(classFile).toString().replace('\\', '/')
+                        output.putNextEntry(java.util.zip.ZipEntry(entryName))
+                        java.nio.file.Files.newInputStream(classFile).use { it.copyTo(output) }
+                        output.closeEntry()
+                    }
+            }
         }
         return target
     }
+
+    private fun copyWithAddedPublicStaticField(classEntry: String): Path {
+        val root = kotlin.io.path.createTempDirectory("catalog-abi-member-mutation")
+        val target = root.resolve("mutated.jar")
+        var transformed = false
+        JarFile(catalogJar().toFile()).use { original ->
+            java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(target)).use { output
+                ->
+                original.entries().asSequence().forEach { entry ->
+                    output.putNextEntry(java.util.zip.ZipEntry(entry.name))
+                    original.getInputStream(entry).use { input ->
+                        if (entry.name == classEntry) {
+                            output.write(addPublicStaticLeak(input.readBytes()))
+                            transformed = true
+                        } else {
+                            input.copyTo(output)
+                        }
+                    }
+                    output.closeEntry()
+                }
+            }
+        }
+        check(transformed) { "Missing class entry to transform: $classEntry" }
+        return target
+    }
+
+    private fun addPublicStaticLeak(classBytes: ByteArray): ByteArray {
+        val classFile = ClassFile.of()
+        val model = classFile.parse(classBytes)
+        val addField =
+            ClassTransform.endHandler { builder ->
+                builder.withField(
+                    "LEAK",
+                    ConstantDescs.CD_String,
+                    ClassFile.ACC_PUBLIC or ClassFile.ACC_STATIC,
+                )
+            }
+        return classFile.transformClass(model, ClassTransform.ACCEPT_ALL.andThen(addField))
+    }
+
+    private data class ParsedClass(val entryName: String, val model: ClassModel)
 }
