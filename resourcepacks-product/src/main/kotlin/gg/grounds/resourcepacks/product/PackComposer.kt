@@ -5,10 +5,8 @@ import gg.grounds.resourcepack.builder.ZipPackWriter
 import java.io.IOException
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.attribute.BasicFileAttributes
 
 internal data class BuiltPhysicalPack(
@@ -33,6 +31,15 @@ internal object PackComposer {
      * Internal seam for graph construction tests; production callers use [build] with ProductGraph.
      */
     internal fun build(packs: List<PhysicalPack>, stagingRoot: Path): List<BuiltPhysicalPack> {
+        return build(packs, stagingRoot, PackComposerHooks())
+    }
+
+    @JvmSynthetic
+    internal fun build(
+        packs: List<PhysicalPack>,
+        stagingRoot: Path,
+        hooks: PackComposerHooks,
+    ): List<BuiltPhysicalPack> {
         val orderedPacks = packs.sortedBy(PhysicalPack::order)
         ProductGraphValidator.validate(orderedPacks).also { result ->
             if (!result.isValid) throw ProductValidationException(result)
@@ -65,14 +72,18 @@ internal object PackComposer {
                     val artifact = writer.write(composedPack, pending)
                     val digests = ArtifactDigests.from(artifact)
                     val finalFile = child.resolve("${digests.sha1}.zip")
-                    if (Files.exists(finalFile, NOFOLLOW_LINKS))
-                        throw IOException("Refusing to overwrite an existing artifact: $finalFile")
-                    Files.move(pending, finalFile, ATOMIC_MOVE)
+                    hooks.beforePublication(pending, finalFile)
+                    Files.createLink(finalFile, pending)
+                    if (!Files.isSameFile(pending, finalFile))
+                        throw IOException(
+                            "Published artifact is not the pending artifact: $finalFile"
+                        )
                     val published = ArtifactDigests.readRegularFile(finalFile)
                     if (published != digests)
                         throw IOException(
                             "Published artifact digest differs from writer result: $finalFile"
                         )
+                    Files.delete(pending)
                     BuiltPhysicalPack(
                         pack,
                         finalFile,
@@ -118,6 +129,11 @@ internal object PackComposer {
         }
     }
 }
+
+/** Test-only phase hook; production callers always receive the no-op default. */
+internal data class PackComposerHooks(
+    val beforePublication: (pending: Path, finalFile: Path) -> Unit = { _, _ -> }
+)
 
 internal class ProductValidationException(val result: ProductValidationResult) :
     IllegalStateException(result.problems.joinToString(prefix = "Product validation failed: "))

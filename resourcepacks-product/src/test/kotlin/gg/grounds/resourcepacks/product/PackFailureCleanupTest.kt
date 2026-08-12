@@ -43,4 +43,25 @@ class PackFailureCleanupTest {
             root.toFile().deleteRecursively()
         }
     }
+
+    @Test
+    fun `publication collision never overwrites an external hard linked sentinel`() {
+        val root = Files.createTempDirectory("pack-publication-collision")
+        val sentinel = Files.writeString(root.resolve("sentinel.bin"), "keep")
+        try {
+            assertFailsWith<Exception> {
+                PackComposer.build(
+                    ProductGraph.packs,
+                    root,
+                    PackComposerHooks { _, finalFile -> Files.createLink(finalFile, sentinel) },
+                )
+            }
+
+            assertTrue(Files.exists(sentinel))
+            assertTrue(Files.readString(sentinel) == "keep")
+            assertTrue(Files.list(root).use { files -> files.allMatch { it == sentinel } })
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
 }
