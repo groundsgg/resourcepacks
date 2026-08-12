@@ -8,5 +8,4 @@ internal data class ReleaseInputs(
     val provenanceCommit: String,
     val provenanceTag: String,
     val outputDirectory: Path,
-    val catalogJar: Path = Path.of(""),
 )

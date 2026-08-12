@@ -9,7 +9,13 @@ val buildPackSet by
         group = "build"
         description = "Builds one transactional four-artifact PackSet release from explicit inputs."
         dependsOn(":resourcepacks-catalog:jar", "jar")
-        classpath = sourceSets.main.get().runtimeClasspath
+        classpath =
+            files(
+                project(":resourcepacks-catalog")
+                    .tasks
+                    .named<org.gradle.jvm.tasks.Jar>("jar")
+                    .flatMap { it.archiveFile }
+            ) + sourceSets.main.get().runtimeClasspath
         mainClass.set(application.mainClass)
         jvmArgs("--enable-native-access=ALL-UNNAMED")
         val required =
@@ -28,17 +34,6 @@ val buildPackSet by
                 values.getValue("provenanceTag")!!,
                 "--output",
                 values.getValue("releaseOutput")!!,
-            )
-            systemProperty(
-                "grounds.catalog.jar",
-                project(":resourcepacks-catalog")
-                    .tasks
-                    .named<org.gradle.jvm.tasks.Jar>("jar")
-                    .get()
-                    .archiveFile
-                    .get()
-                    .asFile
-                    .absolutePath,
             )
         }
     }

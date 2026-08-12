@@ -16,6 +16,11 @@ import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
 /** Builds all release bytes in an owned sibling and publishes them as one directory rename. */
 internal object PackSetBuilder {
     fun build(inputs: ReleaseInputs): ReleaseArtifacts {
+        return build(inputs, CatalogJarProvider.runtime())
+    }
+
+    @JvmSynthetic
+    internal fun build(inputs: ReleaseInputs, catalogJar: Path): ReleaseArtifacts {
         validateInputs(inputs)
         val output = validateDestination(inputs.outputDirectory)
         val parent =
@@ -33,7 +38,7 @@ internal object PackSetBuilder {
             removeEmptyOwnedDirectory(content.file.parent)
 
             val catalogFile = stage.resolve("grounds-resourcepacks-catalog-${inputs.version}.jar")
-            val catalogSource = catalogJar(inputs)
+            val catalogSource = catalogJar(inputs, catalogJar)
             Files.copy(catalogSource, catalogFile, COPY_ATTRIBUTES)
             val catalogDigest = ArtifactDigests.readRegularFile(catalogFile)
             val manifest = manifest(inputs, catalogFile, catalogDigest, contentFile, platformFile)
@@ -88,8 +93,8 @@ internal object PackSetBuilder {
         return output
     }
 
-    private fun catalogJar(inputs: ReleaseInputs): Path {
-        val jar = inputs.catalogJar.toAbsolutePath().normalize()
+    private fun catalogJar(inputs: ReleaseInputs, configured: Path): Path {
+        val jar = configured.toAbsolutePath().normalize()
         require(jar.fileName.toString() == "resourcepacks-catalog-${inputs.version}.jar") {
             "Catalog JAR filename/version mismatch."
         }
@@ -176,6 +181,19 @@ internal object PackSetBuilder {
     private fun deleteOwnedStage(stage: Path) = PackComposer.deleteOwnedStagingDirectory(stage)
 }
 
+/** Build wiring may inject a current catalog artifact; the public CLI never accepts it. */
+internal object CatalogJarProvider {
+    fun runtime(): Path =
+        Path.of(
+            gg.grounds.resourcepacks.catalog.GroundsAssetCatalog::class
+                .java
+                .protectionDomain
+                .codeSource
+                .location
+                .toURI()
+        )
+}
+
 /** Linux kernel `renameat2(RENAME_NOREPLACE)` with a deliberate fail-closed fallback. */
 internal object AtomicNoReplaceRename {
     private const val AT_FDCWD = -100
@@ -203,7 +221,7 @@ internal object AtomicNoReplaceRename {
                                 ValueLayout.ADDRESS,
                                 ValueLayout.JAVA_INT,
                                 ValueLayout.ADDRESS,
-                                ValueLayout.JAVA_LONG,
+                                ValueLayout.JAVA_INT,
                             ),
                             options,
                         )
@@ -215,7 +233,7 @@ internal object AtomicNoReplaceRename {
                         arena.allocateFrom(stage.toString()),
                         AT_FDCWD,
                         arena.allocateFrom(output.toString()),
-                        RENAME_NOREPLACE,
+                        RENAME_NOREPLACE.toInt(),
                     ) as Int
                 if (result != 0) {
                     val error =

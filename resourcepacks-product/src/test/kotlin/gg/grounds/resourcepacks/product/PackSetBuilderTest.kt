@@ -14,7 +14,8 @@ class PackSetBuilderTest {
         try {
             val artifacts =
                 PackSetBuilder.build(
-                    ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output, catalogJar())
+                    ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                    catalogJar(),
                 )
 
             assertEquals(
@@ -47,7 +48,8 @@ class PackSetBuilderTest {
         try {
             assertFailsWith<IllegalArgumentException> {
                 PackSetBuilder.build(
-                    ReleaseInputs("0.0.0", "A".repeat(40), "v0.0.0", output, catalogJar())
+                    ReleaseInputs("0.0.0", "A".repeat(40), "v0.0.0", output),
+                    catalogJar(),
                 )
             }
             assertTrue(Files.notExists(output))

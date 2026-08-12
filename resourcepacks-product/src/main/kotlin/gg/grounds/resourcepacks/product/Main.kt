@@ -35,10 +35,6 @@ internal object ReleaseCli {
             values.getValue("--commit"),
             values.getValue("--tag"),
             Path.of(values.getValue("--output")),
-            Path.of(
-                System.getProperty("grounds.catalog.jar")
-                    ?: error("Catalog JAR property is required.")
-            ),
         )
     }
 }
