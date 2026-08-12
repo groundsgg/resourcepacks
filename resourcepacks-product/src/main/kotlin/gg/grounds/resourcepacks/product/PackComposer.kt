@@ -58,6 +58,7 @@ internal object PackComposer {
 
         require(Files.isDirectory(stagingRoot)) { "stagingRoot must be an existing directory." }
         val child = Files.createTempDirectory(stagingRoot, ".pack-composer-")
+        val childIdentity = OwnedChildIdentity.capture(child)
         var completed = false
         try {
             val composer = ResourcePackComposer()
@@ -87,6 +88,7 @@ internal object PackComposer {
                             "Published artifact digest differs from writer result: $finalFile"
                         )
                     Files.delete(pending)
+                    hooks.afterPackPublicationVerified(pack, finalFile)
                     BuiltPhysicalPack(
                         pack,
                         finalFile,
@@ -99,30 +101,38 @@ internal object PackComposer {
             return built
         } finally {
             if (!completed) {
-                hooks.beforeFailureCleanup(child)
-                deleteOwnedChild(child)
+                try {
+                    hooks.beforeFailureCleanup(child)
+                } catch (_: Throwable) {
+                    // A test seam must never replace the original composition failure.
+                }
+                deleteOwnedChild(child, childIdentity)
             }
         }
     }
 
-    private fun deleteOwnedChild(child: Path) {
+    private fun deleteOwnedChild(child: Path, identity: OwnedChildIdentity) {
         try {
-            if (Files.isSymbolicLink(child)) {
-                Files.deleteIfExists(child)
-                return
-            }
-            val root = Files.readAttributes(child, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
-            if (!root.isDirectory) {
-                Files.deleteIfExists(child)
-                return
-            }
             Files.walkFileTree(
                 child,
                 object : SimpleFileVisitor<Path>() {
+                    override fun preVisitDirectory(
+                        dir: Path,
+                        attrs: BasicFileAttributes,
+                    ): FileVisitResult {
+                        if (dir == child && !identity.matches(attrs)) {
+                            return FileVisitResult.TERMINATE
+                        }
+                        return FileVisitResult.CONTINUE
+                    }
+
                     override fun visitFile(
                         file: Path,
                         attrs: BasicFileAttributes,
                     ): FileVisitResult {
+                        if (file == child && !attrs.isSymbolicLink) {
+                            return FileVisitResult.TERMINATE
+                        }
                         Files.deleteIfExists(file)
                         return FileVisitResult.CONTINUE
                     }
@@ -137,10 +147,30 @@ internal object PackComposer {
                     }
                 },
             )
-        } catch (_: IOException) {
+        } catch (_: Throwable) {
             // Preserve the original composition failure.
-        } catch (_: SecurityException) {
-            // Preserve the original composition failure.
+        }
+    }
+
+    private data class OwnedChildIdentity(
+        val fileKey: Any?,
+        val creationTime: java.nio.file.attribute.FileTime,
+    ) {
+        fun matches(attributes: BasicFileAttributes): Boolean =
+            if (fileKey != null) {
+                fileKey == attributes.fileKey()
+            } else {
+                attributes.fileKey() == null && creationTime == attributes.creationTime()
+            }
+
+        companion object {
+            fun capture(path: Path): OwnedChildIdentity {
+                val attributes =
+                    Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+                if (!attributes.isDirectory)
+                    throw IOException("Owned child is not a directory: $path")
+                return OwnedChildIdentity(attributes.fileKey(), attributes.creationTime())
+            }
         }
     }
 }
@@ -152,6 +182,7 @@ internal data class PackComposerHooks(
     val afterPublicationBeforeVerify: (pack: PhysicalPack, pending: Path, finalFile: Path) -> Unit =
         { _, _, _ ->
         },
+    val afterPackPublicationVerified: (pack: PhysicalPack, finalFile: Path) -> Unit = { _, _ -> },
     val beforeFailureCleanup: (child: Path) -> Unit = {},
 )
 

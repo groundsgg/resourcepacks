@@ -57,7 +57,7 @@ internal object CatalogParityValidator {
         val localKey = key.substringAfter(':', key)
         val prefix =
             when (kind) {
-                AssetKind.PROP,
+                AssetKind.PROP -> "models"
                 AssetKind.NPC_BODY -> "models/npc_bodies"
                 AssetKind.SOUND -> "sounds"
                 AssetKind.PARTICLE -> "particles"

@@ -93,4 +93,45 @@ class CatalogParityValidatorTest {
             wrongKind.problems.map { it.code },
         )
     }
+
+    @Test
+    fun `npc body uses its exact nested model path and rejects the neighboring prop path`() {
+        val npcBodyCatalog = catalogWith("grounds:guide", AssetKind.NPC_BODY)
+
+        val exact =
+            CatalogParityValidator.validate(
+                npcBodyCatalog,
+                setOf(PackPath.of("assets/grounds/models/npc_bodies/guide.json")),
+            )
+        val neighboringPropPath =
+            CatalogParityValidator.validate(
+                npcBodyCatalog,
+                setOf(PackPath.of("assets/grounds/models/guide.json")),
+            )
+        val propAtNpcBodyPath =
+            CatalogParityValidator.validate(
+                catalogWith("grounds:guide", AssetKind.PROP),
+                setOf(PackPath.of("assets/grounds/models/npc_bodies/guide.json")),
+            )
+
+        assertTrue(exact.isValid)
+        assertEquals(
+            listOf(ProductProblemCode.CATALOG_WRONG_KIND),
+            neighboringPropPath.problems.map { it.code },
+        )
+        assertEquals(
+            listOf(ProductProblemCode.CATALOG_WRONG_KIND),
+            propAtNpcBodyPath.problems.map { it.code },
+        )
+    }
+
+    private fun catalogWith(key: String, kind: AssetKind): AssetCatalog {
+        val assetKey = AssetKey(key)
+        return AssetCatalog(
+            CatalogId("grounds:assets"),
+            "0.1.0",
+            CatalogVersionRange(CatalogId("grounds:resourcepacks"), "0.1.0", "0.1.0"),
+            mapOf(assetKey to AssetDefinition(assetKey, kind, emptySet(), null, emptyMap())),
+        )
+    }
 }
