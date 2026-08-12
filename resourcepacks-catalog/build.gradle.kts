@@ -1,4 +1,5 @@
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.Copy
 
 plugins {
     `java-library`
@@ -14,6 +15,31 @@ dependencies {
 }
 
 java { withSourcesJar() }
+
+val generatedCatalogSources = layout.buildDirectory.dir("generated/sources/catalog/kotlin")
+
+val generateCatalogBuildInfo by tasks.registering(Copy::class) {
+    from(rootProject.layout.projectDirectory.file("version.txt"))
+    into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
+    rename { "CatalogBuildInfo.kt" }
+    filter { line ->
+        when (line) {
+            rootProject.version.toString() ->
+                "package gg.grounds.resourcepacks.catalog\n\nobject CatalogBuildInfo {\n    const val VERSION = \"$line\"\n}"
+            else -> line
+        }
+    }
+}
+
+kotlin { sourceSets.named("main") { kotlin.srcDir(generatedCatalogSources) } }
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(generateCatalogBuildInfo)
+}
+
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    dependsOn(generateCatalogBuildInfo)
+}
 
 val forbiddenRuntimeCoordinateFragments =
     listOf(
