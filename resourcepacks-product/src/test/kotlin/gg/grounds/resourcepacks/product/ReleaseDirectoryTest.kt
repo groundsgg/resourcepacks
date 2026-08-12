@@ -15,6 +15,53 @@ import kotlin.test.assertTrue
 
 class ReleaseDirectoryTest {
     @Test
+    fun `stage name swapped immediately after creation never redirects composition`() {
+        listOf("real-directory", "symlink").forEach { replacementKind ->
+            withRoots("release-created-stage-$replacementKind") { parent, external ->
+                val externalSentinel =
+                    Files.writeString(external.resolve("sentinel.txt"), "outside")
+                val output = parent.resolve("release")
+                val displaced = parent.resolve("displaced-owned-stage")
+                var replacement: Path? = null
+
+                assertFailsWith<IOException>(replacementKind) {
+                    PackSetBuilder.build(
+                        releaseInputs(output),
+                        releaseCatalogJar(),
+                        PackSetBuilderHooks(
+                            afterOwnedDirectoryCreatedBeforeComposition = { stage ->
+                                Files.move(stage, displaced)
+                                when (replacementKind) {
+                                    "real-directory" -> {
+                                        Files.createDirectory(stage)
+                                        Files.writeString(stage.resolve("attacker.txt"), "attacker")
+                                    }
+                                    else -> Files.createSymbolicLink(stage, external)
+                                }
+                                replacement = stage
+                            }
+                        ),
+                    )
+                }
+
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+                assertEquals("outside", Files.readString(externalSentinel))
+                assertEquals(1L, Files.list(external).use { it.count() })
+                assertTrue(Files.isDirectory(displaced, NOFOLLOW_LINKS))
+                assertTrue(Files.list(displaced).use { it.count() } > 0L)
+                if (replacementKind == "real-directory") {
+                    assertEquals(
+                        "attacker",
+                        Files.readString(requireNotNull(replacement).resolve("attacker.txt")),
+                    )
+                } else {
+                    assertTrue(Files.isSymbolicLink(requireNotNull(replacement)))
+                }
+            }
+        }
+    }
+
+    @Test
     fun `unsafe and preexisting outputs fail before a stage is created`() {
         val parent = Files.createTempDirectory("release-output-matrix-")
         val external = Files.createTempDirectory("release-output-matrix-external-")

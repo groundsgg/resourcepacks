@@ -30,21 +30,27 @@ import java.util.UUID
 internal class SecureOwnedDirectory
 private constructor(
     val path: Path,
-    val stablePath: Path,
     private val nativeParent: LinuxDirectoryHandle,
     private val parent: SecureDirectoryStream<Path>,
+    private val nativeStage: LinuxDirectoryHandle,
     private var name: Path,
     private val identity: Identity,
 ) : AutoCloseable {
-    fun verify(): Boolean = verify(name)
+    val stablePath: Path = nativeStage.anchor
 
-    fun verify(candidate: Path): Boolean =
+    fun verify(): Boolean = verifyName(name)
+
+    private fun verifyName(candidate: Path): Boolean =
         attributes(parent, candidate)?.let {
             it.isDirectory && !it.isSymbolicLink && identity.matches(it)
         } == true
 
     fun snapshot(expectedNames: Set<String>, afterOpen: () -> Unit = {}): DirectorySnapshot =
-        openVerified(name).use { opened ->
+        openStageStream().use { opened ->
+            val before = readAttributes(opened)
+            if (before == null || !before.isDirectory || !identity.matches(before)) {
+                throw IOException("Held release directory identity changed.")
+            }
             afterOpen()
             val stillOpened = readAttributes(opened)
             if (stillOpened == null || !identity.matches(stillOpened)) {
@@ -73,22 +79,51 @@ private constructor(
     ) {
         require(outputName.nameCount == 1) { "Release output must be one parent-relative name." }
         hooks.immediatelyBeforeRename(path)
-        if (!expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))) {
+        if (
+            !verifyName(name) ||
+                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+        ) {
             throw IOException("Owned staging directory changed immediately before publication.")
         }
         hooks.afterPreRenameIdentityVerified(path)
-        if (!expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))) {
+        if (
+            !verifyName(name) ||
+                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+        ) {
             throw IOException("Owned staging directory changed before native publication.")
         }
         rename.rename(nativeParent, name, outputName)
         name = outputName
+        if (!verifyName(name)) {
+            throw IOException("Published output name does not reference the held stage directory.")
+        }
     }
 
-    fun publishedStablePath(): Path = nativeParent.anchor.resolve(name)
+    fun publishedStablePath(): Path = nativeStage.anchor
 
     fun deleteOwned(hooks: PackSetBuilderHooks = PackSetBuilderHooks()) {
-        if (!verify(name)) return
-        delete(parent, name, identity, path.parent.resolve(name), hooks)
+        if (!verifyName(name)) return
+        openStageStream().use { heldStage ->
+            val held = readAttributes(heldStage) ?: return
+            if (!held.isDirectory || !identity.matches(held)) return
+            val display = path.parent.resolve(name)
+            try {
+                hooks.afterCleanupDirectoryClassified(display)
+            } catch (_: Throwable) {
+                // A cleanup seam cannot obscure the primary build failure.
+            }
+            heldStage.names().forEach { childName ->
+                if (!delete(heldStage, childName, null, display.resolve(childName), hooks)) return
+            }
+            if (!verifyName(name)) return
+            val after = readAttributes(heldStage) ?: return
+            if (!identity.matches(after)) return
+        }
+        try {
+            parent.deleteDirectory(name)
+        } catch (_: Throwable) {
+            // Cleanup is fail-closed and cannot replace the primary failure.
+        }
     }
 
     fun displayParentStillHeldIdentity(): Boolean = nativeParent.sameDirectory(path.parent)
@@ -96,9 +131,14 @@ private constructor(
     override fun close() {
         var failure: Throwable? = null
         try {
-            parent.close()
+            nativeStage.close()
         } catch (caught: Throwable) {
             failure = caught
+        }
+        try {
+            parent.close()
+        } catch (caught: Throwable) {
+            if (failure == null) failure = caught else failure.addSuppressed(caught)
         }
         try {
             nativeParent.close()
@@ -108,15 +148,13 @@ private constructor(
         failure?.let { throw it }
     }
 
-    private fun openVerified(entry: Path): SecureDirectoryStream<Path> {
-        if (!verify(entry)) throw IOException("Owned release directory identity changed.")
-        val opened = parent.newDirectoryStream(entry, NOFOLLOW_LINKS)
-        val attrs = readAttributes(opened)
-        if (attrs == null || !attrs.isDirectory || !identity.matches(attrs)) {
-            opened.close()
-            throw IOException("Owned release directory identity changed while opening it.")
-        }
-        return opened
+    private fun openStageStream(): SecureDirectoryStream<Path> {
+        val raw: DirectoryStream<Path> = Files.newDirectoryStream(nativeStage.anchor)
+        return raw as? SecureDirectoryStream<Path>
+            ?: run {
+                raw.close()
+                throw IOException("Secure stage directory handles are required.")
+            }
     }
 
     private fun delete(
@@ -205,6 +243,7 @@ private constructor(
             val normalizedParent = parentPath.toAbsolutePath().normalize()
             val nativeParent = LinuxDirectoryHandle.open(normalizedParent)
             var parent: SecureDirectoryStream<Path>? = null
+            var nativeStage: LinuxDirectoryHandle? = null
             var childName: Path? = null
             try {
                 val rawParent: DirectoryStream<Path> = Files.newDirectoryStream(nativeParent.anchor)
@@ -219,22 +258,45 @@ private constructor(
                 }
                 childName = Path.of("$prefix${UUID.randomUUID()}")
                 nativeParent.createDirectory(childName)
-                val attrs =
+                nativeStage = nativeParent.openDirectory(childName)
+                val rawStage: DirectoryStream<Path> = Files.newDirectoryStream(nativeStage.anchor)
+                val stage =
+                    rawStage as? SecureDirectoryStream<Path>
+                        ?: run {
+                            rawStage.close()
+                            throw IOException("Secure stage directory handles are required.")
+                        }
+                val parentAttrs =
                     attributes(parent, childName)
                         ?: throw IOException("Owned staging directory vanished.")
-                if (!attrs.isDirectory || attrs.isSymbolicLink || attrs.fileKey() == null) {
+                val stageAttrs =
+                    stage.use { opened -> readAttributes(opened) }
+                        ?: throw IOException("Held staging directory vanished.")
+                val identity = Identity.from(stageAttrs)
+                if (
+                    !parentAttrs.isDirectory ||
+                        parentAttrs.isSymbolicLink ||
+                        parentAttrs.fileKey() == null ||
+                        !stageAttrs.isDirectory ||
+                        !identity.matches(parentAttrs)
+                ) {
                     throw IOException("Owned staging directory is unsafe.")
                 }
                 val displayPath = normalizedParent.resolve(childName)
                 return SecureOwnedDirectory(
                     displayPath,
-                    nativeParent.anchor.resolve(childName),
                     nativeParent,
                     parent,
+                    nativeStage,
                     childName,
-                    Identity.from(attrs),
+                    identity,
                 )
             } catch (failure: Throwable) {
+                try {
+                    nativeStage?.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
                 if (childName != null && parent != null) {
                     try {
                         parent.deleteDirectory(childName)
@@ -358,6 +420,38 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
     fun createDirectory(name: Path) {
         requireRelativeName(name)
         invokePath("mkdirat", "mkdirat", descriptor, name, 0x1c0)
+    }
+
+    fun openDirectory(name: Path): LinuxDirectoryHandle {
+        requireRelativeName(name)
+        try {
+            Arena.ofConfined().use { arena ->
+                val childDescriptor =
+                    handle(
+                            "openat",
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.ADDRESS,
+                                ValueLayout.JAVA_INT,
+                            ),
+                            false,
+                        )
+                        .invoke(
+                            descriptor,
+                            arena.allocateFrom(name.toString()),
+                            O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC,
+                        ) as Int
+                if (childDescriptor < 0) {
+                    throw IOException("Owned staging directory cannot be opened securely.")
+                }
+                return LinuxDirectoryHandle(childDescriptor)
+            }
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Secure staging directory handle is unavailable.", failure)
+        }
     }
 
     fun renameNoReplace(from: Path, to: Path) {

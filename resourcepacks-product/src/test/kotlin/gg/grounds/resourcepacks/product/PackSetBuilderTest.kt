@@ -1,8 +1,10 @@
 package gg.grounds.resourcepacks.product
 
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 import kotlin.test.Test
@@ -13,6 +15,75 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PackSetBuilderTest {
+    @Test
+    fun `isolated builder phase failures publish none and preserve catalog and artwork`() {
+        val root = repositoryRoot()
+        val catalog = catalogJar()
+        val sourcePaths =
+            Files.walk(root.resolve("art")).use { paths ->
+                paths.filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }.sorted().toList()
+            } + listOf(catalog)
+        val before = sourcePaths.associateWith(::immutableFileState)
+        val cases =
+            listOf<Pair<String, PackSetBuilderHooks>>(
+                "source-read" to
+                    PackSetBuilderHooks(
+                        beforeComposition = { throw IOException("source art read unavailable") }
+                    ),
+                "catalog-copy" to
+                    PackSetBuilderHooks(
+                        afterCatalogCopy = { _, staged -> Files.write(staged, byteArrayOf(0x42)) }
+                    ),
+                "composer" to
+                    PackSetBuilderHooks(
+                        afterComposition = { throw IOException("composer phase failed") }
+                    ),
+                "stage-write" to
+                    PackSetBuilderHooks(
+                        afterStageWrite = { throw IOException("stage write failed") }
+                    ),
+                "hash" to
+                    PackSetBuilderHooks(
+                        beforePrePublishVerification = { stage ->
+                            val pack =
+                                Files.list(stage).use { entries ->
+                                    entries
+                                        .filter { it.fileName.toString().endsWith(".zip") }
+                                        .findFirst()
+                                        .orElseThrow()
+                                }
+                            Files.write(pack, byteArrayOf(0x42))
+                        }
+                    ),
+                "manifest" to
+                    PackSetBuilderHooks(
+                        beforeManifestValidation = { manifest -> Files.writeString(manifest, "{}") }
+                    ),
+                "native-rename" to
+                    PackSetBuilderHooks(
+                        rename = SecureRename { _, _, _ -> throw IOException("rename failed") }
+                    ),
+            )
+        val parent = Files.createTempDirectory("packset-phase-matrix-")
+        try {
+            cases.forEachIndexed { index, (name, hooks) ->
+                val output = parent.resolve("release-$index")
+                assertFailsWith<Exception>(name) {
+                    PackSetBuilder.build(
+                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        catalog,
+                        hooks,
+                    )
+                }
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS), name)
+                assertEquals(before, sourcePaths.associateWith(::immutableFileState), name)
+            }
+            assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `build publishes exactly the measured four artifact release atomically`() {
         val parent = Files.createTempDirectory("packset-builder-")
@@ -182,9 +253,28 @@ class PackSetBuilderTest {
 }
 
 private fun catalogJar(): java.nio.file.Path =
-    generateSequence(java.nio.file.Path.of(System.getProperty("user.dir"))) { it.parent }
+    repositoryRoot().resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+
+private fun repositoryRoot(): Path =
+    generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
         .first { it.resolve("settings.gradle.kts").toFile().isFile }
-        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+
+private data class ImmutableFileState(
+    val bytes: List<Byte>,
+    val fileKey: Any?,
+    val creationTime: java.nio.file.attribute.FileTime,
+    val lastModifiedTime: java.nio.file.attribute.FileTime,
+)
+
+private fun immutableFileState(path: Path): ImmutableFileState {
+    val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+    return ImmutableFileState(
+        Files.readAllBytes(path).toList(),
+        attrs.fileKey(),
+        attrs.creationTime(),
+        attrs.lastModifiedTime(),
+    )
+}
 
 private fun staleCatalogJar(path: Path): Path {
     Files.createDirectories(path.parent)

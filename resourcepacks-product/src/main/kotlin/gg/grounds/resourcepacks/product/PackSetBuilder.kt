@@ -41,7 +41,10 @@ internal object PackSetBuilder {
         var complete = false
         var primaryFailure: Throwable? = null
         try {
+            hooks.afterOwnedDirectoryCreatedBeforeComposition(owned.path)
+            hooks.beforeComposition()
             val packs = PackComposer.build(ProductGraph, stage)
+            hooks.afterComposition()
             val content = packs.single { it.pack.role == PackRole.CONTENT }
             val platform = packs.single { it.pack.role == PackRole.PLATFORM }
             val contentFile = stage.resolve("grounds-content-${content.sha1}.zip")
@@ -54,14 +57,20 @@ internal object PackSetBuilder {
             val catalogSource = validateCatalogJar(inputs, catalogJar)
             val catalogBefore = sourceState(catalogSource)
             Files.copy(catalogSource, catalogFile, COPY_ATTRIBUTES)
+            hooks.afterCatalogCopy(catalogSource, catalogFile)
             if (sourceState(catalogSource) != catalogBefore) {
                 throw IOException("Catalog JAR changed while copying it.")
             }
             val catalogDigest = ArtifactDigests.readRegularFile(catalogFile)
+            if (catalogDigest != catalogBefore.digests) {
+                throw IOException("Staged catalog bytes differ from the exact catalog input.")
+            }
             val manifest = manifest(inputs, catalogFile, catalogDigest, contentFile, platformFile)
             val manifestFile = stage.resolve("manifest.json")
             val manifestBytes = PackSetManifestJson.encode(manifest)
             Files.write(manifestFile, manifestBytes)
+            hooks.afterStageWrite()
+            hooks.beforeManifestValidation(manifestFile)
             validateManifest(manifestBytes, catalogFile, contentFile, platformFile)
 
             val expectedNames =
@@ -350,6 +359,12 @@ internal object CatalogJarProvider {
 }
 
 internal data class PackSetBuilderHooks(
+    val afterOwnedDirectoryCreatedBeforeComposition: (stage: Path) -> Unit = {},
+    val beforeComposition: () -> Unit = {},
+    val afterComposition: () -> Unit = {},
+    val afterCatalogCopy: (source: Path, staged: Path) -> Unit = { _, _ -> },
+    val afterStageWrite: () -> Unit = {},
+    val beforeManifestValidation: (manifest: Path) -> Unit = {},
     val beforePrePublishVerification: (stage: Path) -> Unit = {},
     val immediatelyBeforeRename: (stage: Path) -> Unit = {},
     val afterPreRenameIdentityVerified: (stage: Path) -> Unit = {},
