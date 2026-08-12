@@ -49,7 +49,7 @@ tasks.register("verifyCatalogRuntimeClasspath") {
                 }
 
         check(forbiddenCoordinates.isEmpty()) {
-            "Catalog runtime classpath has forbidden components: ${forbiddenCoordinates.sorted().joinToString()}."
+            "Forbidden catalog runtime components: ${forbiddenCoordinates.sorted().joinToString()}."
         }
     }
 }

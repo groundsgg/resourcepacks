@@ -1,6 +1,8 @@
 package gg.grounds.resourcepacks.catalog
 
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -51,20 +53,35 @@ class BuildBoundaryTest {
 
     @Test
     fun `the catalog runtime verification rejects a testkit control mutation by resolved coordinate`() {
-        val buildFile = rootDirectory.resolve("resourcepacks-catalog/build.gradle.kts")
-        val originalBuild = buildFile.readText()
+        val fixtureDirectory = Files.createTempDirectory("resourcepacks-catalog-runtime-fixture")
 
         try {
+            copyFixtureFile("settings.gradle.kts", fixtureDirectory)
+            copyFixtureFile("build.gradle.kts", fixtureDirectory)
+            copyFixtureFile("version.txt", fixtureDirectory)
+            copyFixtureFile("resourcepacks-catalog/build.gradle.kts", fixtureDirectory)
+            copyFixtureFile("resourcepacks-catalog/gradle.lockfile", fixtureDirectory)
+            copyFixtureFile("resourcepacks-product/build.gradle.kts", fixtureDirectory)
+            copyFixtureFile("resourcepacks-product/gradle.lockfile", fixtureDirectory)
+
+            val buildFile = fixtureDirectory.resolve("resourcepacks-catalog/build.gradle.kts")
             buildFile.writeText(
-                originalBuild +
+                buildFile.readText() +
                     "\n dependencies { runtimeOnly(\"gg.grounds:resource-pack-testkit:0.1.0\") }\n"
             )
 
-            val failure = runGradleAndFail(":resourcepacks-catalog:verifyCatalogRuntimeClasspath")
+            runGradle(fixtureDirectory, ":resourcepacks-catalog:dependencies", "--write-locks")
 
+            val failure =
+                runGradleAndFail(fixtureDirectory, ":resourcepacks-catalog:verifyCatalogRuntimeClasspath")
+
+            assertContains(
+                failure,
+                "Forbidden catalog runtime components:",
+            )
             assertContains(failure, "gg.grounds:resource-pack-testkit:0.1.0")
         } finally {
-            buildFile.writeText(originalBuild)
+            fixtureDirectory.toFile().deleteRecursively()
         }
     }
 
@@ -92,8 +109,11 @@ class BuildBoundaryTest {
     }
 
     private fun runGradle(vararg arguments: String): String =
+        runGradle(rootDirectory, *arguments)
+
+    private fun runGradle(projectDirectory: Path, vararg arguments: String): String =
         GradleRunner.create()
-            .withProjectDir(rootDirectory.toFile())
+            .withProjectDir(projectDirectory.toFile())
             .withArguments(
                 "--gradle-user-home",
                 Path.of(System.getProperty("user.home"), ".gradle").toString(),
@@ -105,8 +125,11 @@ class BuildBoundaryTest {
             .output
 
     private fun runGradleAndFail(vararg arguments: String): String =
+        runGradleAndFail(rootDirectory, *arguments)
+
+    private fun runGradleAndFail(projectDirectory: Path, vararg arguments: String): String =
         GradleRunner.create()
-            .withProjectDir(rootDirectory.toFile())
+            .withProjectDir(projectDirectory.toFile())
             .withArguments(
                 "--gradle-user-home",
                 Path.of(System.getProperty("user.home"), ".gradle").toString(),
@@ -115,4 +138,10 @@ class BuildBoundaryTest {
             )
             .buildAndFail()
             .output
+
+    private fun copyFixtureFile(relativePath: String, fixtureDirectory: Path) {
+        val target = fixtureDirectory.resolve(relativePath)
+        Files.createDirectories(target.parent)
+        Files.copy(rootDirectory.resolve(relativePath), target, StandardCopyOption.REPLACE_EXISTING)
+    }
 }
