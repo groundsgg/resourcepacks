@@ -7,10 +7,14 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   verify:
     runs-on: ubuntu-24.04
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:

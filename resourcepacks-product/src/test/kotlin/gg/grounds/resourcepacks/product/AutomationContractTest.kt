@@ -65,6 +65,29 @@ class AutomationContractTest {
                     "permissions:\n  contents: write\n  packages: write",
                 )
         assertFails { assertRelease(parseText(overBroadPermissions)) }
+        val ciWithoutPackageRead = replaceOnce(ci, "  packages: read\n", "")
+        assertFails { assertCi(parseText(ciWithoutPackageRead)) }
+        val ciWithoutResolutionToken =
+            replaceOnce(ci, "      GITHUB_TOKEN: \${{ github.token }}\n", "")
+        assertFails { assertCi(parseText(ciWithoutResolutionToken)) }
+        val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
+        assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
+        val releaseWithSecretInsteadOfBuiltInToken =
+            replaceExactly(
+                release,
+                "GITHUB_TOKEN: \${{ github.token }}",
+                "GITHUB_TOKEN: \${{ secrets.PACKAGES_TOKEN }}",
+                2,
+            )
+        assertFails { assertRelease(parseText(releaseWithSecretInsteadOfBuiltInToken)) }
+        val publicCdnWithPackageToken =
+            replaceOnce(
+                release,
+                "  public-cdn:\n    needs: publish\n",
+                "  public-cdn:\n    needs: publish\n    env:\n" +
+                    "      GITHUB_TOKEN: \${{ github.token }}\n",
+            )
+        assertFails { assertRelease(parseText(publicCdnWithPackageToken)) }
 
         // New full-binding mutations. Every expected value below is a literal independent of the
         // mutated document, so these cannot pass by deriving an expectation from the fixture.
@@ -151,14 +174,14 @@ class AutomationContractTest {
         assertEquals(setOf("push", "pull_request"), triggers.keys)
         assertEquals(mapOf("branches" to listOf("main")), mapping(triggers, "push"))
         assertEquals(null, triggers["pull_request"])
-        assertEquals(mapOf("contents" to "read"), mapping(ci, "permissions"))
+        assertEquals(mapOf("contents" to "read", "packages" to "read"), mapping(ci, "permissions"))
 
         val jobs = mapping(ci, "jobs")
         assertEquals(setOf("verify"), jobs.keys)
         val verify = mapping(jobs, "verify")
         assertEquals("ubuntu-24.04", scalar(verify, "runs-on"))
         assertFalse(containsKeyDeep(ci, "environment"))
-        assertFalse(containsKeyDeep(ci, "env"))
+        assertEquals(packageResolutionEnvironment, mapping(verify, "env"))
         assertFalse(ci.toString().contains("secrets."))
         val steps = steps(verify)
 
@@ -270,7 +293,7 @@ class AutomationContractTest {
         assertEquals(listOf("build", "public-cdn"), mapping(jobs, "release-assets")["needs"])
         assertEquals(
             mapOf(
-                "build" to mapOf("contents" to "read"),
+                "build" to mapOf("contents" to "read", "packages" to "read"),
                 "publish" to mapOf("contents" to "read", "packages" to "write"),
                 "public-cdn" to mapOf("contents" to "read"),
                 "release-assets" to mapOf("contents" to "write"),
@@ -288,7 +311,11 @@ class AutomationContractTest {
         jobs.forEach { (name, raw) ->
             val job = mapping(raw)
             assertEquals(if (name == "publish") "production" else null, job["environment"])
-            assertFalse(job.containsKey("env"), "$name must not define job-level env")
+            assertEquals(
+                if (name == "build" || name == "publish") packageResolutionEnvironment else null,
+                job["env"],
+                "$name package resolution environment",
+            )
         }
 
         val allSteps = jobs.mapValues { steps(mapping(it.value)) }
@@ -397,9 +424,7 @@ class AutomationContractTest {
         assertEquals("steps.maven-gate.outputs.decision == 'publish'", scalar(steps[publish], "if"))
         assertEquals(
             "./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository " +
-                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}' " +
-                "-Pgithub.user='${'$'}{{ github.actor }}' " +
-                "-Pgithub.token='${'$'}{{ secrets.GITHUB_TOKEN }}'",
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
             scalar(steps[publish], "run"),
         )
         assertEquals(r2Command, scalar(steps[r2], "run"))
@@ -498,6 +523,7 @@ class AutomationContractTest {
                 "grounds-resourcepacks-catalog-<version>.jar",
                 "manifest.json",
                 "gg.grounds:resourcepacks-catalog:<packSetVersion>",
+                "GroundsGuiIds",
                 "rerunning that same tag",
                 "R2_BUCKET",
                 "R2_ENDPOINT",
@@ -706,4 +732,10 @@ class AutomationContractTest {
             "--endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' " +
             "--access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' " +
             "--secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}'"
+
+    private val packageResolutionEnvironment =
+        mapOf(
+            "GITHUB_ACTOR" to "${'$'}{{ github.actor }}",
+            "GITHUB_TOKEN" to "${'$'}{{ github.token }}",
+        )
 }

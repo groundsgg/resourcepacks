@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      packages: read
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
     outputs:
       version: ${{ steps.release.outputs.version }}
       commit: ${{ steps.release.outputs.commit }}
@@ -77,6 +81,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -112,7 +119,7 @@ jobs:
           echo "decision=$decision" >> "$GITHUB_OUTPUT"
       - name: Publish the unchanged Maven staging workspace
         if: steps.maven-gate.outputs.decision == 'publish'
-        run: ./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}' -Pgithub.user='${{ github.actor }}' -Pgithub.token='${{ secrets.GITHUB_TOKEN }}'
+        run: ./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}'
       - name: Create or compare immutable R2 ZIP objects
         run: node release-tools/src/r2-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
 
