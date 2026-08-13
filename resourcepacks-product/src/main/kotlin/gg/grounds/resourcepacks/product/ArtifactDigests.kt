@@ -8,11 +8,17 @@ import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
-/** Final-byte digests reported by [gg.grounds.resourcepack.builder.ZipPackWriter]. */
+/** SHA-1, SHA-256, and size measured from exact artifact bytes. */
 internal data class ArtifactDigests(val sha1: String, val sha256: String, val size: Long) {
     companion object {
         fun from(artifact: PackArtifact): ArtifactDigests =
             ArtifactDigests(artifact.sha1, artifact.sha256, artifact.size)
+
+        fun fromBytes(bytes: ByteArray): ArtifactDigests {
+            val sha1 = MessageDigest.getInstance("SHA-1").apply { update(bytes) }
+            val sha256 = MessageDigest.getInstance("SHA-256").apply { update(bytes) }
+            return ArtifactDigests(sha1.hex(), sha256.hex(), bytes.size.toLong())
+        }
 
         @Throws(IOException::class)
         fun readRegularFile(path: Path): ArtifactDigests = readRegularFile(path, {})

@@ -1,11 +1,9 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepack.api.ContributionId
-import gg.grounds.resourcepack.api.PackBuildException
 import gg.grounds.resourcepack.api.PackContribution
 import gg.grounds.resourcepack.api.PackEntry
 import gg.grounds.resourcepack.api.PackFormatRange
-import gg.grounds.resourcepack.api.PackProblemCode
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -64,7 +62,15 @@ class PackSetBuilderTest {
                 assertFalse(Files.exists(output, NOFOLLOW_LINKS), name)
                 assertEquals(before, sourcePaths.associateWith(::immutableFileState), name)
             }
-            assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+            val leaked = Files.list(parent).use { it.toList() }
+            assertEquals(
+                cases.size,
+                leaked.count { it.fileName.toString().startsWith(".packset-stage-") },
+            )
+            assertEquals(
+                cases.size,
+                leaked.count { it.fileName.toString().startsWith(".packset-scratch-") },
+            )
         } finally {
             parent.toFile().deleteRecursively()
         }
@@ -106,7 +112,7 @@ class PackSetBuilderTest {
                 )
         try {
             val failure =
-                assertFailsWith<PackBuildException> {
+                assertFailsWith<IOException> {
                     PackSetBuilder.build(
                         ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
                         catalog,
@@ -119,10 +125,7 @@ class PackSetBuilderTest {
                     )
                 }
 
-            assertEquals(
-                listOf(PackProblemCode.SOURCE_READ_FAILED),
-                failure.problems.map { it.code },
-            )
+            assertTrue(failure.message.orEmpty().contains("cannot be opened securely"))
             assertFalse(Files.exists(output, NOFOLLOW_LINKS))
             assertEquals(before, productSources.associateWith(::immutableFileState))
         } finally {
@@ -131,7 +134,7 @@ class PackSetBuilderTest {
     }
 
     @Test
-    fun `builder fails when a staged artifact changes during real digest streaming`() {
+    fun `builder fails when a scratch artifact changes during real digest streaming`() {
         val root = repositoryRoot()
         val catalog = catalogJar()
         val productSources =
@@ -160,7 +163,9 @@ class PackSetBuilderTest {
                 }
 
             assertTrue(mutated)
-            assertTrue(failure.message.orEmpty().contains("Artifact changed while hashing"))
+            assertTrue(
+                failure.message.orEmpty().contains("Held regular file changed while reading")
+            )
             assertFalse(Files.exists(output, NOFOLLOW_LINKS))
             assertEquals(before, productSources.associateWith(::immutableFileState))
         } finally {

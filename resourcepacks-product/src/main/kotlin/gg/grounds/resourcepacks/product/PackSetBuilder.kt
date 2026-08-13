@@ -1,19 +1,15 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
+import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemoryLayout
 import java.lang.foreign.ValueLayout
-import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
-import java.nio.file.StandardCopyOption.COPY_ATTRIBUTES
-import java.nio.file.attribute.BasicFileAttributes
-import java.util.jar.JarFile
+import java.util.zip.ZipInputStream
 
 /**
  * Builds all release bytes in one descriptor-owned sibling and publishes one verified directory.
@@ -31,7 +27,7 @@ internal object PackSetBuilder {
         inputs: ReleaseInputs,
         catalogJar: Path,
         hooks: PackSetBuilderHooks,
-    ): ReleaseArtifacts = build(inputs, catalogJar, hooks, ProductGraph.packs)
+    ): ReleaseArtifacts = buildInternal(inputs, catalogJar, hooks, null)
 
     @JvmSynthetic
     internal fun build(
@@ -39,60 +35,88 @@ internal object PackSetBuilder {
         catalogJar: Path,
         hooks: PackSetBuilderHooks,
         packs: List<PhysicalPack>,
+    ): ReleaseArtifacts = buildInternal(inputs, catalogJar, hooks, packs.toList())
+
+    private fun buildInternal(
+        inputs: ReleaseInputs,
+        catalogJar: Path,
+        hooks: PackSetBuilderHooks,
+        suppliedPacks: List<PhysicalPack>?,
     ): ReleaseArtifacts {
         validateInputs(inputs)
-        val transactionPacks = packs.toList()
         val output = validateDestination(inputs.outputDirectory)
         val parent =
             output.parent ?: throw IllegalArgumentException("Release output must have a parent.")
-        val owned =
+        val stageDirectory =
             SecureOwnedDirectory.create(
                 parent,
                 ".packset-stage-",
                 hooks.afterOwnedDirectoryIdentityCapturedBeforeParentValidation,
+                output.fileName,
             )
-        val stage = owned.stablePath
-        var complete = false
+        var scratchDirectory: SecureOwnedDirectory? = null
+        var sourceInputs: SecureSourceInputs? = null
+        var catalogSource: HeldSourceFile? = null
+        var committed = false
         var primaryFailure: Throwable? = null
         try {
-            hooks.afterOwnedDirectoryCreatedBeforeComposition(owned.path)
+            scratchDirectory = SecureOwnedDirectory.create(parent, ".packset-scratch-")
+            val scratch = requireNotNull(scratchDirectory)
+            val stage = stageDirectory.stablePath
+            hooks.afterOwnedDirectoryCreatedBeforeComposition(stageDirectory.path)
             hooks.beforeComposition()
+            sourceInputs =
+                suppliedPacks?.let(SecureSourceInputs::capture)
+                    ?: ProductGraph.secureReleaseInputs()
+            val immutableInputs = requireNotNull(sourceInputs)
             val builtPacks =
-                PackComposer.build(
-                    transactionPacks,
-                    stage,
+                ReleasePackComposer.build(
+                    immutableInputs.packs,
                     PackComposerHooks(afterComposeBeforeWrite = hooks.afterComposeBeforePackWrite),
                 )
             hooks.afterComposition()
             val content = builtPacks.single { it.pack.role == PackRole.CONTENT }
             val platform = builtPacks.single { it.pack.role == PackRole.PLATFORM }
-            val contentFile = stage.resolve("grounds-content-${content.sha1}.zip")
-            val platformFile = stage.resolve("grounds-platform-${platform.sha1}.zip")
-            moveExact(content.file, contentFile)
-            owned.registerOwned(contentFile.fileName)
-            moveExact(platform.file, platformFile)
-            owned.registerOwned(platformFile.fileName)
-            removeEmptyOwnedDirectory(content.file.parent)
+            val contentScratch = Path.of(".grounds-content.pending.zip")
+            val platformScratch = Path.of(".grounds-platform.pending.zip")
+            scratch.writeRegularFile(contentScratch, content.bytes)
+            scratch.writeRegularFile(platformScratch, platform.bytes)
+            val contentSnapshot =
+                scratch.readRelativeRegularFile(contentScratch) {
+                    hooks.afterArtifactHashFirstChunk(scratch.stablePath.resolve(contentScratch))
+                }
+            val platformSnapshot =
+                scratch.readRelativeRegularFile(platformScratch) {
+                    hooks.afterArtifactHashFirstChunk(scratch.stablePath.resolve(platformScratch))
+                }
+            requireComposerDigest(content, contentSnapshot)
+            requireComposerDigest(platform, platformSnapshot)
+            val contentFile = stage.resolve("grounds-content-${content.digests.sha1}.zip")
+            val platformFile = stage.resolve("grounds-platform-${platform.digests.sha1}.zip")
+            stageDirectory.writeRegularFile(contentFile.fileName, contentSnapshot.bytes)
+            stageDirectory.writeRegularFile(platformFile.fileName, platformSnapshot.bytes)
 
             val catalogFile = stage.resolve("grounds-resourcepacks-catalog-${inputs.version}.jar")
-            val catalogSource = validateCatalogJar(inputs, catalogJar)
-            val catalogBefore = sourceState(catalogSource, hooks)
-            Files.copy(catalogSource, catalogFile, COPY_ATTRIBUTES)
-            owned.registerOwned(catalogFile.fileName)
-            hooks.afterCatalogCopy(catalogSource, catalogFile)
-            if (sourceState(catalogSource, hooks) != catalogBefore) {
-                throw IOException("Catalog JAR changed while copying it.")
-            }
-            val catalogDigest = readArtifactDigests(catalogFile, hooks)
-            if (catalogDigest != catalogBefore.digests) {
-                throw IOException("Staged catalog bytes differ from the exact catalog input.")
-            }
+            val catalogPath = validateCatalogPath(inputs, catalogJar)
+            catalogSource = HeldSourceFile.capture(catalogPath)
+            val heldCatalog = requireNotNull(catalogSource)
+            verifyCatalogJarBytes(heldCatalog.bytes)
+            stageDirectory.writeRegularFile(catalogFile.fileName, heldCatalog.bytes)
+            hooks.afterCatalogCopy(catalogPath, catalogFile)
+            val catalogDigest = heldCatalog.digests
             val manifest =
-                manifest(inputs, catalogFile, catalogDigest, contentFile, platformFile, hooks)
+                manifest(
+                    inputs,
+                    catalogFile,
+                    catalogDigest,
+                    contentFile,
+                    contentSnapshot.digests,
+                    platformFile,
+                    platformSnapshot.digests,
+                )
             val manifestFile = stage.resolve("manifest.json")
             val manifestBytes = PackSetManifestJson.encode(manifest)
-            Files.write(manifestFile, manifestBytes)
-            owned.registerOwned(manifestFile.fileName)
+            stageDirectory.writeRegularFile(manifestFile.fileName, manifestBytes)
             hooks.afterStageWrite()
             hooks.beforeManifestValidation(manifestFile)
             validateManifest(manifestBytes, catalogFile, contentFile, platformFile)
@@ -104,43 +128,17 @@ internal object PackSetBuilder {
                     catalogFile.fileName.toString(),
                     manifestFile.fileName.toString(),
                 )
-            hooks.beforePrePublishVerification(owned.path)
-            val prepublish = owned.snapshot(expectedNames)
+            hooks.beforePrePublishVerification(stageDirectory.path)
+            val prepublish = stageDirectory.snapshot(expectedNames)
             validateManifest(
                 prepublish.files.getValue("manifest.json").bytes,
                 stage.resolve(catalogFile.fileName),
                 stage.resolve(contentFile.fileName),
                 stage.resolve(platformFile.fileName),
             )
-            val validatedPrepublish = owned.snapshot(expectedNames)
+            val validatedPrepublish = stageDirectory.snapshot(expectedNames)
             if (!prepublish.sameBytesDigestsAndIdentities(validatedPrepublish)) {
                 throw IOException("Release staging bytes changed during manifest validation.")
-            }
-
-            owned.publish(output.fileName, validatedPrepublish, hooks, hooks.rename)
-            hooks.afterRenameBeforeOutputOpen(output)
-            if (!owned.verify()) throw IOException("Published release directory identity changed.")
-
-            val publishedStable = owned.publishedStablePath()
-            val postpublish =
-                owned.snapshot(expectedNames) { hooks.afterOutputOpenedBeforeVerification(output) }
-            if (!validatedPrepublish.sameBytesDigestsAndIdentities(postpublish)) {
-                throw IOException(
-                    "Published release bytes differ from the verified staging snapshot."
-                )
-            }
-            validateManifest(
-                postpublish.files.getValue("manifest.json").bytes,
-                publishedStable.resolve(catalogFile.fileName),
-                publishedStable.resolve(contentFile.fileName),
-                publishedStable.resolve(platformFile.fileName),
-            )
-            val finalSnapshot = owned.snapshot(expectedNames)
-            if (!validatedPrepublish.sameBytesDigestsAndIdentities(finalSnapshot)) {
-                throw IOException("Published release changed during manifest validation.")
-            }
-            if (!owned.displayParentStillHeldIdentity() || !owned.verify()) {
-                throw IOException("Published release path identity is ambiguous.")
             }
 
             val artifacts =
@@ -151,24 +149,26 @@ internal object PackSetBuilder {
                     catalogFile,
                     validatedPrepublish,
                 )
-            complete = true
+            stageDirectory.publish(output.fileName, validatedPrepublish, hooks, hooks.rename) {
+                if (!stageDirectory.displayParentStillHeldIdentity()) {
+                    throw IOException("Release output parent identity changed before commit.")
+                }
+                immutableInputs.verifyUnchanged()
+                heldCatalog.verifyUnchanged()
+            }
+            committed = true
+            runPostCommitDiagnostic { hooks.afterRenameBeforeOutputOpen(output) }
+            runPostCommitDiagnostic { hooks.afterOutputOpenedBeforeVerification(output) }
             return artifacts
         } catch (failure: Throwable) {
             primaryFailure = failure
             throw failure
         } finally {
-            if (!complete) {
-                try {
-                    owned.deleteOwned(hooks)
-                } catch (cleanup: Throwable) {
-                    primaryFailure?.addSuppressed(cleanup)
-                }
-            }
-            try {
-                owned.close()
-            } catch (close: Throwable) {
-                if (primaryFailure != null) primaryFailure.addSuppressed(close) else throw close
-            }
+            closeResource(committed, primaryFailure) { hooks.beforeResourceClose(committed) }
+            closeResource(committed, primaryFailure) { catalogSource?.close() }
+            closeResource(committed, primaryFailure) { sourceInputs?.close() }
+            closeResource(committed, primaryFailure) { scratchDirectory?.close() }
+            closeResource(committed, primaryFailure) { stageDirectory.close() }
         }
     }
 
@@ -184,33 +184,24 @@ internal object PackSetBuilder {
 
     private fun validateDestination(raw: Path): Path {
         require(raw.isAbsolute) { "Release output must be an absolute path." }
-        val output = raw.normalize()
+        require(raw == raw.normalize()) { "Release output path must be normalized." }
+        val output = raw
         require(output.parent != null && output != output.root && output.fileName != null) {
             "Release output path is unsafe."
-        }
-        require(!Files.exists(output, NOFOLLOW_LINKS)) {
-            "Release output must be absent (including an empty directory)."
-        }
-        val parent = output.parent!!
-        require(Files.isDirectory(parent, NOFOLLOW_LINKS) && !Files.isSymbolicLink(parent)) {
-            "Release output parent must be a real directory."
         }
         return output
     }
 
-    private fun validateCatalogJar(inputs: ReleaseInputs, configured: Path): Path {
-        val jar = configured.toAbsolutePath().normalize()
+    private fun validateCatalogPath(inputs: ReleaseInputs, configured: Path): Path {
+        require(configured == configured.normalize()) { "Catalog JAR path must be normalized." }
+        val jar = HeldSourceFile.normalize(configured)
         require(jar.fileName.toString() == "resourcepacks-catalog-${inputs.version}.jar") {
             "Catalog JAR filename/version mismatch."
         }
-        if (!Files.isRegularFile(jar, NOFOLLOW_LINKS) || Files.isSymbolicLink(jar)) {
-            throw IOException("Current catalog JAR is missing or unsafe: $jar")
-        }
-        verifyCatalogJarBytes(jar)
         return jar
     }
 
-    private fun verifyCatalogJarBytes(jar: Path) {
+    private fun verifyCatalogJarBytes(bytes: ByteArray) {
         val classEntries =
             setOf(
                 "gg/grounds/resourcepacks/catalog/GroundsAssetCatalog.class",
@@ -229,23 +220,25 @@ internal object PackSetBuilder {
                 "gg/grounds/resourcepacks/catalog/",
             ) + classEntries
         try {
-            JarFile(jar.toFile(), true).use { archive ->
-                val actualEntries = archive.entries().asSequence().map { it.name }.toSet()
-                if (actualEntries != expectedEntries) {
-                    throw IOException("Catalog JAR entry set does not match the compiled catalog.")
-                }
-                val loader = GroundsAssetCatalog::class.java.classLoader
-                classEntries.forEach { name ->
-                    val expected =
-                        loader.getResourceAsStream(name)?.use { it.readAllBytes() }
-                            ?: throw IOException("Compiled catalog class is unavailable: $name")
-                    val entry =
-                        archive.getJarEntry(name)
-                            ?: throw IOException("Catalog JAR class is missing: $name")
-                    val actual = archive.getInputStream(entry).use { it.readAllBytes() }
-                    if (!expected.contentEquals(actual)) {
-                        throw IOException("Catalog JAR bytes are stale: $name")
+            val entries = linkedMapOf<String, ByteArray>()
+            ZipInputStream(ByteArrayInputStream(bytes)).use { archive ->
+                while (true) {
+                    val entry = archive.nextEntry ?: break
+                    if (entries.put(entry.name, archive.readAllBytes()) != null) {
+                        throw IOException("Catalog JAR contains a duplicate entry: ${entry.name}")
                     }
+                }
+            }
+            if (entries.keys != expectedEntries) {
+                throw IOException("Catalog JAR entry set does not match the compiled catalog.")
+            }
+            val loader = GroundsAssetCatalog::class.java.classLoader
+            classEntries.forEach { name ->
+                val expected =
+                    loader.getResourceAsStream(name)?.use { it.readAllBytes() }
+                        ?: throw IOException("Compiled catalog class is unavailable: $name")
+                if (!expected.contentEquals(entries.getValue(name))) {
+                    throw IOException("Catalog JAR bytes are stale: $name")
                 }
             }
         } catch (failure: IOException) {
@@ -253,19 +246,6 @@ internal object PackSetBuilder {
         } catch (failure: Exception) {
             throw IOException("Catalog JAR cannot be validated.", failure)
         }
-    }
-
-    private fun sourceState(path: Path, hooks: PackSetBuilderHooks): SourceState {
-        val attrs = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
-        if (!attrs.isRegularFile || attrs.fileKey() == null) {
-            throw IOException("Catalog JAR is not a stable regular file: $path")
-        }
-        return SourceState(
-            attrs.fileKey(),
-            attrs.creationTime(),
-            attrs.lastModifiedTime(),
-            readArtifactDigests(path, hooks),
-        )
     }
 
     private fun validateManifest(bytes: ByteArray, catalog: Path, content: Path, platform: Path) {
@@ -306,11 +286,11 @@ internal object PackSetBuilder {
         catalogFile: Path,
         catalog: ArtifactDigests,
         contentFile: Path,
+        contentDigest: ArtifactDigests,
         platformFile: Path,
-        hooks: PackSetBuilderHooks,
+        platformDigest: ArtifactDigests,
     ): PackSetManifest {
-        fun pack(order: Int, role: PackRole, file: Path): PackManifest {
-            val digest = readArtifactDigests(file, hooks)
+        fun pack(order: Int, role: PackRole, file: Path, digest: ArtifactDigests): PackManifest {
             val id = if (role == PackRole.CONTENT) "grounds-content" else "grounds-platform"
             val uuid =
                 if (role == PackRole.CONTENT) PackSetConstants.contentUuid
@@ -340,8 +320,8 @@ internal object PackSetBuilder {
                 catalog.size,
             ),
             listOf(
-                pack(0, PackRole.CONTENT, contentFile),
-                pack(1, PackRole.PLATFORM, platformFile),
+                pack(0, PackRole.CONTENT, contentFile, contentDigest),
+                pack(1, PackRole.PLATFORM, platformFile, platformDigest),
             ),
             ProvenanceManifest(
                 "groundsgg/resourcepacks",
@@ -351,27 +331,32 @@ internal object PackSetBuilder {
         )
     }
 
-    private fun moveExact(from: Path, to: Path) {
-        Files.move(from, to, ATOMIC_MOVE)
-        if (!Files.isRegularFile(to, NOFOLLOW_LINKS) || Files.isSymbolicLink(to)) {
-            throw IOException("Staged artifact is not a regular file: $to")
+    private fun requireComposerDigest(pack: BuiltPhysicalPackBytes, snapshot: SecureFileSnapshot) {
+        if (snapshot.digests != pack.digests) {
+            throw IOException("Scratch pack bytes differ from the composer result: ${pack.pack.id}")
         }
     }
 
-    private fun removeEmptyOwnedDirectory(directory: Path) {
-        if (Files.isDirectory(directory, NOFOLLOW_LINKS)) Files.delete(directory)
+    private inline fun runPostCommitDiagnostic(block: () -> Unit) {
+        try {
+            block()
+        } catch (_: Throwable) {
+            // The rename already committed exact prevalidated bytes. Diagnostics are best effort.
+        }
     }
 
-    private fun readArtifactDigests(path: Path, hooks: PackSetBuilderHooks): ArtifactDigests =
-        ArtifactDigests.readRegularFile(path) { hooks.afterArtifactHashFirstChunk(path) }
+    private inline fun closeResource(
+        committed: Boolean,
+        primaryFailure: Throwable?,
+        close: () -> Unit,
+    ) {
+        try {
+            close()
+        } catch (failure: Throwable) {
+            if (!committed) primaryFailure?.addSuppressed(failure)
+        }
+    }
 }
-
-internal data class SourceState(
-    val fileKey: Any?,
-    val creationTime: java.nio.file.attribute.FileTime,
-    val lastModifiedTime: java.nio.file.attribute.FileTime,
-    val digests: ArtifactDigests,
-)
 
 /** Build wiring locates the exact catalog artifact; the public CLI never accepts this path. */
 internal object CatalogJarProvider {
@@ -401,7 +386,7 @@ internal data class PackSetBuilderHooks(
     val afterPreRenameIdentityVerified: (stage: Path) -> Unit = {},
     val afterRenameBeforeOutputOpen: (output: Path) -> Unit = {},
     val afterOutputOpenedBeforeVerification: (output: Path) -> Unit = {},
-    val afterCleanupDirectoryClassified: (directory: Path) -> Unit = {},
+    val beforeResourceClose: (committed: Boolean) -> Unit = {},
     val rename: SecureRename = SecureRename { parent, from, to -> parent.renameNoReplace(from, to) },
 )
 

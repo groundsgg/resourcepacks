@@ -24,8 +24,9 @@ import java.util.UUID
 
 /**
  * One Linux directory created and addressed through a retained parent descriptor. The display path
- * is diagnostics-only; all owned reads, publication, verification, and cleanup are relative to the
- * held parent handles.
+ * is diagnostics-only; all owned reads and publication are relative to retained native handles.
+ * Failed directories are deliberately never unlinked: an observable name may have been replaced by
+ * another same-UID process and Linux has no compare-and-unlink-by-inode primitive.
  */
 internal class SecureOwnedDirectory
 private constructor(
@@ -37,39 +38,47 @@ private constructor(
     private val identity: Identity,
 ) : AutoCloseable {
     val stablePath: Path = nativeStage.anchor
-    private var ownedEntries: Map<String, OwnedEntry> = emptyMap()
-
-    fun verify(): Boolean = verifyName(name)
+    private var ownedEntries: Map<String, Identity> = emptyMap()
 
     private fun verifyName(candidate: Path): Boolean =
         attributes(parent, candidate)?.let {
             it.isDirectory && !it.isSymbolicLink && identity.matches(it)
         } == true
 
-    /** Registers one final root artifact immediately after this transaction creates it. */
-    fun registerOwned(relativePath: Path) {
-        require(
-            !relativePath.isAbsolute &&
-                relativePath.nameCount == 1 &&
-                relativePath.toString() != "." &&
-                relativePath.toString() != ".."
-        ) {
-            "Owned release entries must be one safe stage-relative name."
-        }
+    /** Creates one final file with `O_EXCL` and records the identity returned by its held fd. */
+    fun writeRegularFile(relativePath: Path, bytes: ByteArray) {
+        requireRelativeName(relativePath)
         val entryName = relativePath.toString()
-        check(entryName !in ownedEntries) { "Release entry is already registered: $entryName" }
+        check(entryName !in ownedEntries) { "Release entry is already written: $entryName" }
+        val created = nativeStage.createExclusiveRegularFile(relativePath)
         val captured =
-            openStageStream().use { opened ->
-                val root = readAttributes(opened)
-                if (root == null || !root.isDirectory || !identity.matches(root)) {
-                    throw IOException("Held release directory identity changed.")
+            created.use { file ->
+                file.write(bytes)
+                val snapshot = file.snapshot()
+                if (!snapshot.bytes.contentEquals(bytes)) {
+                    throw IOException(
+                        "Staged release entry differs from supplied bytes: $entryName"
+                    )
                 }
-                val attributes =
-                    attributes(opened, relativePath)
-                        ?: throw IOException("Owned release entry vanished: $relativePath")
-                OwnedEntry.capture(attributes, relativePath)
+                snapshot.identity
             }
         ownedEntries = ownedEntries + (entryName to captured)
+    }
+
+    /** Reads a composer output beneath the held scratch fd without following any component. */
+    fun readRelativeRegularFile(
+        relativePath: Path,
+        afterFirstChunk: () -> Unit = {},
+    ): SecureFileSnapshot {
+        requireSafeRelativePath(relativePath)
+        return nativeStage.openRegularFile(relativePath).use { it.snapshot(afterFirstChunk) }
+    }
+
+    fun relativeStablePath(path: Path): Path {
+        val normalized = path.toAbsolutePath().normalize()
+        val root = stablePath.toAbsolutePath().normalize()
+        require(normalized.startsWith(root)) { "Path is outside the held directory: $path" }
+        return root.relativize(normalized).also(::requireSafeRelativePath)
     }
 
     fun snapshot(expectedNames: Set<String>, afterOpen: () -> Unit = {}): DirectorySnapshot =
@@ -95,9 +104,7 @@ private constructor(
             val files =
                 names.sorted().associateWith { entryName ->
                     val file = readRegularFile(opened, Path.of(entryName))
-                    if (
-                        !ledger.getValue(entryName).matches(file.identity, OwnedEntryKind.REGULAR)
-                    ) {
+                    if (ledger.getValue(entryName) != file.identity) {
                         throw IOException("Owned release entry identity changed: $entryName")
                     }
                     file
@@ -114,6 +121,7 @@ private constructor(
         expected: DirectorySnapshot,
         hooks: PackSetBuilderHooks,
         rename: SecureRename,
+        immediatelyBeforeCommit: () -> Unit,
     ) {
         require(outputName.nameCount == 1) { "Release output must be one parent-relative name." }
         hooks.immediatelyBeforeRename(path)
@@ -130,62 +138,20 @@ private constructor(
         ) {
             throw IOException("Owned staging directory changed before native publication.")
         }
+        immediatelyBeforeCommit()
+        if (
+            !verifyName(name) ||
+                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+        ) {
+            throw IOException("Owned staging directory changed during final input verification.")
+        }
         rename.rename(nativeParent, name, outputName)
+        // This successful syscall is the irreversible commit point. Nothing after it may turn the
+        // committed publication into a reported transaction failure.
         name = outputName
-        if (!verifyName(name)) {
-            throw IOException("Published output name does not reference the held stage directory.")
-        }
     }
 
-    fun publishedStablePath(): Path = nativeStage.anchor
-
-    fun deleteOwned(hooks: PackSetBuilderHooks = PackSetBuilderHooks()) {
-        if (!verifyName(name)) return
-        openStageStream().use { heldStage ->
-            val held = readAttributes(heldStage) ?: return
-            if (!held.isDirectory || !identity.matches(held)) return
-            val display = path.parent.resolve(name)
-            try {
-                hooks.afterCleanupDirectoryClassified(display)
-            } catch (_: Throwable) {
-                // A cleanup seam cannot obscure the primary build failure.
-            }
-            val ledger = ownedEntries
-            val names = heldStage.names().map(Path::toString)
-            if (names.size != names.toSet().size || names.any { it !in ledger }) return
-            val present = names.toSet()
-            for (entryName in present.sorted()) {
-                val attributes = attributes(heldStage, Path.of(entryName)) ?: continue
-                if (!ledger.getValue(entryName).matches(attributes)) return
-            }
-            for (entryName in present.sorted()) {
-                val entry = Path.of(entryName)
-                val expected = ledger.getValue(entryName)
-                val attributes = attributes(heldStage, entry) ?: continue
-                if (!expected.matches(attributes)) return
-                val deleted =
-                    when (expected.kind) {
-                        OwnedEntryKind.REGULAR -> deleteFile(heldStage, entry)
-                        OwnedEntryKind.DIRECTORY -> deleteEmptyDirectory(heldStage, entry)
-                    }
-                if (!deleted) return
-            }
-        }
-        if (!verifyName(name)) return
-        openStageStream().use { finalStage ->
-            val after = readAttributes(finalStage) ?: return
-            if (!after.isDirectory || !identity.matches(after)) return
-            if (finalStage.names().isNotEmpty()) return
-        }
-        if (!verifyName(name)) return
-        try {
-            parent.deleteDirectory(name)
-        } catch (_: Throwable) {
-            // Cleanup is fail-closed and cannot replace the primary failure.
-        }
-    }
-
-    fun displayParentStillHeldIdentity(): Boolean = nativeParent.sameDirectory(path.parent)
+    fun displayParentStillHeldIdentity(): Boolean = nativeParent.sameDirectoryNoFollow(path.parent)
 
     override fun close() {
         var failure: Throwable? = null
@@ -250,13 +216,16 @@ private constructor(
             parentPath: Path,
             prefix: String,
             afterIdentityCapturedBeforeParentValidation: (Path) -> Unit = {},
+            requiredAbsentName: Path? = null,
         ): SecureOwnedDirectory {
-            val normalizedParent = parentPath.toAbsolutePath().normalize()
+            require(parentPath.isAbsolute && parentPath == parentPath.normalize()) {
+                "Release output parent must be an absolute normalized path."
+            }
+            val normalizedParent = parentPath
             val nativeParent = LinuxDirectoryHandle.open(normalizedParent)
             var parent: SecureDirectoryStream<Path>? = null
             var nativeStage: LinuxDirectoryHandle? = null
             var childName: Path? = null
-            var stageIdentity: Identity? = null
             try {
                 val rawParent: DirectoryStream<Path> = Files.newDirectoryStream(nativeParent.anchor)
                 parent =
@@ -265,8 +234,16 @@ private constructor(
                             rawParent.close()
                             throw IOException("Secure staging directory handles are required.")
                         }
-                if (!nativeParent.sameDirectory(normalizedParent)) {
+                if (!nativeParent.sameDirectoryNoFollow(normalizedParent)) {
                     throw IOException("Release output parent identity changed while opening it.")
+                }
+                if (requiredAbsentName != null) {
+                    requireRelativeName(requiredAbsentName)
+                    if (attributes(parent, requiredAbsentName) != null) {
+                        throw IllegalArgumentException(
+                            "Release output must be absent (including an empty directory)."
+                        )
+                    }
                 }
                 childName = Path.of("$prefix${UUID.randomUUID()}")
                 nativeParent.createDirectory(childName)
@@ -282,7 +259,6 @@ private constructor(
                     stage.use { opened -> readAttributes(opened) }
                         ?: throw IOException("Held staging directory vanished.")
                 val identity = Identity.from(stageAttrs)
-                stageIdentity = identity
                 val displayPath = normalizedParent.resolve(childName)
                 afterIdentityCapturedBeforeParentValidation(displayPath)
                 val parentAttrs =
@@ -311,19 +287,8 @@ private constructor(
                 } catch (close: Throwable) {
                     failure.addSuppressed(close)
                 }
-                if (childName != null && parent != null && stageIdentity != null) {
-                    try {
-                        val parentAttrs = attributes(parent, childName)
-                        if (
-                            parentAttrs != null &&
-                                parentAttrs.isDirectory &&
-                                !parentAttrs.isSymbolicLink &&
-                                stageIdentity.matches(parentAttrs)
-                        ) {
-                            parent.deleteDirectory(childName)
-                        }
-                    } catch (_: Throwable) {}
-                }
+                // Never unlink a failed initialization name. A same-UID process may have replaced
+                // it between creation and this catch block; the unique directory is a safe leak.
                 try {
                     parent?.close()
                 } catch (close: Throwable) {
@@ -373,65 +338,14 @@ private constructor(
             return output.toByteArray()
         }
 
-        private fun deleteFile(parent: SecureDirectoryStream<Path>, name: Path): Boolean =
-            try {
-                parent.deleteFile(name)
-                true
-            } catch (_: NoSuchFileException) {
-                true
-            } catch (_: IOException) {
-                false
-            } catch (_: SecurityException) {
-                false
+        private fun requireRelativeName(name: Path) {
+            requireSafeRelativePath(name)
+            require(name.nameCount == 1) {
+                "Release entries must be one safe directory-relative name."
             }
-
-        private fun deleteEmptyDirectory(parent: SecureDirectoryStream<Path>, name: Path): Boolean =
-            try {
-                parent.deleteDirectory(name)
-                true
-            } catch (_: NoSuchFileException) {
-                true
-            } catch (_: IOException) {
-                false
-            } catch (_: SecurityException) {
-                false
-            }
-    }
-}
-
-internal enum class OwnedEntryKind {
-    REGULAR,
-    DIRECTORY,
-}
-
-internal data class OwnedEntry(val identity: Identity, val kind: OwnedEntryKind) {
-    fun matches(attributes: BasicFileAttributes): Boolean =
-        !attributes.isSymbolicLink && kind.matches(attributes) && identity.matches(attributes)
-
-    fun matches(candidate: Identity, candidateKind: OwnedEntryKind): Boolean =
-        kind == candidateKind && identity == candidate
-
-    companion object {
-        fun capture(attributes: BasicFileAttributes, path: Path): OwnedEntry {
-            if (attributes.isSymbolicLink || attributes.fileKey() == null) {
-                throw IOException("Owned release entry is unsafe: $path")
-            }
-            val kind =
-                when {
-                    attributes.isRegularFile -> OwnedEntryKind.REGULAR
-                    attributes.isDirectory -> OwnedEntryKind.DIRECTORY
-                    else -> throw IOException("Owned release entry has an unsupported kind: $path")
-                }
-            return OwnedEntry(Identity.from(attributes), kind)
         }
     }
 }
-
-private fun OwnedEntryKind.matches(attributes: BasicFileAttributes): Boolean =
-    when (this) {
-        OwnedEntryKind.REGULAR -> attributes.isRegularFile
-        OwnedEntryKind.DIRECTORY -> attributes.isDirectory
-    }
 
 internal class DirectorySnapshot(files: Map<String, SecureFileSnapshot>) {
     val files: Map<String, SecureFileSnapshot> =
@@ -522,51 +436,88 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
         }
     }
 
-    fun renameNoReplace(from: Path, to: Path) {
-        requireRelativeName(from)
-        requireRelativeName(to)
+    fun openRegularFile(path: Path): LinuxRegularFileHandle {
+        requireSafeRelativePath(path)
+        var current: LinuxDirectoryHandle = this
+        val openedDirectories = mutableListOf<LinuxDirectoryHandle>()
         try {
-            Arena.ofConfined().use { arena ->
-                val errno = arena.allocate(errnoLayout())
-                val result =
-                    handle(
-                            "renameat2",
-                            FunctionDescriptor.of(
-                                ValueLayout.JAVA_INT,
-                                ValueLayout.JAVA_INT,
-                                ValueLayout.ADDRESS,
-                                ValueLayout.JAVA_INT,
-                                ValueLayout.ADDRESS,
-                                ValueLayout.JAVA_INT,
-                            ),
-                            true,
-                        )
-                        .invoke(
-                            errno,
-                            descriptor,
-                            arena.allocateFrom(from.toString()),
-                            descriptor,
-                            arena.allocateFrom(to.toString()),
-                            1,
-                        ) as Int
-                if (result != 0) {
-                    val error = errno(errno)
-                    if (error == 17) throw IOException("Release output already exists.")
-                    throw IOException(
-                        "Atomic no-replace directory publication failed (errno $error)."
-                    )
+            for (index in 0 until path.nameCount - 1) {
+                val next = current.openDirectory(path.getName(index))
+                openedDirectories += next
+                current = next
+            }
+            return current.openRegularName(path.fileName)
+        } finally {
+            openedDirectories.asReversed().forEach { directory ->
+                try {
+                    directory.close()
+                } catch (_: Throwable) {
+                    // The returned regular descriptor is independent of traversal descriptors.
                 }
             }
-        } catch (failure: IOException) {
-            throw failure
-        } catch (failure: Throwable) {
-            throw IOException("Atomic no-replace directory publication unavailable.", failure)
         }
     }
 
-    fun sameDirectory(path: Path): Boolean =
+    fun createExclusiveRegularFile(name: Path): LinuxRegularFileHandle {
+        requireRelativeName(name)
+        return openRegularName(name, O_WRONLY or O_CREAT or O_EXCL, 0x180)
+    }
+
+    fun renameNoReplace(from: Path, to: Path) {
+        requireRelativeName(from)
+        requireRelativeName(to)
+        val arena = Arena.ofConfined()
+        var nativeFailure: Throwable? = null
         try {
-            Files.isSameFile(anchor, path)
+            val errno = arena.allocate(errnoLayout())
+            val result =
+                handle(
+                        "renameat2",
+                        FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT,
+                            ValueLayout.ADDRESS,
+                            ValueLayout.JAVA_INT,
+                            ValueLayout.ADDRESS,
+                            ValueLayout.JAVA_INT,
+                        ),
+                        true,
+                    )
+                    .invoke(
+                        errno,
+                        descriptor,
+                        arena.allocateFrom(from.toString()),
+                        descriptor,
+                        arena.allocateFrom(to.toString()),
+                        1,
+                    ) as Int
+            if (result != 0) {
+                val error = errno(errno)
+                if (error == 17) throw IOException("Release output already exists.")
+                throw IOException("Atomic no-replace directory publication failed (errno $error).")
+            }
+        } catch (caught: IOException) {
+            nativeFailure = caught
+            throw caught
+        } catch (caught: Throwable) {
+            val wrapped =
+                IOException("Atomic no-replace directory publication unavailable.", caught)
+            nativeFailure = wrapped
+            throw wrapped
+        } finally {
+            try {
+                arena.close()
+            } catch (close: Throwable) {
+                // A close error cannot roll back a successful rename. Before commit it is retained
+                // as diagnostic context on the primary native failure.
+                nativeFailure?.addSuppressed(close)
+            }
+        }
+    }
+
+    fun sameDirectoryNoFollow(path: Path): Boolean =
+        try {
+            open(path).use { candidate -> Files.isSameFile(anchor, candidate.anchor) }
         } catch (_: IOException) {
             false
         } catch (_: SecurityException) {
@@ -593,6 +544,10 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
     }
 
     companion object {
+        private const val O_RDONLY = 0
+        private const val O_WRONLY = 1
+        private const val O_CREAT = 0x40
+        private const val O_EXCL = 0x80
         private const val O_DIRECTORY = 0x10000
         private const val O_NOFOLLOW = 0x20000
         private const val O_CLOEXEC = 0x80000
@@ -601,6 +556,36 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
             if (System.getProperty("os.name").lowercase() != "linux") {
                 throw IOException("Secure release directory handles are supported only on Linux.")
             }
+            require(path.isAbsolute && path == path.normalize()) {
+                "Secure directory paths must be absolute and normalized."
+            }
+            var current = openAbsoluteRoot()
+            try {
+                path.forEach { component ->
+                    val next = current.openDirectory(component)
+                    current.close()
+                    current = next
+                }
+                return current
+            } catch (failure: Throwable) {
+                try {
+                    current.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
+                if (failure is IOException) throw failure
+                throw IOException("Secure release directory handles are unavailable.", failure)
+            }
+        }
+
+        fun openRegularFile(path: Path): LinuxRegularFileHandle {
+            require(path.isAbsolute && path == path.normalize() && path.parent != null) {
+                "Secure source paths must be absolute and normalized."
+            }
+            return open(path.parent).use { parent -> parent.openRegularFile(path.fileName) }
+        }
+
+        private fun openAbsoluteRoot(): LinuxDirectoryHandle {
             try {
                 Arena.ofConfined().use { arena ->
                     val fd =
@@ -614,16 +599,72 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
                                 false,
                             )
                             .invoke(
-                                arena.allocateFrom(path.toString()),
-                                O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC,
+                                arena.allocateFrom("/"),
+                                O_RDONLY or O_DIRECTORY or O_NOFOLLOW or O_CLOEXEC,
                             ) as Int
-                    if (fd < 0) throw IOException("Release output parent must be a real directory.")
+                    if (fd < 0) throw IOException("Filesystem root cannot be opened securely.")
                     return LinuxDirectoryHandle(fd)
                 }
             } catch (failure: IOException) {
                 throw failure
             } catch (failure: Throwable) {
-                throw IOException("Secure release directory handles are unavailable.", failure)
+                throw IOException("Secure root directory handle is unavailable.", failure)
+            }
+        }
+
+        private fun LinuxDirectoryHandle.openRegularName(
+            name: Path,
+            flags: Int = O_RDONLY,
+            mode: Int? = null,
+        ): LinuxRegularFileHandle {
+            requireRelativeName(name)
+            try {
+                Arena.ofConfined().use { arena ->
+                    val descriptor =
+                        if (mode == null) {
+                            handle(
+                                    "openat",
+                                    FunctionDescriptor.of(
+                                        ValueLayout.JAVA_INT,
+                                        ValueLayout.JAVA_INT,
+                                        ValueLayout.ADDRESS,
+                                        ValueLayout.JAVA_INT,
+                                    ),
+                                    false,
+                                )
+                                .invoke(
+                                    this.descriptor,
+                                    arena.allocateFrom(name.toString()),
+                                    flags or O_NOFOLLOW or O_CLOEXEC,
+                                ) as Int
+                        } else {
+                            handle(
+                                    "openat",
+                                    FunctionDescriptor.of(
+                                        ValueLayout.JAVA_INT,
+                                        ValueLayout.JAVA_INT,
+                                        ValueLayout.ADDRESS,
+                                        ValueLayout.JAVA_INT,
+                                        ValueLayout.JAVA_INT,
+                                    ),
+                                    false,
+                                )
+                                .invoke(
+                                    this.descriptor,
+                                    arena.allocateFrom(name.toString()),
+                                    flags or O_NOFOLLOW or O_CLOEXEC,
+                                    mode,
+                                ) as Int
+                        }
+                    if (descriptor < 0) {
+                        throw IOException("Regular file cannot be opened securely: $name")
+                    }
+                    return LinuxRegularFileHandle(descriptor)
+                }
+            } catch (failure: IOException) {
+                throw failure
+            } catch (failure: Throwable) {
+                throw IOException("Secure regular file handle is unavailable: $name", failure)
             }
         }
 
@@ -693,6 +734,93 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
                 "Native release operations require one safe parent-relative name."
             }
         }
+    }
+}
+
+internal class LinuxRegularFileHandle internal constructor(private val descriptor: Int) :
+    AutoCloseable {
+    val anchor: Path = Path.of("/proc/self/fd/$descriptor")
+    private var closed = false
+
+    fun snapshot(afterFirstChunk: () -> Unit = {}): SecureFileSnapshot {
+        val before = Files.readAttributes(anchor, BasicFileAttributes::class.java)
+        if (!before.isRegularFile || before.fileKey() == null) {
+            throw IOException("Held source is not a stable regular file.")
+        }
+        val bytes =
+            Files.newInputStream(anchor).use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(64 * 1024)
+                var invoked = false
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                    if (!invoked) {
+                        invoked = true
+                        try {
+                            afterFirstChunk()
+                        } catch (_: Throwable) {
+                            // A test/diagnostic seam cannot replace source verification.
+                        }
+                    }
+                }
+                output.toByteArray()
+            }
+        val after = Files.readAttributes(anchor, BasicFileAttributes::class.java)
+        val identity = Identity.from(before)
+        if (
+            !after.isRegularFile ||
+                !identity.matches(after) ||
+                before.lastModifiedTime() != after.lastModifiedTime() ||
+                before.size() != after.size() ||
+                after.size() != bytes.size.toLong()
+        ) {
+            throw IOException("Held regular file changed while reading.")
+        }
+        return SecureFileSnapshot(
+            bytes,
+            ArtifactDigests(bytes.sha1(), bytes.sha256(), bytes.size.toLong()),
+            identity,
+        )
+    }
+
+    fun write(bytes: ByteArray) {
+        Files.newOutputStream(anchor, java.nio.file.StandardOpenOption.WRITE).use {
+            it.write(bytes)
+        }
+    }
+
+    fun sameFile(other: LinuxRegularFileHandle): Boolean = Files.isSameFile(anchor, other.anchor)
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        try {
+            val result =
+                Linker.nativeLinker()
+                    .downcallHandle(
+                        Linker.nativeLinker().defaultLookup().find("close").orElseThrow(),
+                        FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+                    )
+                    .invoke(descriptor) as Int
+            if (result != 0) throw IOException("Cannot close regular file handle.")
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Cannot close regular file handle.", failure)
+        }
+    }
+}
+
+private fun requireSafeRelativePath(path: Path) {
+    require(
+        !path.isAbsolute &&
+            path.nameCount > 0 &&
+            path == path.normalize() &&
+            path.none { it.toString() == "." || it.toString() == ".." }
+    ) {
+        "Native operations require a safe directory-relative path."
     }
 }
 

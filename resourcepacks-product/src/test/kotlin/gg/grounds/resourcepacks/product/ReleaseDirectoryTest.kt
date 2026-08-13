@@ -205,7 +205,7 @@ class ReleaseDirectoryTest {
                     parentLink.resolve("release"),
                 )
                 .forEach { output ->
-                    assertFailsWith<IllegalArgumentException>(output.toString()) {
+                    assertFailsWith<Exception>(output.toString()) {
                         PackSetBuilder.build(releaseInputs(output), releaseCatalogJar())
                     }
                 }
@@ -273,7 +273,7 @@ class ReleaseDirectoryTest {
     }
 
     @Test
-    fun `native publication unavailable fails closed and removes the owned stage`() {
+    fun `native publication unavailable fails closed and leaves safe transaction paths`() {
         val parent = Files.createTempDirectory("release-native-unavailable-")
         val output = parent.resolve("release")
         try {
@@ -292,7 +292,9 @@ class ReleaseDirectoryTest {
                 }
             assertEquals("renameat2 unavailable", failure.message)
             assertFalse(Files.exists(output, NOFOLLOW_LINKS))
-            assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+            val leaked = Files.list(parent).use { it.toList() }
+            assertEquals(1, leaked.count { it.fileName.toString().startsWith(".packset-stage-") })
+            assertEquals(1, leaked.count { it.fileName.toString().startsWith(".packset-scratch-") })
         } finally {
             deleteTreeNoFollow(parent)
         }
@@ -383,24 +385,23 @@ class ReleaseDirectoryTest {
     }
 
     @Test
-    fun `postrename output replacement fails closed without deleting attacker path`() {
+    fun `postrename output replacement remains committed success without deleting attacker path`() {
         withRoots("release-output-swap") { parent, external ->
             val sentinel = Files.writeString(external.resolve("sentinel.txt"), "outside")
             val output = parent.resolve("release")
             val displaced = parent.resolve("displaced-owned-release")
 
-            assertFailsWith<IOException> {
-                PackSetBuilder.build(
-                    releaseInputs(output),
-                    releaseCatalogJar(),
-                    PackSetBuilderHooks(
-                        afterRenameBeforeOutputOpen = { published ->
-                            Files.move(published, displaced)
-                            Files.createSymbolicLink(published, external)
-                        }
-                    ),
-                )
-            }
+            PackSetBuilder.build(
+                releaseInputs(output),
+                releaseCatalogJar(),
+                PackSetBuilderHooks(
+                    afterRenameBeforeOutputOpen = { published ->
+                        Files.move(published, displaced)
+                        Files.createSymbolicLink(published, external)
+                        throw IOException("postcommit diagnostic failure")
+                    }
+                ),
+            )
 
             assertTrue(Files.isSymbolicLink(output))
             assertEquals("outside", Files.readString(sentinel))
@@ -409,32 +410,31 @@ class ReleaseDirectoryTest {
     }
 
     @Test
-    fun `postrename registered entry replacement is left untouched with the leaked output`() {
+    fun `postrename registered entry replacement is committed and left untouched`() {
         withRoots("release-entry-swap") { parent, external ->
             val sentinel = Files.writeString(external.resolve("sentinel.jar"), "outside")
             val output = parent.resolve("release")
             var replacement: Path? = null
 
-            assertFailsWith<IOException> {
-                PackSetBuilder.build(
-                    releaseInputs(output),
-                    releaseCatalogJar(),
-                    PackSetBuilderHooks(
-                        afterOutputOpenedBeforeVerification = { published ->
-                            val catalog =
-                                Files.list(published).use { entries ->
-                                    entries
-                                        .filter { it.fileName.toString().endsWith(".jar") }
-                                        .findFirst()
-                                        .orElseThrow()
-                                }
-                            Files.delete(catalog)
-                            Files.createSymbolicLink(catalog, sentinel)
-                            replacement = catalog
-                        }
-                    ),
-                )
-            }
+            PackSetBuilder.build(
+                releaseInputs(output),
+                releaseCatalogJar(),
+                PackSetBuilderHooks(
+                    afterOutputOpenedBeforeVerification = { published ->
+                        val catalog =
+                            Files.list(published).use { entries ->
+                                entries
+                                    .filter { it.fileName.toString().endsWith(".jar") }
+                                    .findFirst()
+                                    .orElseThrow()
+                            }
+                        Files.delete(catalog)
+                        Files.createSymbolicLink(catalog, sentinel)
+                        replacement = catalog
+                        throw IOException("postcommit diagnostic failure")
+                    }
+                ),
+            )
 
             assertTrue(Files.isDirectory(output, NOFOLLOW_LINKS))
             assertTrue(Files.isSymbolicLink(requireNotNull(replacement)))

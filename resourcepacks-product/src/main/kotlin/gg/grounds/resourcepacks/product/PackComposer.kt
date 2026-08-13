@@ -47,21 +47,7 @@ internal object PackComposer {
         stagingRoot: Path,
         hooks: PackComposerHooks,
     ): List<BuiltPhysicalPack> {
-        val orderedPacks = packs.sortedBy(PhysicalPack::order)
-        ProductGraphValidator.validate(orderedPacks).also { result ->
-            if (!result.isValid) throw ProductValidationException(result)
-        }
-        CatalogParityValidator.validate(
-                gg.grounds.resourcepacks.catalog.GroundsAssetCatalog.catalog,
-                orderedPacks
-                    .first { it.role == PackRole.CONTENT }
-                    .contributions
-                    .flatMap { it.entries }
-                    .map { it.path }
-                    .toSet(),
-            )
-            .also { result -> if (!result.isValid) throw ProductValidationException(result) }
-
+        val orderedPacks = validatedProductPacks(packs)
         require(Files.isDirectory(stagingRoot)) { "stagingRoot must be an existing directory." }
         val child = Files.createTempDirectory(stagingRoot, ".pack-composer-")
         var childIdentity: OwnedChildIdentity? = null
