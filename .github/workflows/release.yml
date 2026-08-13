@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-java@v5
@@ -44,20 +44,31 @@ jobs:
           test "$version" = "$(tr -d '\n' < version.txt)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "commit=${{ github.sha }}" >> "$GITHUB_OUTPUT"
       - name: Build the exact four artifacts
         run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.release.outputs.version }}' -PprovenanceCommit='${{ steps.release.outputs.commit }}' -PprovenanceTag='${{ steps.release.outputs.tag }}' -PreleaseOutput="$RUNNER_TEMP/release"
       - name: Locally verify the immutable release
         run: |
-          test "$(find "$RUNNER_TEMP/release" -maxdepth 1 -type f | wc -l)" -eq 4
-          zipinfo -1 "$RUNNER_TEMP/release"/*.zip
-          zipinfo -1 "$RUNNER_TEMP/release"/*.jar
-          node --input-type=module --eval 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); if (manifest.version !== process.argv[2] || manifest.provenance.tag !== process.argv[3] || manifest.provenance.commit !== process.argv[4]) throw new Error("release manifest provenance mismatch");' "$RUNNER_TEMP/release/manifest.json" '${{ steps.release.outputs.version }}' '${{ steps.release.outputs.tag }}' '${{ steps.release.outputs.commit }}'
-      - uses: actions/upload-artifact@v4
+          release="$RUNNER_TEMP/release"
+          test "$(find "$release" -maxdepth 1 -type f | wc -l)" -eq 4
+          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `${pack.id}-${pack.sha1}.zip`), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch"); if (manifest.version !== process.argv[3] || manifest.provenance.tag !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error("release manifest provenance mismatch");' "$release/manifest.json" "$release" '${{ steps.release.outputs.version }}' '${{ steps.release.outputs.tag }}' '${{ steps.release.outputs.commit }}'
+          zipinfo -1 "$release"/grounds-content-*.zip
+          zipinfo -1 "$release"/grounds-platform-*.zip
+          zipinfo -1 "$release"/grounds-resourcepacks-catalog-*.jar
+      - name: Verify locked release tools
+        working-directory: release-tools
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm test
+          npm audit --audit-level=high
+      - name: Upload the locally verified release
+        uses: actions/upload-artifact@v4
         with:
           name: immutable-packset-release
           path: ${{ runner.temp }}/release
           if-no-files-found: error
+          retention-days: 1
 
   publish:
     needs: build
@@ -69,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-java@v5
@@ -113,6 +124,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
@@ -134,6 +147,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
@@ -145,4 +160,6 @@ jobs:
           name: immutable-packset-release
           path: ${{ runner.temp }}/release
       - name: Attach only byte-identical release assets
-        run: node release-tools/src/release-assets-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --token '${{ secrets.GITHUB_TOKEN }}'
+        run: |
+          test '${{ needs.build.outputs.tag }}' = '${{ github.ref_name }}'
+          node release-tools/src/release-assets-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --token '${{ secrets.GITHUB_TOKEN }}'

@@ -58,7 +58,12 @@ jobs:
         run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
       - name: Inspect exact archives and compare both release directories
         run: |
-          zipinfo -1 "$RUNNER_TEMP/release-one"/*.zip
-          zipinfo -1 "$RUNNER_TEMP/release-one"/*.jar
-          cmp "$RUNNER_TEMP/release-one/manifest.json" "$RUNNER_TEMP/release-two/manifest.json"
-          diff -r "$RUNNER_TEMP/release-one" "$RUNNER_TEMP/release-two"
+          release_one="$RUNNER_TEMP/release-one"
+          release_two="$RUNNER_TEMP/release-two"
+          test "$(find "$release_one" -maxdepth 1 -type f | wc -l)" -eq 4
+          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `${pack.id}-${pack.sha1}.zip`), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch");' "$release_one/manifest.json" "$release_one"
+          zipinfo -1 "$release_one"/grounds-content-*.zip
+          zipinfo -1 "$release_one"/grounds-platform-*.zip
+          zipinfo -1 "$release_one"/grounds-resourcepacks-catalog-*.jar
+          cmp "$release_one/manifest.json" "$release_two/manifest.json"
+          diff --no-dereference -r "$release_one" "$release_two"
