@@ -15,6 +15,128 @@ import kotlin.test.assertTrue
 
 class ReleaseDirectoryTest {
     @Test
+    fun `initialization failure never deletes a stage name whose captured identity was replaced`() {
+        listOf("real-directory", "symlink").forEach { replacementKind ->
+            withRoots("release-init-stage-$replacementKind") { parent, external ->
+                val sentinel = Files.writeString(external.resolve("sentinel.txt"), "outside")
+                val externalEmpty = Files.createDirectory(external.resolve("empty"))
+                val output = parent.resolve("release")
+                val displaced = parent.resolve("captured-stage")
+                var replacement: Path? = null
+
+                assertFailsWith<IOException>(replacementKind) {
+                    PackSetBuilder.build(
+                        releaseInputs(output),
+                        releaseCatalogJar(),
+                        PackSetBuilderHooks(
+                            afterOwnedDirectoryIdentityCapturedBeforeParentValidation = { stage ->
+                                Files.move(stage, displaced)
+                                when (replacementKind) {
+                                    "real-directory" -> Files.move(externalEmpty, stage)
+                                    else -> Files.createSymbolicLink(stage, externalEmpty)
+                                }
+                                replacement = stage
+                            }
+                        ),
+                    )
+                }
+
+                val replacementPath = requireNotNull(replacement)
+                assertTrue(Files.exists(replacementPath, NOFOLLOW_LINKS), replacementKind)
+                if (replacementKind == "real-directory") {
+                    assertTrue(Files.isDirectory(replacementPath, NOFOLLOW_LINKS))
+                } else {
+                    assertTrue(Files.isSymbolicLink(replacementPath))
+                }
+                assertTrue(Files.isDirectory(displaced, NOFOLLOW_LINKS))
+                assertEquals("outside", Files.readString(sentinel))
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            }
+        }
+    }
+
+    @Test
+    fun `cleanup leaves every unregistered attacker entry untouched`() {
+        listOf("real-directory", "file", "symlink").forEach { attackerKind ->
+            withRoots("release-unregistered-$attackerKind") { parent, external ->
+                val sentinel = Files.writeString(external.resolve("sentinel.txt"), "outside")
+                val output = parent.resolve("release")
+                var leakedStage: Path? = null
+                var attackerEntry: Path? = null
+
+                assertFailsWith<IOException>(attackerKind) {
+                    PackSetBuilder.build(
+                        releaseInputs(output),
+                        releaseCatalogJar(),
+                        PackSetBuilderHooks(
+                            beforePrePublishVerification = { stage ->
+                                leakedStage = stage
+                                val entry = stage.resolve("attacker-entry")
+                                when (attackerKind) {
+                                    "real-directory" -> {
+                                        Files.createDirectory(entry)
+                                        Files.writeString(entry.resolve("attacker.txt"), "attacker")
+                                    }
+                                    "file" -> Files.writeString(entry, "attacker")
+                                    else -> Files.createSymbolicLink(entry, external)
+                                }
+                                attackerEntry = entry
+                            }
+                        ),
+                    )
+                }
+
+                val stage = requireNotNull(leakedStage)
+                val entry = requireNotNull(attackerEntry)
+                assertTrue(Files.isDirectory(stage, NOFOLLOW_LINKS), attackerKind)
+                assertTrue(Files.exists(entry, NOFOLLOW_LINKS), attackerKind)
+                when (attackerKind) {
+                    "real-directory" ->
+                        assertEquals("attacker", Files.readString(entry.resolve("attacker.txt")))
+                    "file" -> assertEquals("attacker", Files.readString(entry))
+                    else -> assertTrue(Files.isSymbolicLink(entry))
+                }
+                assertEquals("outside", Files.readString(sentinel))
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            }
+        }
+    }
+
+    @Test
+    fun `cleanup leaves an identity-mismatched registered file untouched`() {
+        withRoots("release-owned-file-replacement") { parent, _ ->
+            val output = parent.resolve("release")
+            var stage: Path? = null
+            var replacement: Path? = null
+
+            assertFailsWith<IOException> {
+                PackSetBuilder.build(
+                    releaseInputs(output),
+                    releaseCatalogJar(),
+                    PackSetBuilderHooks(
+                        beforePrePublishVerification = { ownedStage ->
+                            stage = ownedStage
+                            val catalog =
+                                Files.list(ownedStage).use { entries ->
+                                    entries
+                                        .filter { it.fileName.toString().endsWith(".jar") }
+                                        .findFirst()
+                                        .orElseThrow()
+                                }
+                            Files.delete(catalog)
+                            replacement = Files.writeString(catalog, "attacker")
+                        }
+                    ),
+                )
+            }
+
+            assertTrue(Files.isDirectory(requireNotNull(stage), NOFOLLOW_LINKS))
+            assertEquals("attacker", Files.readString(requireNotNull(replacement)))
+            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+        }
+    }
+
+    @Test
     fun `stage name swapped immediately after creation never redirects composition`() {
         listOf("real-directory", "symlink").forEach { replacementKind ->
             withRoots("release-created-stage-$replacementKind") { parent, external ->
@@ -287,10 +409,11 @@ class ReleaseDirectoryTest {
     }
 
     @Test
-    fun `postrename entry replacement removes only its link and preserves external bytes`() {
+    fun `postrename registered entry replacement is left untouched with the leaked output`() {
         withRoots("release-entry-swap") { parent, external ->
             val sentinel = Files.writeString(external.resolve("sentinel.jar"), "outside")
             val output = parent.resolve("release")
+            var replacement: Path? = null
 
             assertFailsWith<IOException> {
                 PackSetBuilder.build(
@@ -307,51 +430,15 @@ class ReleaseDirectoryTest {
                                 }
                             Files.delete(catalog)
                             Files.createSymbolicLink(catalog, sentinel)
+                            replacement = catalog
                         }
                     ),
                 )
             }
 
-            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            assertTrue(Files.isDirectory(output, NOFOLLOW_LINKS))
+            assertTrue(Files.isSymbolicLink(requireNotNull(replacement)))
             assertEquals("outside", Files.readString(sentinel))
-        }
-    }
-
-    @Test
-    fun `descendant real-directory swap during cleanup never deletes attacker contents`() {
-        withRoots("release-cleanup-descendant") { parent, external ->
-            val attacker = Files.createDirectory(external.resolve("attacker"))
-            val sentinel = Files.writeString(attacker.resolve("sentinel.txt"), "outside")
-            val output = parent.resolve("release")
-            var leakedStage: Path? = null
-            var swapped = false
-
-            assertFailsWith<IOException> {
-                PackSetBuilder.build(
-                    releaseInputs(output),
-                    releaseCatalogJar(),
-                    PackSetBuilderHooks(
-                        beforePrePublishVerification = { stage ->
-                            leakedStage = stage
-                            val nested = Files.createDirectory(stage.resolve("nested-owned"))
-                            Files.writeString(nested.resolve("owned.txt"), "owned")
-                        },
-                        afterCleanupDirectoryClassified = { directory ->
-                            if (!swapped && directory.fileName.toString() == "nested-owned") {
-                                swapped = true
-                                deleteTreeNoFollow(directory)
-                                Files.move(attacker, directory)
-                            }
-                        },
-                    ),
-                )
-            }
-
-            assertTrue(swapped)
-            val retainedSentinel = requireNotNull(leakedStage).resolve("nested-owned/sentinel.txt")
-            assertEquals("outside", Files.readString(retainedSentinel))
-            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
-            assertFalse(Files.exists(sentinel, NOFOLLOW_LINKS))
         }
     }
 

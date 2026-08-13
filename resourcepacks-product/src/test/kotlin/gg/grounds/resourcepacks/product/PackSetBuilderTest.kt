@@ -1,9 +1,16 @@
 package gg.grounds.resourcepacks.product
 
+import gg.grounds.resourcepack.api.ContributionId
+import gg.grounds.resourcepack.api.PackBuildException
+import gg.grounds.resourcepack.api.PackContribution
+import gg.grounds.resourcepack.api.PackEntry
+import gg.grounds.resourcepack.api.PackFormatRange
+import gg.grounds.resourcepack.api.PackProblemCode
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
@@ -26,34 +33,13 @@ class PackSetBuilderTest {
         val before = sourcePaths.associateWith(::immutableFileState)
         val cases =
             listOf<Pair<String, PackSetBuilderHooks>>(
-                "source-read" to
-                    PackSetBuilderHooks(
-                        beforeComposition = { throw IOException("source art read unavailable") }
-                    ),
                 "catalog-copy" to
                     PackSetBuilderHooks(
                         afterCatalogCopy = { _, staged -> Files.write(staged, byteArrayOf(0x42)) }
                     ),
-                "composer" to
-                    PackSetBuilderHooks(
-                        afterComposition = { throw IOException("composer phase failed") }
-                    ),
                 "stage-write" to
                     PackSetBuilderHooks(
                         afterStageWrite = { throw IOException("stage write failed") }
-                    ),
-                "hash" to
-                    PackSetBuilderHooks(
-                        beforePrePublishVerification = { stage ->
-                            val pack =
-                                Files.list(stage).use { entries ->
-                                    entries
-                                        .filter { it.fileName.toString().endsWith(".zip") }
-                                        .findFirst()
-                                        .orElseThrow()
-                                }
-                            Files.write(pack, byteArrayOf(0x42))
-                        }
                     ),
                 "manifest" to
                     PackSetBuilderHooks(
@@ -79,6 +65,104 @@ class PackSetBuilderTest {
                 assertEquals(before, sourcePaths.associateWith(::immutableFileState), name)
             }
             assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `builder reports a real source read failure after composition without changing product sources`() {
+        val root = repositoryRoot()
+        val catalog = catalogJar()
+        val productSources =
+            Files.walk(root.resolve("art")).use { paths ->
+                paths.filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }.sorted().toList()
+            } + listOf(catalog)
+        val before = productSources.associateWith(::immutableFileState)
+        val parent = Files.createTempDirectory("packset-real-source-read-")
+        val copiedSource =
+            Files.copy(
+                root.resolve("art/platform/icons/back.png"),
+                parent.resolve("copied-source.png"),
+            )
+        val output = parent.resolve("release")
+        val platform =
+            ProductGraph.packs
+                .last()
+                .copy(
+                    contributions =
+                        listOf(
+                            PackContribution(
+                                ContributionId.of("grounds:test-source-read"),
+                                PackFormatRange(88, 88),
+                                listOf(
+                                    PackEntry.file(
+                                        "assets/grounds/test/copied-source.png",
+                                        copiedSource,
+                                    )
+                                ),
+                            )
+                        )
+                )
+        try {
+            val failure =
+                assertFailsWith<PackBuildException> {
+                    PackSetBuilder.build(
+                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        catalog,
+                        PackSetBuilderHooks(
+                            afterComposeBeforePackWrite = { pack, _ ->
+                                if (pack.role == PackRole.PLATFORM) Files.delete(copiedSource)
+                            }
+                        ),
+                        listOf(ProductGraph.packs.first(), platform),
+                    )
+                }
+
+            assertEquals(
+                listOf(PackProblemCode.SOURCE_READ_FAILED),
+                failure.problems.map { it.code },
+            )
+            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            assertEquals(before, productSources.associateWith(::immutableFileState))
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `builder fails when a staged artifact changes during real digest streaming`() {
+        val root = repositoryRoot()
+        val catalog = catalogJar()
+        val productSources =
+            Files.walk(root.resolve("art")).use { paths ->
+                paths.filter { Files.isRegularFile(it, NOFOLLOW_LINKS) }.sorted().toList()
+            } + listOf(catalog)
+        val before = productSources.associateWith(::immutableFileState)
+        val parent = Files.createTempDirectory("packset-real-hash-change-")
+        val output = parent.resolve("release")
+        var mutated = false
+        try {
+            val failure =
+                assertFailsWith<IOException> {
+                    PackSetBuilder.build(
+                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        catalog,
+                        PackSetBuilderHooks(
+                            afterArtifactHashFirstChunk = { artifact ->
+                                if (!mutated && artifact.fileName.toString().endsWith(".zip")) {
+                                    mutated = true
+                                    Files.write(artifact, byteArrayOf(0x42), APPEND)
+                                }
+                            }
+                        ),
+                    )
+                }
+
+            assertTrue(mutated)
+            assertTrue(failure.message.orEmpty().contains("Artifact changed while hashing"))
+            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            assertEquals(before, productSources.associateWith(::immutableFileState))
         } finally {
             parent.toFile().deleteRecursively()
         }

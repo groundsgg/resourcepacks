@@ -37,6 +37,7 @@ private constructor(
     private val identity: Identity,
 ) : AutoCloseable {
     val stablePath: Path = nativeStage.anchor
+    private var ownedEntries: Map<String, OwnedEntry> = emptyMap()
 
     fun verify(): Boolean = verifyName(name)
 
@@ -44,6 +45,32 @@ private constructor(
         attributes(parent, candidate)?.let {
             it.isDirectory && !it.isSymbolicLink && identity.matches(it)
         } == true
+
+    /** Registers one final root artifact immediately after this transaction creates it. */
+    fun registerOwned(relativePath: Path) {
+        require(
+            !relativePath.isAbsolute &&
+                relativePath.nameCount == 1 &&
+                relativePath.toString() != "." &&
+                relativePath.toString() != ".."
+        ) {
+            "Owned release entries must be one safe stage-relative name."
+        }
+        val entryName = relativePath.toString()
+        check(entryName !in ownedEntries) { "Release entry is already registered: $entryName" }
+        val captured =
+            openStageStream().use { opened ->
+                val root = readAttributes(opened)
+                if (root == null || !root.isDirectory || !identity.matches(root)) {
+                    throw IOException("Held release directory identity changed.")
+                }
+                val attributes =
+                    attributes(opened, relativePath)
+                        ?: throw IOException("Owned release entry vanished: $relativePath")
+                OwnedEntry.capture(attributes, relativePath)
+            }
+        ownedEntries = ownedEntries + (entryName to captured)
+    }
 
     fun snapshot(expectedNames: Set<String>, afterOpen: () -> Unit = {}): DirectorySnapshot =
         openStageStream().use { opened ->
@@ -57,12 +84,23 @@ private constructor(
                 throw IOException("Owned release directory identity changed after opening it.")
             }
             val names = opened.names().map(Path::toString)
-            if (names.toSet() != expectedNames || names.size != expectedNames.size) {
+            val ledger = ownedEntries
+            if (
+                expectedNames != ledger.keys ||
+                    names.toSet() != expectedNames ||
+                    names.size != expectedNames.size
+            ) {
                 throw IOException("Release directory does not contain exactly the expected files.")
             }
             val files =
                 names.sorted().associateWith { entryName ->
-                    readRegularFile(opened, Path.of(entryName))
+                    val file = readRegularFile(opened, Path.of(entryName))
+                    if (
+                        !ledger.getValue(entryName).matches(file.identity, OwnedEntryKind.REGULAR)
+                    ) {
+                        throw IOException("Owned release entry identity changed: $entryName")
+                    }
+                    file
                 }
             val after = readAttributes(opened)
             if (after == null || !identity.matches(after)) {
@@ -112,13 +150,34 @@ private constructor(
             } catch (_: Throwable) {
                 // A cleanup seam cannot obscure the primary build failure.
             }
-            heldStage.names().forEach { childName ->
-                if (!delete(heldStage, childName, null, display.resolve(childName), hooks)) return
+            val ledger = ownedEntries
+            val names = heldStage.names().map(Path::toString)
+            if (names.size != names.toSet().size || names.any { it !in ledger }) return
+            val present = names.toSet()
+            for (entryName in present.sorted()) {
+                val attributes = attributes(heldStage, Path.of(entryName)) ?: continue
+                if (!ledger.getValue(entryName).matches(attributes)) return
             }
-            if (!verifyName(name)) return
-            val after = readAttributes(heldStage) ?: return
-            if (!identity.matches(after)) return
+            for (entryName in present.sorted()) {
+                val entry = Path.of(entryName)
+                val expected = ledger.getValue(entryName)
+                val attributes = attributes(heldStage, entry) ?: continue
+                if (!expected.matches(attributes)) return
+                val deleted =
+                    when (expected.kind) {
+                        OwnedEntryKind.REGULAR -> deleteFile(heldStage, entry)
+                        OwnedEntryKind.DIRECTORY -> deleteEmptyDirectory(heldStage, entry)
+                    }
+                if (!deleted) return
+            }
         }
+        if (!verifyName(name)) return
+        openStageStream().use { finalStage ->
+            val after = readAttributes(finalStage) ?: return
+            if (!after.isDirectory || !identity.matches(after)) return
+            if (finalStage.names().isNotEmpty()) return
+        }
+        if (!verifyName(name)) return
         try {
             parent.deleteDirectory(name)
         } catch (_: Throwable) {
@@ -157,58 +216,6 @@ private constructor(
             }
     }
 
-    private fun delete(
-        directory: SecureDirectoryStream<Path>,
-        entry: Path,
-        expected: Identity?,
-        display: Path,
-        hooks: PackSetBuilderHooks,
-    ): Boolean {
-        repeat(4) {
-            val attrs = attributes(directory, entry) ?: return true
-            if (expected != null && (!attrs.isDirectory || !expected.matches(attrs))) return false
-            if (!attrs.isDirectory || attrs.isSymbolicLink) return deleteFile(directory, entry)
-            val classified = Identity.from(attrs)
-            try {
-                hooks.afterCleanupDirectoryClassified(display)
-            } catch (_: Throwable) {
-                // A cleanup seam cannot obscure the primary build failure.
-            }
-            val child =
-                try {
-                    directory.newDirectoryStream(entry, NOFOLLOW_LINKS)
-                } catch (_: IOException) {
-                    return@repeat
-                } catch (_: SecurityException) {
-                    return false
-                }
-            val openedIdentity =
-                child.use { opened ->
-                    val openedAttrs = readAttributes(opened) ?: return false
-                    if (!openedAttrs.isDirectory || !classified.matches(openedAttrs)) return false
-                    opened.names().forEach { childName ->
-                        if (!delete(opened, childName, null, display.resolve(childName), hooks)) {
-                            return false
-                        }
-                    }
-                    Identity.from(openedAttrs)
-                }
-            val beforeDelete = attributes(directory, entry) ?: return true
-            if (!beforeDelete.isDirectory || !openedIdentity.matches(beforeDelete)) return false
-            try {
-                directory.deleteDirectory(entry)
-                return true
-            } catch (_: NoSuchFileException) {
-                return true
-            } catch (_: IOException) {
-                // Reclassify a concurrent change on the next bounded attempt.
-            } catch (_: SecurityException) {
-                return false
-            }
-        }
-        return false
-    }
-
     private fun readRegularFile(
         directory: SecureDirectoryStream<Path>,
         entry: Path,
@@ -239,12 +246,17 @@ private constructor(
     }
 
     companion object {
-        fun create(parentPath: Path, prefix: String): SecureOwnedDirectory {
+        fun create(
+            parentPath: Path,
+            prefix: String,
+            afterIdentityCapturedBeforeParentValidation: (Path) -> Unit = {},
+        ): SecureOwnedDirectory {
             val normalizedParent = parentPath.toAbsolutePath().normalize()
             val nativeParent = LinuxDirectoryHandle.open(normalizedParent)
             var parent: SecureDirectoryStream<Path>? = null
             var nativeStage: LinuxDirectoryHandle? = null
             var childName: Path? = null
+            var stageIdentity: Identity? = null
             try {
                 val rawParent: DirectoryStream<Path> = Files.newDirectoryStream(nativeParent.anchor)
                 parent =
@@ -266,13 +278,16 @@ private constructor(
                             rawStage.close()
                             throw IOException("Secure stage directory handles are required.")
                         }
-                val parentAttrs =
-                    attributes(parent, childName)
-                        ?: throw IOException("Owned staging directory vanished.")
                 val stageAttrs =
                     stage.use { opened -> readAttributes(opened) }
                         ?: throw IOException("Held staging directory vanished.")
                 val identity = Identity.from(stageAttrs)
+                stageIdentity = identity
+                val displayPath = normalizedParent.resolve(childName)
+                afterIdentityCapturedBeforeParentValidation(displayPath)
+                val parentAttrs =
+                    attributes(parent, childName)
+                        ?: throw IOException("Owned staging directory vanished.")
                 if (
                     !parentAttrs.isDirectory ||
                         parentAttrs.isSymbolicLink ||
@@ -282,7 +297,6 @@ private constructor(
                 ) {
                     throw IOException("Owned staging directory is unsafe.")
                 }
-                val displayPath = normalizedParent.resolve(childName)
                 return SecureOwnedDirectory(
                     displayPath,
                     nativeParent,
@@ -297,9 +311,17 @@ private constructor(
                 } catch (close: Throwable) {
                     failure.addSuppressed(close)
                 }
-                if (childName != null && parent != null) {
+                if (childName != null && parent != null && stageIdentity != null) {
                     try {
-                        parent.deleteDirectory(childName)
+                        val parentAttrs = attributes(parent, childName)
+                        if (
+                            parentAttrs != null &&
+                                parentAttrs.isDirectory &&
+                                !parentAttrs.isSymbolicLink &&
+                                stageIdentity.matches(parentAttrs)
+                        ) {
+                            parent.deleteDirectory(childName)
+                        }
                     } catch (_: Throwable) {}
                 }
                 try {
@@ -362,8 +384,54 @@ private constructor(
             } catch (_: SecurityException) {
                 false
             }
+
+        private fun deleteEmptyDirectory(parent: SecureDirectoryStream<Path>, name: Path): Boolean =
+            try {
+                parent.deleteDirectory(name)
+                true
+            } catch (_: NoSuchFileException) {
+                true
+            } catch (_: IOException) {
+                false
+            } catch (_: SecurityException) {
+                false
+            }
     }
 }
+
+internal enum class OwnedEntryKind {
+    REGULAR,
+    DIRECTORY,
+}
+
+internal data class OwnedEntry(val identity: Identity, val kind: OwnedEntryKind) {
+    fun matches(attributes: BasicFileAttributes): Boolean =
+        !attributes.isSymbolicLink && kind.matches(attributes) && identity.matches(attributes)
+
+    fun matches(candidate: Identity, candidateKind: OwnedEntryKind): Boolean =
+        kind == candidateKind && identity == candidate
+
+    companion object {
+        fun capture(attributes: BasicFileAttributes, path: Path): OwnedEntry {
+            if (attributes.isSymbolicLink || attributes.fileKey() == null) {
+                throw IOException("Owned release entry is unsafe: $path")
+            }
+            val kind =
+                when {
+                    attributes.isRegularFile -> OwnedEntryKind.REGULAR
+                    attributes.isDirectory -> OwnedEntryKind.DIRECTORY
+                    else -> throw IOException("Owned release entry has an unsupported kind: $path")
+                }
+            return OwnedEntry(Identity.from(attributes), kind)
+        }
+    }
+}
+
+private fun OwnedEntryKind.matches(attributes: BasicFileAttributes): Boolean =
+    when (this) {
+        OwnedEntryKind.REGULAR -> attributes.isRegularFile
+        OwnedEntryKind.DIRECTORY -> attributes.isDirectory
+    }
 
 internal class DirectorySnapshot(files: Map<String, SecureFileSnapshot>) {
     val files: Map<String, SecureFileSnapshot> =
