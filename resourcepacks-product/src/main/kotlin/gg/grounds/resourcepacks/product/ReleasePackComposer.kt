@@ -1,119 +1,152 @@
 package gg.grounds.resourcepacks.product
 
-import gg.grounds.resourcepack.api.ByteArrayEntrySource
 import gg.grounds.resourcepack.api.PackBuildException
+import gg.grounds.resourcepack.api.PackEntrySource
 import gg.grounds.resourcepack.api.PackProblem
 import gg.grounds.resourcepack.api.PackProblemCode
 import gg.grounds.resourcepack.builder.ResourcePackComposer
-import java.io.ByteArrayOutputStream
+import java.io.OutputStream
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-internal class BuiltPhysicalPackBytes(
+internal data class BuiltReleasePack(
     val pack: PhysicalPack,
-    bytes: ByteArray,
+    val scratchFile: Path,
     val digests: ArtifactDigests,
-) {
-    private val storedBytes = bytes.copyOf()
-    val bytes: ByteArray
-        get() = storedBytes.copyOf()
-}
+)
 
-/** Validates and creates deterministic ZIP bytes without creating, renaming, or deleting paths. */
+/** Validates packs and streams deterministic ZIP bytes into descriptor-owned secure scratch. */
 internal object ReleasePackComposer {
-    fun build(packs: List<PhysicalPack>, hooks: PackComposerHooks): List<BuiltPhysicalPackBytes> {
+    fun build(
+        packs: List<PhysicalPack>,
+        scratch: SecureOwnedDirectory,
+        hooks: PackComposerHooks,
+    ): List<BuiltReleasePack> {
         val orderedPacks = validatedProductPacks(packs)
         val composer = ResourcePackComposer()
+        orderedPacks.forEach { pack ->
+            // Validation is authoritative, but compose() would allocate encoded metadata bytes.
+            composer.validate(pack.definition, pack.contributions).throwIfInvalid()
+        }
+        orderedPacks.forEach { pack ->
+            val pending = Path.of(".${pack.id}.pending.zip")
+            hooks.afterComposeBeforeWrite(pack, scratch.stablePath.resolve(pending))
+        }
         return orderedPacks.map { pack ->
-            // The composer remains the authoritative validation boundary. Release inputs have
-            // already been converted to immutable byte-backed sources.
-            composer.compose(pack.definition, pack.contributions)
-            val diagnosticTarget = Path.of(".${pack.id}.pending.zip")
-            hooks.afterComposeBeforeWrite(pack, diagnosticTarget)
-            val bytes = deterministicZipBytes(pack)
-            val digests = ArtifactDigests.fromBytes(bytes)
-            val limit = pack.definition.policy.limits.maxArtifactBytes
-            if (limit != null && digests.size > limit) {
-                throw PackBuildException(
-                    listOf(
-                        PackProblem(
-                            PackProblemCode.SIZE_LIMIT_EXCEEDED,
-                            "ZIP artifact size exceeds the configured limit of $limit bytes.",
-                        )
-                    )
-                )
-            }
-            hooks.afterPackPublicationVerified(pack, diagnosticTarget)
-            BuiltPhysicalPackBytes(pack, bytes, digests)
+            val pending = Path.of(".${pack.id}.pending.zip")
+            val artifactLimit = requireNotNull(pack.definition.policy.limits.maxArtifactBytes)
+            val snapshot =
+                scratch.writeRegularFile(
+                    pending,
+                    artifactLimit,
+                    limitFailure = { artifactSizeLimitFailure(artifactLimit) },
+                ) { output ->
+                    deterministicZip(pack, output)
+                }
+            hooks.afterPackPublicationVerified(pack, scratch.stablePath.resolve(pending))
+            BuiltReleasePack(pack, pending, snapshot.digests)
         }
     }
 
-    private fun deterministicZipBytes(pack: PhysicalPack): ByteArray {
+    private fun deterministicZip(pack: PhysicalPack, output: OutputStream) {
         val entries =
             buildList {
                     pack.contributions.forEach { contribution ->
                         contribution.entries.forEach { entry ->
-                            add(entry.path.value to entry.source)
+                            add(StreamingEntry.Source(entry.path.value, entry.source))
                         }
                     }
-                    add("pack.mcmeta" to ByteArrayEntrySource(packMetadata(pack)))
-                    pack.definition.icon?.let { add("pack.png" to it) }
+                    add(StreamingEntry.Metadata("pack.mcmeta", pack))
+                    pack.definition.icon?.let { add(StreamingEntry.Source("pack.png", it)) }
                 }
-                .sortedBy { it.first }
-        val output = ByteArrayOutputStream()
+                .sortedBy(StreamingEntry::path)
         ZipOutputStream(output).use { zip ->
             zip.setLevel(Deflater.DEFAULT_COMPRESSION)
-            entries.forEach { (path, source) ->
+            entries.forEach { entry ->
                 zip.putNextEntry(
-                    ZipEntry(path).apply {
+                    ZipEntry(entry.path).apply {
                         method = ZipEntry.DEFLATED
                         setTimeLocal(LocalDateTime.of(1980, 1, 1, 0, 0))
                         time = time
                         comment = null
-                        extra = ByteArray(0)
+                        extra = EMPTY_EXTRA
                     }
                 )
-                source.openStream().use { it.copyTo(zip, 64 * 1024) }
+                when (entry) {
+                    is StreamingEntry.Source -> streamSource(entry.source, zip)
+                    is StreamingEntry.Metadata -> writePackMetadata(entry.pack, zip)
+                }
                 zip.closeEntry()
             }
         }
-        return output.toByteArray()
     }
 
-    private fun packMetadata(pack: PhysicalPack): ByteArray {
-        val definition = pack.definition
-        val format = definition.format
-        return buildString {
-                append("{\"pack\":{\"pack_format\":")
-                append(format.format)
-                append(",\"min_format\":")
-                append(format.range.minInclusive)
-                append(",\"max_format\":")
-                append(format.range.maxInclusive)
-                append(",\"description\":\"")
-                definition.description.forEach { character ->
-                    when (character) {
-                        '"' -> append("\\\"")
-                        '\\' -> append("\\\\")
-                        '\b' -> append("\\b")
-                        '\u000C' -> append("\\f")
-                        '\n' -> append("\\n")
-                        '\r' -> append("\\r")
-                        '\t' -> append("\\t")
-                        else ->
-                            if (character < ' ') {
-                                append("\\u")
-                                append(character.code.toString(16).padStart(4, '0'))
-                            } else {
-                                append(character)
-                            }
-                    }
-                }
-                append("\"}}\n")
+    private fun streamSource(source: PackEntrySource, output: OutputStream) {
+        source.openStream().use { input ->
+            val buffer = ByteArray(STREAM_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                output.write(buffer, 0, read)
             }
-            .encodeToByteArray()
+        }
     }
+
+    private fun writePackMetadata(pack: PhysicalPack, output: OutputStream) {
+        val writer = OutputStreamWriter(output, StandardCharsets.UTF_8)
+        val format = pack.definition.format
+        writer.append("{\"pack\":{\"pack_format\":")
+        writer.append(format.format.toString())
+        writer.append(",\"min_format\":")
+        writer.append(format.range.minInclusive.toString())
+        writer.append(",\"max_format\":")
+        writer.append(format.range.maxInclusive.toString())
+        writer.append(",\"description\":\"")
+        pack.definition.description.forEach { character ->
+            when (character) {
+                '"' -> writer.append("\\\"")
+                '\\' -> writer.append("\\\\")
+                '\b' -> writer.append("\\b")
+                '\u000C' -> writer.append("\\f")
+                '\n' -> writer.append("\\n")
+                '\r' -> writer.append("\\r")
+                '\t' -> writer.append("\\t")
+                else ->
+                    if (character < ' ') {
+                        writer.append("\\u")
+                        writer.append(character.code.toString(16).padStart(4, '0'))
+                    } else {
+                        writer.append(character)
+                    }
+            }
+        }
+        writer.append("\"}}\n")
+        writer.flush()
+    }
+
+    private sealed interface StreamingEntry {
+        val path: String
+
+        data class Source(override val path: String, val source: PackEntrySource) : StreamingEntry
+
+        data class Metadata(override val path: String, val pack: PhysicalPack) : StreamingEntry
+    }
+
+    private val EMPTY_EXTRA = ByteArray(0)
+    private const val STREAM_BUFFER_SIZE = 64 * 1024
 }
+
+private fun artifactSizeLimitFailure(limit: Long): PackBuildException =
+    PackBuildException(
+        listOf(
+            PackProblem(
+                PackProblemCode.SIZE_LIMIT_EXCEEDED,
+                "ZIP artifact size exceeds the configured limit of $limit bytes.",
+            )
+        )
+    )

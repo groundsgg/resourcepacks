@@ -1,22 +1,20 @@
 package gg.grounds.resourcepacks.product
 
-import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemoryLayout
 import java.lang.foreign.ValueLayout
-import java.nio.ByteBuffer
-import java.nio.channels.SeekableByteChannel
 import java.nio.file.DirectoryStream
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
-import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.SecureDirectoryStream
-import java.nio.file.StandardOpenOption.READ
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
@@ -45,33 +43,80 @@ private constructor(
             it.isDirectory && !it.isSymbolicLink && identity.matches(it)
         } == true
 
-    /** Creates one final file with `O_EXCL` and records the identity returned by its held fd. */
-    fun writeRegularFile(relativePath: Path, bytes: ByteArray) {
+    /** Creates one small final file with `O_EXCL` after a binding allocation limit was checked. */
+    fun writeRegularFile(relativePath: Path, bytes: ByteArray, maxBytes: Long) {
+        require(bytes.size.toLong() <= maxBytes) { "Release entry exceeds its byte limit." }
+        writeRegularFile(relativePath, maxBytes) { output -> output.write(bytes) }
+    }
+
+    /**
+     * Streams one file into this held directory and records the exact resulting identity/digest.
+     */
+    fun writeRegularFile(
+        relativePath: Path,
+        maxBytes: Long,
+        limitFailure: () -> Throwable = { sizeLimitFailure(maxBytes) },
+        writer: (OutputStream) -> Unit,
+    ): SecureFileSnapshot {
         requireRelativeName(relativePath)
         val entryName = relativePath.toString()
         check(entryName !in ownedEntries) { "Release entry is already written: $entryName" }
         val created = nativeStage.createExclusiveRegularFile(relativePath)
-        val captured =
+        val snapshot =
             created.use { file ->
-                file.write(bytes)
-                val snapshot = file.snapshot()
-                if (!snapshot.bytes.contentEquals(bytes)) {
-                    throw IOException(
-                        "Staged release entry differs from supplied bytes: $entryName"
-                    )
+                file.outputStream().use { output ->
+                    writer(LimitedOutputStream(output, maxBytes, limitFailure))
                 }
-                snapshot.identity
+                file.snapshot(maxBytes, limitFailure = limitFailure)
             }
-        ownedEntries = ownedEntries + (entryName to captured)
+        ownedEntries = ownedEntries + (entryName to snapshot.identity)
+        return snapshot
+    }
+
+    /** Copies exact held bytes into a new file without materializing either artifact in memory. */
+    fun copyRegularFile(
+        relativePath: Path,
+        source: LinuxRegularFileHandle,
+        expected: ArtifactDigests,
+        maxBytes: Long,
+    ): SecureFileSnapshot {
+        if (expected.size > maxBytes) throw sizeLimitFailure(maxBytes)
+        val snapshot =
+            writeRegularFile(relativePath, maxBytes) { output -> source.copyTo(output, maxBytes) }
+        if (snapshot.digests != expected) {
+            throw IOException("Copied release entry differs from held source: $relativePath")
+        }
+        return snapshot
     }
 
     /** Reads a composer output beneath the held scratch fd without following any component. */
     fun readRelativeRegularFile(
         relativePath: Path,
+        maxBytes: Long,
         afterFirstChunk: () -> Unit = {},
     ): SecureFileSnapshot {
         requireSafeRelativePath(relativePath)
-        return nativeStage.openRegularFile(relativePath).use { it.snapshot(afterFirstChunk) }
+        return nativeStage.openRegularFile(relativePath).use {
+            it.snapshot(maxBytes, afterFirstChunk)
+        }
+    }
+
+    fun readRelativeRegularFileBytes(relativePath: Path, maxBytes: Long): ByteArray {
+        requireSafeRelativePath(relativePath)
+        return nativeStage.openRegularFile(relativePath).use { it.readBytes(maxBytes) }
+    }
+
+    fun openRelativeRegularFile(relativePath: Path): LinuxRegularFileHandle {
+        requireSafeRelativePath(relativePath)
+        val entryName = relativePath.toString()
+        val expected =
+            ownedEntries[entryName] ?: throw IOException("Release entry is not owned: $entryName")
+        return nativeStage.openRegularFile(relativePath).also { opened ->
+            if (opened.identity() != expected) {
+                opened.close()
+                throw IOException("Owned release entry identity changed: $entryName")
+            }
+        }
     }
 
     fun relativeStablePath(path: Path): Path {
@@ -81,7 +126,10 @@ private constructor(
         return root.relativize(normalized).also(::requireSafeRelativePath)
     }
 
-    fun snapshot(expectedNames: Set<String>, afterOpen: () -> Unit = {}): DirectorySnapshot =
+    fun snapshot(
+        expectedFiles: Map<String, ArtifactDigests>,
+        afterOpen: () -> Unit = {},
+    ): DirectorySnapshot =
         openStageStream().use { opened ->
             val before = readAttributes(opened)
             if (before == null || !before.isDirectory || !identity.matches(before)) {
@@ -95,17 +143,30 @@ private constructor(
             val names = opened.names().map(Path::toString)
             val ledger = ownedEntries
             if (
-                expectedNames != ledger.keys ||
-                    names.toSet() != expectedNames ||
-                    names.size != expectedNames.size
+                expectedFiles.keys != ledger.keys ||
+                    names.toSet() != expectedFiles.keys ||
+                    names.size != expectedFiles.size
             ) {
                 throw IOException("Release directory does not contain exactly the expected files.")
             }
             val files =
                 names.sorted().associateWith { entryName ->
-                    val file = readRegularFile(opened, Path.of(entryName))
+                    val expected = expectedFiles.getValue(entryName)
+                    val entry = Path.of(entryName)
+                    val before =
+                        attributes(opened, entry)
+                            ?: throw IOException("Release entry vanished: $entry")
+                    if (
+                        !before.isRegularFile || before.isSymbolicLink || before.fileKey() == null
+                    ) {
+                        throw IOException("Release entry is not a no-follow regular file: $entry")
+                    }
+                    val file = nativeStage.openRegularFile(entry).use { it.snapshot(expected.size) }
                     if (ledger.getValue(entryName) != file.identity) {
                         throw IOException("Owned release entry identity changed: $entryName")
+                    }
+                    if (expected != file.digests) {
+                        throw IOException("Release entry bytes changed: $entryName")
                     }
                     file
                 }
@@ -127,21 +188,21 @@ private constructor(
         hooks.immediatelyBeforeRename(path)
         if (
             !verifyName(name) ||
-                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+                !expected.sameDigestsAndIdentities(snapshot(expected.digestsByName()))
         ) {
             throw IOException("Owned staging directory changed immediately before publication.")
         }
         hooks.afterPreRenameIdentityVerified(path)
         if (
             !verifyName(name) ||
-                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+                !expected.sameDigestsAndIdentities(snapshot(expected.digestsByName()))
         ) {
             throw IOException("Owned staging directory changed before native publication.")
         }
         immediatelyBeforeCommit()
         if (
             !verifyName(name) ||
-                !expected.sameBytesDigestsAndIdentities(snapshot(expected.files.keys))
+                !expected.sameDigestsAndIdentities(snapshot(expected.digestsByName()))
         ) {
             throw IOException("Owned staging directory changed during final input verification.")
         }
@@ -180,35 +241,6 @@ private constructor(
                 raw.close()
                 throw IOException("Secure stage directory handles are required.")
             }
-    }
-
-    private fun readRegularFile(
-        directory: SecureDirectoryStream<Path>,
-        entry: Path,
-    ): SecureFileSnapshot {
-        val before =
-            attributes(directory, entry) ?: throw IOException("Release entry vanished: $entry")
-        if (!before.isRegularFile || before.isSymbolicLink || before.fileKey() == null) {
-            throw IOException("Release entry is not a no-follow regular file: $entry")
-        }
-        val identity = Identity.from(before)
-        val bytes =
-            directory
-                .newByteChannel(entry, setOf<OpenOption>(READ, NOFOLLOW_LINKS))
-                .use(::readAllBytes)
-        val after =
-            attributes(directory, entry)
-                ?: throw IOException("Release entry vanished while reading: $entry")
-        if (
-            !after.isRegularFile || !identity.matches(after) || after.size() != bytes.size.toLong()
-        ) {
-            throw IOException("Release entry changed while reading: $entry")
-        }
-        return SecureFileSnapshot(
-            bytes,
-            ArtifactDigests(bytes.sha1(), bytes.sha256(), bytes.size.toLong()),
-            identity,
-        )
     }
 
     companion object {
@@ -325,19 +357,6 @@ private constructor(
         private fun SecureDirectoryStream<Path>.names(): List<Path> =
             mapNotNull(Path::getFileName).toList()
 
-        private fun readAllBytes(channel: SeekableByteChannel): ByteArray {
-            val output = ByteArrayOutputStream()
-            val buffer = ByteBuffer.allocate(64 * 1024)
-            while (true) {
-                val count = channel.read(buffer)
-                if (count < 0) break
-                if (count == 0) continue
-                output.write(buffer.array(), 0, count)
-                buffer.clear()
-            }
-            return output.toByteArray()
-        }
-
         private fun requireRelativeName(name: Path) {
             requireSafeRelativePath(name)
             require(name.nameCount == 1) {
@@ -351,28 +370,21 @@ internal class DirectorySnapshot(files: Map<String, SecureFileSnapshot>) {
     val files: Map<String, SecureFileSnapshot> =
         java.util.Collections.unmodifiableMap(LinkedHashMap(files))
 
-    fun sameBytesDigestsAndIdentities(other: DirectorySnapshot): Boolean =
+    fun sameDigestsAndIdentities(other: DirectorySnapshot): Boolean =
         files.keys == other.files.keys &&
             files.all { (name, file) ->
                 val compared = other.files.getValue(name)
-                file.identity == compared.identity &&
-                    file.digests == compared.digests &&
-                    file.contentEquals(compared)
+                file.identity == compared.identity && file.digests == compared.digests
             }
+
+    fun digestsByName(): Map<String, ArtifactDigests> = files.mapValues { it.value.digests }
 }
 
-internal class SecureFileSnapshot(
-    bytes: ByteArray,
+internal data class SecureFileSnapshot(
     val digests: ArtifactDigests,
     val identity: Identity,
-) {
-    private val storedBytes: ByteArray = bytes.copyOf()
-    val bytes: ByteArray
-        get() = storedBytes.copyOf()
-
-    fun contentEquals(other: SecureFileSnapshot): Boolean =
-        storedBytes.contentEquals(other.storedBytes)
-}
+    val lastModifiedTime: java.nio.file.attribute.FileTime,
+)
 
 internal data class Identity(
     val fileKey: Any?,
@@ -391,6 +403,29 @@ internal data class Identity(
 
 internal fun interface SecureRename {
     fun rename(parent: LinuxDirectoryHandle, from: Path, to: Path)
+}
+
+/** Held advisory lease for callers that honor the trusted-single-writer builder protocol. */
+internal class TrustedSingleWriterLease
+private constructor(private val parent: LinuxDirectoryHandle) : AutoCloseable {
+    override fun close() = parent.close()
+
+    companion object {
+        fun acquire(parentPath: Path): TrustedSingleWriterLease {
+            val parent = LinuxDirectoryHandle.open(parentPath)
+            try {
+                parent.acquireCooperativeBuilderLock()
+                return TrustedSingleWriterLease(parent)
+            } catch (failure: Throwable) {
+                try {
+                    parent.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
+                throw failure
+            }
+        }
+    }
 }
 
 /** Linux parent descriptor used for mkdirat/renameat2 and a stable /proc/self/fd anchor. */
@@ -515,6 +550,40 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
         }
     }
 
+    /**
+     * Takes an advisory lock on this held parent fd. This serializes cooperative builders only; an
+     * uncooperative same-UID process can ignore flock and is excluded by the trusted-single- writer
+     * release namespace precondition.
+     */
+    fun acquireCooperativeBuilderLock() {
+        try {
+            Arena.ofConfined().use { arena ->
+                val errno = arena.allocate(errnoLayout())
+                val result =
+                    handle(
+                            "flock",
+                            FunctionDescriptor.of(
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_INT,
+                                ValueLayout.JAVA_INT,
+                            ),
+                            true,
+                        )
+                        .invoke(errno, descriptor, LOCK_EX or LOCK_NB) as Int
+                if (result != 0) {
+                    throw IOException(
+                        "Another cooperative PackSet builder holds the release parent lock " +
+                            "(errno ${errno(errno)})."
+                    )
+                }
+            }
+        } catch (failure: IOException) {
+            throw failure
+        } catch (failure: Throwable) {
+            throw IOException("Cooperative PackSet builder locking is unavailable.", failure)
+        }
+    }
+
     fun sameDirectoryNoFollow(path: Path): Boolean =
         try {
             open(path).use { candidate -> Files.isSameFile(anchor, candidate.anchor) }
@@ -551,6 +620,8 @@ internal class LinuxDirectoryHandle private constructor(private val descriptor: 
         private const val O_DIRECTORY = 0x10000
         private const val O_NOFOLLOW = 0x20000
         private const val O_CLOEXEC = 0x80000
+        private const val LOCK_EX = 2
+        private const val LOCK_NB = 4
 
         fun open(path: Path): LinuxDirectoryHandle {
             if (System.getProperty("os.name").lowercase() != "linux") {
@@ -742,31 +813,48 @@ internal class LinuxRegularFileHandle internal constructor(private val descripto
     val anchor: Path = Path.of("/proc/self/fd/$descriptor")
     private var closed = false
 
-    fun snapshot(afterFirstChunk: () -> Unit = {}): SecureFileSnapshot {
+    fun identity(): Identity {
+        val attributes = Files.readAttributes(anchor, BasicFileAttributes::class.java)
+        if (!attributes.isRegularFile || attributes.fileKey() == null) {
+            throw IOException("Held source is not a stable regular file.")
+        }
+        return Identity.from(attributes)
+    }
+
+    fun snapshot(
+        maxBytes: Long = Long.MAX_VALUE,
+        afterFirstChunk: () -> Unit = {},
+        limitFailure: () -> Throwable = { sizeLimitFailure(maxBytes) },
+    ): SecureFileSnapshot {
+        require(maxBytes >= 0L) { "Secure streaming limit must not be negative." }
         val before = Files.readAttributes(anchor, BasicFileAttributes::class.java)
         if (!before.isRegularFile || before.fileKey() == null) {
             throw IOException("Held source is not a stable regular file.")
         }
-        val bytes =
-            Files.newInputStream(anchor).use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(64 * 1024)
-                var invoked = false
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    output.write(buffer, 0, read)
-                    if (!invoked) {
-                        invoked = true
-                        try {
-                            afterFirstChunk()
-                        } catch (_: Throwable) {
-                            // A test/diagnostic seam cannot replace source verification.
-                        }
+        if (before.size() > maxBytes) throw limitFailure()
+        val sha1 = MessageDigest.getInstance("SHA-1")
+        val sha256 = MessageDigest.getInstance("SHA-256")
+        var size = 0L
+        Files.newInputStream(anchor).use { input ->
+            val buffer = ByteArray(STREAM_BUFFER_SIZE)
+            var invoked = false
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                size = Math.addExact(size, read.toLong())
+                if (size > maxBytes) throw limitFailure()
+                sha1.update(buffer, 0, read)
+                sha256.update(buffer, 0, read)
+                if (!invoked) {
+                    invoked = true
+                    try {
+                        afterFirstChunk()
+                    } catch (_: Throwable) {
+                        // A test/diagnostic seam cannot replace source verification.
                     }
                 }
-                output.toByteArray()
             }
+        }
         val after = Files.readAttributes(anchor, BasicFileAttributes::class.java)
         val identity = Identity.from(before)
         if (
@@ -774,21 +862,68 @@ internal class LinuxRegularFileHandle internal constructor(private val descripto
                 !identity.matches(after) ||
                 before.lastModifiedTime() != after.lastModifiedTime() ||
                 before.size() != after.size() ||
-                after.size() != bytes.size.toLong()
+                after.size() != size
         ) {
             throw IOException("Held regular file changed while reading.")
         }
         return SecureFileSnapshot(
-            bytes,
-            ArtifactDigests(bytes.sha1(), bytes.sha256(), bytes.size.toLong()),
+            ArtifactDigests(sha1.hex(), sha256.hex(), size),
             identity,
+            before.lastModifiedTime(),
         )
     }
 
-    fun write(bytes: ByteArray) {
-        Files.newOutputStream(anchor, java.nio.file.StandardOpenOption.WRITE).use {
-            it.write(bytes)
+    fun readBytes(maxBytes: Long): ByteArray {
+        require(maxBytes in 0..Int.MAX_VALUE.toLong()) {
+            "In-memory source limit must fit in a byte array."
         }
+        val expected = snapshot(maxBytes)
+        val size = expected.digests.size.toInt()
+        val bytes = ByteArray(size)
+        Files.newInputStream(anchor).use { input ->
+            var cursor = 0
+            while (cursor < bytes.size) {
+                val read = input.read(bytes, cursor, bytes.size - cursor)
+                if (read < 0) throw IOException("Held regular file ended while reading.")
+                cursor += read
+            }
+            if (input.read() >= 0) throw IOException("Held regular file grew while reading.")
+        }
+        val after = snapshot(maxBytes)
+        if (expected != after || ArtifactDigests.fromBytes(bytes) != expected.digests) {
+            throw IOException("Held regular file changed while reading bounded bytes.")
+        }
+        return bytes
+    }
+
+    fun outputStream(): OutputStream = Files.newOutputStream(anchor, StandardOpenOption.WRITE)
+
+    fun inputStream(): InputStream = Files.newInputStream(anchor)
+
+    fun copyTo(output: OutputStream, maxBytes: Long): ArtifactDigests {
+        require(maxBytes >= 0L) { "Secure streaming limit must not be negative." }
+        val expected = snapshot(maxBytes)
+        val sha1 = MessageDigest.getInstance("SHA-1")
+        val sha256 = MessageDigest.getInstance("SHA-256")
+        var size = 0L
+        inputStream().use { input ->
+            val buffer = ByteArray(STREAM_BUFFER_SIZE)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                size = Math.addExact(size, read.toLong())
+                if (size > maxBytes) throw sizeLimitFailure(maxBytes)
+                output.write(buffer, 0, read)
+                sha1.update(buffer, 0, read)
+                sha256.update(buffer, 0, read)
+            }
+        }
+        val copied = ArtifactDigests(sha1.hex(), sha256.hex(), size)
+        val after = snapshot(maxBytes)
+        if (expected != after || copied != expected.digests) {
+            throw IOException("Held regular file changed while streaming.")
+        }
+        return copied
     }
 
     fun sameFile(other: LinuxRegularFileHandle): Boolean = Files.isSameFile(anchor, other.anchor)
@@ -824,9 +959,35 @@ private fun requireSafeRelativePath(path: Path) {
     }
 }
 
-private fun ByteArray.sha1(): String = digest("SHA-1")
+private const val STREAM_BUFFER_SIZE = 64 * 1024
 
-private fun ByteArray.sha256(): String = digest("SHA-256")
+private fun MessageDigest.hex(): String = digest().joinToString("") { "%02x".format(it) }
 
-private fun ByteArray.digest(algorithm: String): String =
-    MessageDigest.getInstance(algorithm).digest(this).joinToString("") { "%02x".format(it) }
+private fun sizeLimitFailure(limit: Long): IOException =
+    IOException("Secure streamed file exceeds the configured limit of $limit bytes.")
+
+private class LimitedOutputStream(
+    private val output: OutputStream,
+    private val limit: Long,
+    private val failure: () -> Throwable,
+) : OutputStream() {
+    private var written = 0L
+
+    override fun write(value: Int) {
+        reserve(1)
+        output.write(value)
+    }
+
+    override fun write(bytes: ByteArray, offset: Int, length: Int) {
+        reserve(length)
+        output.write(bytes, offset, length)
+    }
+
+    override fun flush() = output.flush()
+
+    private fun reserve(count: Int) {
+        val next = Math.addExact(written, count.toLong())
+        if (next > limit) throw failure()
+        written = next
+    }
+}

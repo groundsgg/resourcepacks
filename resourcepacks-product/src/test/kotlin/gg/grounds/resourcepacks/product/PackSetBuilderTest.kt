@@ -12,6 +12,9 @@ import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -213,6 +216,11 @@ class PackSetBuilderTest {
                     )
                     assertEquals(Files.size(artifact.file), artifact.size)
                 }
+            assertContentEquals(
+                Files.readAllBytes(catalogJar()),
+                Files.readAllBytes(artifacts.catalog.file),
+                "Published catalog must be byte-for-byte the current Gradle JAR.",
+            )
         } finally {
             parent.toFile().deleteRecursively()
         }
@@ -274,6 +282,40 @@ class PackSetBuilderTest {
                     )
                 }
                 assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+            }
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `catalog provider rejects complete jars with mutated manifest or kotlin module bytes`() {
+        val parent = Files.createTempDirectory("packset-catalog-complete-provenance-")
+        val exactName = "resourcepacks-catalog-0.0.0.jar"
+        try {
+            val cases =
+                listOf(
+                    "META-INF/MANIFEST.MF" to "mutated manifest\n".encodeToByteArray(),
+                    "META-INF/resourcepacks-catalog.kotlin_module" to
+                        "mutated kotlin metadata\n".encodeToByteArray(),
+                )
+            cases.forEachIndexed { index, (entry, replacement) ->
+                val candidate =
+                    mutateCatalogEntry(
+                        catalogJar(),
+                        parent.resolve("candidate-$index").resolve(exactName),
+                        entry,
+                        replacement,
+                    )
+                val output = parent.resolve("release-$index")
+
+                assertFailsWith<IOException>(entry) {
+                    PackSetBuilder.build(
+                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        candidate,
+                    )
+                }
+                assertFalse(Files.exists(output, NOFOLLOW_LINKS), entry)
             }
         } finally {
             parent.toFile().deleteRecursively()
@@ -373,4 +415,27 @@ private fun staleCatalogJar(path: Path): Path {
         jar.closeEntry()
     }
     return path
+}
+
+private fun mutateCatalogEntry(
+    source: Path,
+    target: Path,
+    mutatedName: String,
+    replacement: ByteArray,
+): Path {
+    Files.createDirectories(target.parent)
+    ZipInputStream(Files.newInputStream(source)).use { input ->
+        ZipOutputStream(Files.newOutputStream(target)).use { output ->
+            while (true) {
+                val entry = input.nextEntry ?: break
+                output.putNextEntry(ZipEntry(entry.name).apply { time = entry.time })
+                if (!entry.isDirectory) {
+                    if (entry.name == mutatedName) output.write(replacement)
+                    else input.copyTo(output)
+                }
+                output.closeEntry()
+            }
+        }
+    }
+    return target
 }

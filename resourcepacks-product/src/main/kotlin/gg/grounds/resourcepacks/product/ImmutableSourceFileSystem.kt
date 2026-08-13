@@ -30,11 +30,16 @@ import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 /** Minimal immutable byte-backed filesystem used only while library-gui materializes a theme. */
-internal class ImmutableSourceFileSystem private constructor(sourceFiles: Map<String, ByteArray>) :
-    FileSystem() {
+internal class ImmutableSourceFileSystem
+private constructor(sourceFiles: Map<String, ByteArray>, maxFileBytes: Long) : FileSystem() {
     internal val files: Map<String, ByteArray> =
         Collections.unmodifiableMap(
-            sourceFiles.entries.associate { (path, bytes) -> normalize("/$path") to bytes.copyOf() }
+            sourceFiles.entries.associate { (path, bytes) ->
+                require(bytes.size.toLong() <= maxFileBytes) {
+                    "Immutable source exceeds its byte limit: $path"
+                }
+                normalize("/$path") to bytes.copyOf()
+            }
         )
     internal val directories: Set<String> = buildSet {
         add("/")
@@ -85,8 +90,12 @@ internal class ImmutableSourceFileSystem private constructor(sourceFiles: Map<St
     }
 
     companion object {
-        fun open(files: Map<String, ByteArray>): ImmutableSourceFileSystem =
-            ImmutableSourceFileSystem(files)
+        fun open(files: Map<String, ByteArray>, maxFileBytes: Long): ImmutableSourceFileSystem {
+            require(maxFileBytes in 0..Int.MAX_VALUE.toLong()) {
+                "Immutable source byte limit must fit in a byte array."
+            }
+            return ImmutableSourceFileSystem(files, maxFileBytes)
+        }
 
         internal fun normalize(raw: String): String {
             val names = raw.split('/').filter(String::isNotEmpty)

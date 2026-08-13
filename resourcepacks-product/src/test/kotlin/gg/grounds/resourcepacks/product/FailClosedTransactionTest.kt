@@ -20,6 +20,21 @@ import kotlin.test.assertTrue
 
 class FailClosedTransactionTest {
     @Test
+    fun `trusted single writer contract serializes cooperative builders on the held parent fd`() {
+        withRoot("release-single-writer") { parent ->
+            TrustedSingleWriterLease.acquire(parent).use {
+                val failure =
+                    assertFailsWith<IOException> { TrustedSingleWriterLease.acquire(parent) }
+                assertTrue(failure.message.orEmpty().contains("cooperative PackSet builder"))
+                assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+            }
+
+            TrustedSingleWriterLease.acquire(parent).close()
+            assertEquals(emptyList(), Files.list(parent).use { it.toList() })
+        }
+    }
+
+    @Test
     fun `precommit failure leaves unique stage and scratch without publishing`() {
         withRoot("release-safe-leak") { parent ->
             val output = parent.resolve("release")
@@ -292,16 +307,18 @@ class FailClosedTransactionTest {
                 SecureSourceInputs.capture(
                     listOf(ProductGraph.packs.first(), platformWithFileSource(source))
                 )
+            val scratch = SecureOwnedDirectory.create(parent, ".test-scratch-")
             try {
                 Files.delete(source)
 
-                val built = ReleasePackComposer.build(secured.packs, PackComposerHooks())
+                val built = ReleasePackComposer.build(secured.packs, scratch, PackComposerHooks())
 
                 assertEquals(2, built.size)
-                assertTrue(built.all { it.bytes.isNotEmpty() })
+                assertTrue(built.all { it.digests.size > 0L })
                 val identityFailure = assertFailsWith<IOException> { secured.verifyUnchanged() }
                 assertTrue(identityFailure.message.orEmpty().contains("cannot be opened securely"))
             } finally {
+                scratch.close()
                 secured.close()
             }
         }

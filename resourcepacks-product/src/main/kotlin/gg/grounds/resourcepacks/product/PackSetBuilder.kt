@@ -1,7 +1,6 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
-import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
@@ -9,14 +8,21 @@ import java.lang.foreign.Linker
 import java.lang.foreign.MemoryLayout
 import java.lang.foreign.ValueLayout
 import java.nio.file.Path
-import java.util.zip.ZipInputStream
 
 /**
- * Builds all release bytes in one descriptor-owned sibling and publishes one verified directory.
+ * Builds all release bytes in descriptor-owned siblings and publishes one verified directory.
+ *
+ * The release parent and held sources are a trusted-single-writer namespace from transaction
+ * directory creation through the successful no-replace rename. Cooperative builders are serialized
+ * with an advisory lock on the held parent fd. An uncooperative same-UID process can ignore that
+ * lock; active namespace or source mutation by such a process is outside this API's threat model.
+ * Accidental changes and all in-model collisions still fail closed before commit.
  */
 internal object PackSetBuilder {
-    fun build(inputs: ReleaseInputs): ReleaseArtifacts =
-        build(inputs, CatalogJarProvider.runtime(), PackSetBuilderHooks())
+    fun build(inputs: ReleaseInputs): ReleaseArtifacts {
+        val catalog = CatalogJarProvider.runtime()
+        return buildInternal(inputs, catalog.path, PackSetBuilderHooks(), null, catalog.expectation)
+    }
 
     @JvmSynthetic
     internal fun build(inputs: ReleaseInputs, catalogJar: Path): ReleaseArtifacts =
@@ -27,7 +33,8 @@ internal object PackSetBuilder {
         inputs: ReleaseInputs,
         catalogJar: Path,
         hooks: PackSetBuilderHooks,
-    ): ReleaseArtifacts = buildInternal(inputs, catalogJar, hooks, null)
+    ): ReleaseArtifacts =
+        buildInternal(inputs, catalogJar, hooks, null, CatalogJarProvider.expectation())
 
     @JvmSynthetic
     internal fun build(
@@ -35,25 +42,37 @@ internal object PackSetBuilder {
         catalogJar: Path,
         hooks: PackSetBuilderHooks,
         packs: List<PhysicalPack>,
-    ): ReleaseArtifacts = buildInternal(inputs, catalogJar, hooks, packs.toList())
+    ): ReleaseArtifacts =
+        buildInternal(inputs, catalogJar, hooks, packs.toList(), CatalogJarProvider.expectation())
 
     private fun buildInternal(
         inputs: ReleaseInputs,
         catalogJar: Path,
         hooks: PackSetBuilderHooks,
         suppliedPacks: List<PhysicalPack>?,
+        expectedCatalog: CatalogArtifactExpectation,
     ): ReleaseArtifacts {
         validateInputs(inputs)
         val output = validateDestination(inputs.outputDirectory)
         val parent =
             output.parent ?: throw IllegalArgumentException("Release output must have a parent.")
+        val writerLease = TrustedSingleWriterLease.acquire(parent)
         val stageDirectory =
-            SecureOwnedDirectory.create(
-                parent,
-                ".packset-stage-",
-                hooks.afterOwnedDirectoryIdentityCapturedBeforeParentValidation,
-                output.fileName,
-            )
+            try {
+                SecureOwnedDirectory.create(
+                    parent,
+                    ".packset-stage-",
+                    hooks.afterOwnedDirectoryIdentityCapturedBeforeParentValidation,
+                    output.fileName,
+                )
+            } catch (failure: Throwable) {
+                try {
+                    writerLease.close()
+                } catch (close: Throwable) {
+                    failure.addSuppressed(close)
+                }
+                throw failure
+            }
         var scratchDirectory: SecureOwnedDirectory? = null
         var sourceInputs: SecureSourceInputs? = null
         var catalogSource: HeldSourceFile? = null
@@ -72,36 +91,65 @@ internal object PackSetBuilder {
             val builtPacks =
                 ReleasePackComposer.build(
                     immutableInputs.packs,
+                    scratch,
                     PackComposerHooks(afterComposeBeforeWrite = hooks.afterComposeBeforePackWrite),
                 )
             hooks.afterComposition()
             val content = builtPacks.single { it.pack.role == PackRole.CONTENT }
             val platform = builtPacks.single { it.pack.role == PackRole.PLATFORM }
-            val contentScratch = Path.of(".grounds-content.pending.zip")
-            val platformScratch = Path.of(".grounds-platform.pending.zip")
-            scratch.writeRegularFile(contentScratch, content.bytes)
-            scratch.writeRegularFile(platformScratch, platform.bytes)
+            val contentScratch = content.scratchFile
+            val platformScratch = platform.scratchFile
             val contentSnapshot =
-                scratch.readRelativeRegularFile(contentScratch) {
+                scratch.readRelativeRegularFile(
+                    contentScratch,
+                    requireNotNull(content.pack.definition.policy.limits.maxArtifactBytes),
+                ) {
                     hooks.afterArtifactHashFirstChunk(scratch.stablePath.resolve(contentScratch))
                 }
             val platformSnapshot =
-                scratch.readRelativeRegularFile(platformScratch) {
+                scratch.readRelativeRegularFile(
+                    platformScratch,
+                    requireNotNull(platform.pack.definition.policy.limits.maxArtifactBytes),
+                ) {
                     hooks.afterArtifactHashFirstChunk(scratch.stablePath.resolve(platformScratch))
                 }
             requireComposerDigest(content, contentSnapshot)
             requireComposerDigest(platform, platformSnapshot)
             val contentFile = stage.resolve("grounds-content-${content.digests.sha1}.zip")
             val platformFile = stage.resolve("grounds-platform-${platform.digests.sha1}.zip")
-            stageDirectory.writeRegularFile(contentFile.fileName, contentSnapshot.bytes)
-            stageDirectory.writeRegularFile(platformFile.fileName, platformSnapshot.bytes)
+            scratch.openRelativeRegularFile(contentScratch).use { source ->
+                stageDirectory.copyRegularFile(
+                    contentFile.fileName,
+                    source,
+                    contentSnapshot.digests,
+                    requireNotNull(content.pack.definition.policy.limits.maxArtifactBytes),
+                )
+            }
+            scratch.openRelativeRegularFile(platformScratch).use { source ->
+                stageDirectory.copyRegularFile(
+                    platformFile.fileName,
+                    source,
+                    platformSnapshot.digests,
+                    requireNotNull(platform.pack.definition.policy.limits.maxArtifactBytes),
+                )
+            }
 
             val catalogFile = stage.resolve("grounds-resourcepacks-catalog-${inputs.version}.jar")
             val catalogPath = validateCatalogPath(inputs, catalogJar)
-            catalogSource = HeldSourceFile.capture(catalogPath)
+            catalogSource = HeldSourceFile.capture(catalogPath, expectedCatalog.size)
             val heldCatalog = requireNotNull(catalogSource)
-            verifyCatalogJarBytes(heldCatalog.bytes)
-            stageDirectory.writeRegularFile(catalogFile.fileName, heldCatalog.bytes)
+            if (
+                heldCatalog.digests.size != expectedCatalog.size ||
+                    heldCatalog.digests.sha256 != expectedCatalog.sha256
+            ) {
+                throw IOException("Catalog JAR is not the exact current Gradle artifact.")
+            }
+            stageDirectory.copyRegularFile(
+                catalogFile.fileName,
+                heldCatalog.regularHandle,
+                heldCatalog.digests,
+                expectedCatalog.size,
+            )
             hooks.afterCatalogCopy(catalogPath, catalogFile)
             val catalogDigest = heldCatalog.digests
             val manifest =
@@ -116,28 +164,35 @@ internal object PackSetBuilder {
                 )
             val manifestFile = stage.resolve("manifest.json")
             val manifestBytes = PackSetManifestJson.encode(manifest)
-            stageDirectory.writeRegularFile(manifestFile.fileName, manifestBytes)
+            stageDirectory.writeRegularFile(
+                manifestFile.fileName,
+                manifestBytes,
+                MAX_MANIFEST_BYTES,
+            )
             hooks.afterStageWrite()
             hooks.beforeManifestValidation(manifestFile)
             validateManifest(manifestBytes, catalogFile, contentFile, platformFile)
 
-            val expectedNames =
-                setOf(
-                    contentFile.fileName.toString(),
-                    platformFile.fileName.toString(),
-                    catalogFile.fileName.toString(),
-                    manifestFile.fileName.toString(),
+            val expectedFiles =
+                mapOf(
+                    contentFile.fileName.toString() to contentSnapshot.digests,
+                    platformFile.fileName.toString() to platformSnapshot.digests,
+                    catalogFile.fileName.toString() to heldCatalog.digests,
+                    manifestFile.fileName.toString() to ArtifactDigests.fromBytes(manifestBytes),
                 )
             hooks.beforePrePublishVerification(stageDirectory.path)
-            val prepublish = stageDirectory.snapshot(expectedNames)
+            val prepublish = stageDirectory.snapshot(expectedFiles)
             validateManifest(
-                prepublish.files.getValue("manifest.json").bytes,
+                stageDirectory.readRelativeRegularFileBytes(
+                    Path.of("manifest.json"),
+                    MAX_MANIFEST_BYTES,
+                ),
                 stage.resolve(catalogFile.fileName),
                 stage.resolve(contentFile.fileName),
                 stage.resolve(platformFile.fileName),
             )
-            val validatedPrepublish = stageDirectory.snapshot(expectedNames)
-            if (!prepublish.sameBytesDigestsAndIdentities(validatedPrepublish)) {
+            val validatedPrepublish = stageDirectory.snapshot(expectedFiles)
+            if (!prepublish.sameDigestsAndIdentities(validatedPrepublish)) {
                 throw IOException("Release staging bytes changed during manifest validation.")
             }
 
@@ -169,6 +224,7 @@ internal object PackSetBuilder {
             closeResource(committed, primaryFailure) { sourceInputs?.close() }
             closeResource(committed, primaryFailure) { scratchDirectory?.close() }
             closeResource(committed, primaryFailure) { stageDirectory.close() }
+            closeResource(committed, primaryFailure) { writerLease.close() }
         }
     }
 
@@ -199,53 +255,6 @@ internal object PackSetBuilder {
             "Catalog JAR filename/version mismatch."
         }
         return jar
-    }
-
-    private fun verifyCatalogJarBytes(bytes: ByteArray) {
-        val classEntries =
-            setOf(
-                "gg/grounds/resourcepacks/catalog/GroundsAssetCatalog.class",
-                "gg/grounds/resourcepacks/catalog/GroundsAssets.class",
-                "gg/grounds/resourcepacks/catalog/GroundsGuiIds.class",
-                "gg/grounds/resourcepacks/catalog/GroundsGuiTheme.class",
-            )
-        val expectedEntries =
-            setOf(
-                "META-INF/",
-                "META-INF/MANIFEST.MF",
-                "META-INF/resourcepacks-catalog.kotlin_module",
-                "gg/",
-                "gg/grounds/",
-                "gg/grounds/resourcepacks/",
-                "gg/grounds/resourcepacks/catalog/",
-            ) + classEntries
-        try {
-            val entries = linkedMapOf<String, ByteArray>()
-            ZipInputStream(ByteArrayInputStream(bytes)).use { archive ->
-                while (true) {
-                    val entry = archive.nextEntry ?: break
-                    if (entries.put(entry.name, archive.readAllBytes()) != null) {
-                        throw IOException("Catalog JAR contains a duplicate entry: ${entry.name}")
-                    }
-                }
-            }
-            if (entries.keys != expectedEntries) {
-                throw IOException("Catalog JAR entry set does not match the compiled catalog.")
-            }
-            val loader = GroundsAssetCatalog::class.java.classLoader
-            classEntries.forEach { name ->
-                val expected =
-                    loader.getResourceAsStream(name)?.use { it.readAllBytes() }
-                        ?: throw IOException("Compiled catalog class is unavailable: $name")
-                if (!expected.contentEquals(entries.getValue(name))) {
-                    throw IOException("Catalog JAR bytes are stale: $name")
-                }
-            }
-        } catch (failure: IOException) {
-            throw failure
-        } catch (failure: Exception) {
-            throw IOException("Catalog JAR cannot be validated.", failure)
-        }
     }
 
     private fun validateManifest(bytes: ByteArray, catalog: Path, content: Path, platform: Path) {
@@ -331,7 +340,7 @@ internal object PackSetBuilder {
         )
     }
 
-    private fun requireComposerDigest(pack: BuiltPhysicalPackBytes, snapshot: SecureFileSnapshot) {
+    private fun requireComposerDigest(pack: BuiltReleasePack, snapshot: SecureFileSnapshot) {
         if (snapshot.digests != pack.digests) {
             throw IOException("Scratch pack bytes differ from the composer result: ${pack.pack.id}")
         }
@@ -356,20 +365,38 @@ internal object PackSetBuilder {
             if (!committed) primaryFailure?.addSuppressed(failure)
         }
     }
+
+    private const val MAX_MANIFEST_BYTES = 64L * 1024
 }
 
 /** Build wiring locates the exact catalog artifact; the public CLI never accepts this path. */
 internal object CatalogJarProvider {
-    fun runtime(): Path =
-        Path.of(
-            gg.grounds.resourcepacks.catalog.GroundsAssetCatalog::class
-                .java
-                .protectionDomain
-                .codeSource
-                .location
-                .toURI()
+    fun runtime(): CatalogArtifactSource =
+        CatalogArtifactSource(
+            Path.of(
+                gg.grounds.resourcepacks.catalog.GroundsAssetCatalog::class
+                    .java
+                    .protectionDomain
+                    .codeSource
+                    .location
+                    .toURI()
+            ),
+            expectation(),
+        )
+
+    fun expectation(): CatalogArtifactExpectation =
+        CatalogArtifactExpectation(
+            GeneratedCatalogArtifactExpectation.SIZE,
+            GeneratedCatalogArtifactExpectation.SHA256,
         )
 }
+
+internal data class CatalogArtifactSource(
+    val path: Path,
+    val expectation: CatalogArtifactExpectation,
+)
+
+internal data class CatalogArtifactExpectation(val size: Long, val sha256: String)
 
 internal data class PackSetBuilderHooks(
     val afterOwnedDirectoryIdentityCapturedBeforeParentValidation: (stage: Path) -> Unit = {},
