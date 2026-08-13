@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { createReadStream } from 'node:fs';
-import { mkdir, mkdtemp, open, readdir, stat } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
@@ -26,17 +25,6 @@ async function requireExactEntries(directory,expectedNames,kind){
   return entries;
 }
 
-async function materializeSnapshotDirectory(files){
-  const root=await mkdtemp(join(tmpdir(),'grounds-maven-publish-'));
-  for(const file of files){
-    const target=join(root,...file.path.split('/'));await mkdir(dirname(target),{recursive:true,mode:0o700});
-    const output=await open(target,'wx',0o600);
-    try{for await(const chunk of file.snapshot.stream()){let offset=0;const bytes=Buffer.from(chunk);while(offset<bytes.length){const{bytesWritten}=await output.write(bytes,offset,bytes.length-offset,null);offset+=bytesWritten;}}await output.sync();}finally{await output.close();}
-    file.file=target;
-  }
-  return root;
-}
-
 export async function collectMavenPublication({stagingDirectory,manifest}){
   const root=resolve(stagingDirectory);await assertNoSymlinkComponents(root);
   const[group,artifact,version]=manifest.catalog.coordinate.split(':');
@@ -52,9 +40,19 @@ export async function collectMavenPublication({stagingDirectory,manifest}){
     for(const file of found){await assertNoSymlinkComponents(dirname(file.file));const snapshot=await snapshotRegularFile(file.file,MAX_MAVEN_FILE_SIZE);snapshots.push(snapshot);file.snapshot=snapshot;file.size=snapshot.size;file.sha1=snapshot.sha1;file.sha256=snapshot.sha256;}
     const main=found.find(file=>file.path===`${versionRoot}/${artifact}-${version}.jar`);
     if(main.size!==manifest.catalog.size||main.sha256!==manifest.catalog.sha256)throw new Error('Maven catalog JAR differs from the manifest');
-    const snapshotDirectory=await materializeSnapshotDirectory(found);
-    return{files:found,snapshotDirectory,close:async()=>{await Promise.allSettled(snapshots.map(snapshot=>snapshot.close()));}};
+    return{files:found,close:async()=>{await Promise.allSettled(snapshots.map(snapshot=>snapshot.close()));}};
   }catch(error){await Promise.allSettled(snapshots.map(snapshot=>snapshot.close()));throw error;}
+}
+
+async function assertPublicationUnchanged(files){
+  for(const entry of files.filter(file=>file.snapshot)){
+    let current;
+    try{
+      current=await snapshotRegularFile(entry.file,MAX_MAVEN_FILE_SIZE);
+      if(current.size!==entry.size||current.sha1!==entry.sha1||current.sha256!==entry.sha256)throw new Error('changed');
+    }catch{throw new Error(`Maven staging changed during comparison: ${entry.path}`);}
+    finally{await current?.close().catch(()=>{});}
+  }
 }
 
 export async function mavenCreateOrCompare({repositoryUrl=MAVEN_REPOSITORY_URL,directory,files,username,token,fetchImpl=fetch,allowLocalhostForTests=false,timeoutMs}){
@@ -73,12 +71,13 @@ export async function mavenCreateOrCompare({repositoryUrl=MAVEN_REPOSITORY_URL,d
       const local=verified?verified.stream():createReadStream(entry.file);const remote=Readable.fromWeb(response.body);onTimeout(()=>{local.destroy();remote.destroy();});results.push(await sameStreamBytes(local,remote,stats.size)?'same':'different');
     },timeoutMs);}finally{await verified?.close();}
   }
+  await assertPublicationUnchanged(publicationFiles);
   if(results.every(result=>result==='missing'))return{publish:true};if(results.every(result=>result==='same'))return{publish:false};throw new Error('Maven publication is partial or differs; refusing publish');
 }
 
 async function main(){
   const args=strictArgs(process.argv.slice(2),['--manifest','--staging-directory','--username','--token']);const{manifest}=await readManifest(args['--manifest']);const publication=await collectMavenPublication({stagingDirectory:args['--staging-directory'],manifest});
-  try{const result=await mavenCreateOrCompare({files:publication.files,username:args['--username'],token:args['--token']});return result.publish?`publish-directory=${publication.snapshotDirectory}`:'skip';}finally{await publication.close();}
+  try{const result=await mavenCreateOrCompare({files:publication.files,username:args['--username'],token:args['--token']});return result.publish?'publish':'skip';}finally{await publication.close();}
 }
 
 if(process.argv[1]&&pathToFileURL(process.argv[1]).href===import.meta.url)await runCli(main);

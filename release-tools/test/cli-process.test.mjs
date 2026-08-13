@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -76,12 +77,15 @@ test('Maven CLI gates the exact manifest coordinate and prints a workflow-safe d
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0-sources.jar'), 'sources');
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.module'), '{}');
   const log=`${fixture.root}-maven.log`;const preload=fileURLToPath(new URL('./maven-fetch-preload.mjs',import.meta.url));
-  const result = await run('maven-create-or-compare', [
+  const before=(await readdir(tmpdir())).filter(name=>name.startsWith('grounds-maven-publish-')).sort();
+  assert.deepEqual(before,[]);
+  const args=[
     '--manifest',join(fixture.root,'manifest.json'),'--staging-directory',join(fixture.root,'maven'),
     '--username','actor','--token','TOKEN_MARKER',
-  ],{NODE_OPTIONS:`--import=${preload}`,MAVEN_FAKE_LOG:log});
+  ];
+  const result = await run('maven-create-or-compare',args,{NODE_OPTIONS:`--import=${preload}`,MAVEN_FAKE_LOG:log});
   assert.equal(result.code,0,result.stderr);
-  assert.match(result.stdout,/^publish-directory=\/tmp\//);
+  assert.equal(result.stdout,'publish\n');
   assert.deepEqual((await readFile(log,'utf8')).trim().split('\n').sort(), [
     '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.jar',
     '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0-sources.jar',
@@ -89,6 +93,11 @@ test('Maven CLI gates the exact manifest coordinate and prints a workflow-safe d
     '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.pom',
   ].sort());
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /TOKEN_MARKER/);
+  const same=await run('maven-create-or-compare',args,{NODE_OPTIONS:`--import=${preload}`,MAVEN_FAKE_LOG:`${log}.same`,MAVEN_FAKE_MODE:'same',MAVEN_FAKE_ROOT:join(fixture.root,'maven')});
+  assert.equal(same.code,0,same.stderr);assert.equal(same.stdout,'skip\n');
+  const failed=await run('maven-create-or-compare',args,{NODE_OPTIONS:`--import=${preload}`,MAVEN_FAKE_LOG:`${log}.error`,MAVEN_FAKE_MODE:'error'});
+  assert.equal(failed.code,1);assert.equal(failed.stdout,'');assert.match(failed.stderr,/Maven comparison returned HTTP 503/);
+  assert.deepEqual((await readdir(tmpdir())).filter(name=>name.startsWith('grounds-maven-publish-')).sort(),[]);
 });
 
 test('GitHub Release CLI uploads exactly the four manifest-bound missing assets without clobber', async () => {
