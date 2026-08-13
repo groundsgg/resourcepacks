@@ -6,3 +6,4 @@
 .superpowers/
 *.class
 *.iml
+node_modules/

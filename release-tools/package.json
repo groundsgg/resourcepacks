@@ -1,0 +1,22 @@
+{
+  "name": "@grounds/resourcepacks-release-tools",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.6.2",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "bin": {
+    "maven-create-or-compare": "src/maven-create-or-compare.mjs",
+    "r2-create-or-compare": "src/r2-create-or-compare.mjs",
+    "release-assets-create-or-compare": "src/release-assets-create-or-compare.mjs",
+    "verify-cdn": "src/verify-cdn.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1109.0"
+  }
+}
