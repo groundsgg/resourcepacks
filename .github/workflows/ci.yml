@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +13,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          path: run1/src
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          path: run2/src
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -22,22 +32,29 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: release-tools/package-lock.json
+          cache-dependency-path: run1/src/release-tools/package-lock.json
       - id: version
         name: Read the authoritative version once
+        working-directory: run1/src
         run: echo "value=$(tr -d '\n' < version.txt)" >> "$GITHUB_OUTPUT"
-      - name: Build and run all Kotlin tests
+      - name: Build clean checkout one
+        working-directory: run1/src
+        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
+      - name: Build clean checkout two
+        working-directory: run2/src
         run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
       - name: Run Node release-tool tests twice and audit dependencies
-        working-directory: release-tools
+        working-directory: run1/src/release-tools
         run: |
           npm ci --ignore-scripts
           npm test
           npm test
           npm audit --audit-level=high
       - name: Build release candidate one
+        working-directory: run1/src
         run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-one"
       - name: Build release candidate two
+        working-directory: run2/src
         run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
       - name: Inspect exact archives and compare both release directories
         run: |
