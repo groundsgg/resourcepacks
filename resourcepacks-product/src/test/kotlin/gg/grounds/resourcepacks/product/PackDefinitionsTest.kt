@@ -35,7 +35,7 @@ class PackDefinitionsTest {
         )
         assertTrue(packs.all { it.required })
         assertTrue(packs.all { it.definition.format == PackFormat(88) })
-        assertTrue(packs.first().contributions.single() === ContentContribution)
+        assertEquals(ContentContribution.id, packs.first().contributions.single().id)
         assertEquals(1, packs.last().contributions.size)
     }
 

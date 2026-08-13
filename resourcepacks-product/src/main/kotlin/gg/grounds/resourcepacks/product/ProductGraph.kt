@@ -30,7 +30,7 @@ internal data class PhysicalPack(
 
 internal object ProductGraph {
     val packs: List<PhysicalPack>
-        get() = createPacks()
+        get() = secureReleaseInputs().use { it.packs }
 
     /**
      * Opens every product artwork component before library-gui materialization, pins the exact
@@ -57,8 +57,14 @@ internal object ProductGraph {
             }
             afterSourcesPinned()
             val contribution = immutableThemeContribution(held)
+            val icon =
+                ByteArrayEntrySource(
+                    held
+                        .getValue(PACK_ICON_SOURCE)
+                        .readBytes(PLATFORM_ARTWORK.getValue(PACK_ICON_SOURCE).size)
+                )
             return SecureSourceInputs.captureWithHeld(
-                    createPacks(contribution),
+                    createPacks(contribution, icon),
                     held.values.toList(),
                 )
                 .also { it.verifyUnchanged() }
@@ -74,10 +80,10 @@ internal object ProductGraph {
         }
     }
 
-    private fun createPacks(): List<PhysicalPack> =
-        createPacks(GroundsGuiTheme.theme.toPackContribution(platformArtDirectory()))
-
-    private fun createPacks(platformContribution: PackContribution): List<PhysicalPack> =
+    private fun createPacks(
+        platformContribution: PackContribution,
+        packIcon: PackEntrySource,
+    ): List<PhysicalPack> =
         listOf(
             PhysicalPack(
                 order = 0,
@@ -104,7 +110,7 @@ internal object ProductGraph {
                     PackDefinition(
                         "Grounds platform",
                         PackSetConstants.packFormat,
-                        ByteArrayEntrySource(ByteArray(0)),
+                        packIcon,
                         PackPolicy(VanillaPathPolicy.ALLOW_CLAIMED, PackSetConstants.platformLimits),
                     ),
                 contributions = listOf(platformContribution),
@@ -165,6 +171,7 @@ internal object ProductGraph {
 
     private const val MAX_ARTWORK_BYTES = 4L * 1024
     private const val MAX_MATERIALIZED_ARTWORK_BYTES = 1024L * 1024
+    private const val PACK_ICON_SOURCE = "frames/hover.png"
 
     private val PLATFORM_ARTWORK =
         linkedMapOf(
