@@ -22,7 +22,11 @@ val versionFromFile = versionFileContents.removeSuffix("\n")
 require(semanticVersion.matches(versionFromFile) && versionFileContents == "$versionFromFile\n") {
     "version.txt must contain an exact ASCII SemVer value"
 }
-version = versionFromFile
+val explicitPackSetVersion = providers.gradleProperty("packSetVersion").orNull
+require(explicitPackSetVersion == null || explicitPackSetVersion == versionFromFile) {
+    "packSetVersion must equal version.txt."
+}
+version = explicitPackSetVersion ?: versionFromFile
 
 tasks.register("verifyDependencyLocks") {
     group = "verification"

@@ -1,0 +1,130 @@
+name: Publish immutable PackSet release
+
+on:
+  push:
+    tags: [v*]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: resourcepacks-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - id: release
+        name: Derive exact tag, commit, and version
+        run: |
+          tag='${{ github.ref_name }}'
+          version="${tag#v}"
+          test -n "$version"
+          test "$version" = "$(tr -d '\n' < version.txt)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build the exact four artifacts
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.release.outputs.version }}' -PprovenanceCommit='${{ steps.release.outputs.commit }}' -PprovenanceTag='${{ steps.release.outputs.tag }}' -PreleaseOutput="$RUNNER_TEMP/release"
+      - name: Locally verify the immutable release
+        run: |
+          test "$(find "$RUNNER_TEMP/release" -maxdepth 1 -type f | wc -l)" -eq 4
+          zipinfo -1 "$RUNNER_TEMP/release"/*.zip
+          zipinfo -1 "$RUNNER_TEMP/release"/*.jar
+          node --input-type=module --eval 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); if (manifest.version !== process.argv[2] || manifest.provenance.tag !== process.argv[3] || manifest.provenance.commit !== process.argv[4]) throw new Error("release manifest provenance mismatch");' "$RUNNER_TEMP/release/manifest.json" '${{ steps.release.outputs.version }}' '${{ steps.release.outputs.tag }}' '${{ steps.release.outputs.commit }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: immutable-packset-release
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: immutable-packset-release
+          path: ${{ runner.temp }}/release
+      - name: Install locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
+      - name: Stage the exact Maven publication
+        run: ./gradlew :resourcepacks-catalog:stageExactMavenPublication -PpackSetVersion='${{ needs.build.outputs.version }}'
+      - id: maven-gate
+        name: Decide whether GitHub Packages needs publication
+        run: echo "decision=$(node release-tools/src/maven-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --staging-directory resourcepacks-catalog/build/release-maven-staging --username '${{ github.actor }}' --token '${{ secrets.GITHUB_TOKEN }}')" >> "$GITHUB_OUTPUT"
+      - name: Publish the unchanged Maven staging workspace
+        if: steps.maven-gate.outputs.decision == 'publish'
+        run: ./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}' -Pgithub.user='${{ github.actor }}' -Pgithub.token='${{ secrets.GITHUB_TOKEN }}'
+      - name: Create or compare immutable R2 ZIP objects
+        run: node release-tools/src/r2-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
+
+  public-cdn:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: immutable-packset-release
+          path: ${{ runner.temp }}/release
+      - name: Verify public CDN bytes without production credentials
+        run: env -u R2_BUCKET -u R2_ENDPOINT -u R2_ACCESS_KEY_ID -u R2_SECRET_ACCESS_KEY node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --base-url https://cdn.grounds.gg
+
+  release-assets:
+    needs: [build, public-cdn]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: immutable-packset-release
+          path: ${{ runner.temp }}/release
+      - name: Attach only byte-identical release assets
+        run: node release-tools/src/release-assets-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --token '${{ secrets.GITHUB_TOKEN }}'

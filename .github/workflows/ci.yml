@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - id: version
+        name: Read the authoritative version once
+        run: echo "value=$(tr -d '\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Build and run all Kotlin tests
+        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
+      - name: Run Node release-tool tests twice and audit dependencies
+        working-directory: release-tools
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm test
+          npm audit --audit-level=high
+      - name: Build release candidate one
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-one"
+      - name: Build release candidate two
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
+      - name: Inspect exact archives and compare both release directories
+        run: |
+          zipinfo -1 "$RUNNER_TEMP/release-one"/*.zip
+          zipinfo -1 "$RUNNER_TEMP/release-one"/*.jar
+          cmp "$RUNNER_TEMP/release-one/manifest.json" "$RUNNER_TEMP/release-two/manifest.json"
+          diff -r "$RUNNER_TEMP/release-one" "$RUNNER_TEMP/release-two"
