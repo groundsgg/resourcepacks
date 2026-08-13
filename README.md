@@ -27,7 +27,9 @@ The ZIP names include the SHA-1 of their final bytes. `manifest.json` records bo
 
 ## Catalog consumers
 
-Publish and consume the catalog as `gg.grounds:resourcepacks-catalog:<packSetVersion>` on JVM 25. Its public boundary is `GroundsGuiTheme`, `GroundsAssets`, and `GroundsAssetCatalog`; it contains declarations and metadata only, never the ZIP bytes or a runtime delivery client.
+Publish and consume the catalog as `gg.grounds:resourcepacks-catalog:<packSetVersion>` on JVM 25. Its exact public owner boundary is `GroundsGuiIds`, `GroundsGuiTheme`, `GroundsAssets`, and `GroundsAssetCatalog`; it contains declarations and metadata only, never the ZIP bytes or a runtime delivery client. `GroundsGuiIds` provides the approved theme identifier constants so consumers do not duplicate string literals.
+
+The platform pack reuses the approved first-party `art/platform/frames/hover.png` bytes as its visible, square `pack.png`. The artwork is captured through the same held, no-follow source pipeline as the Theme assets and is never reread from an ordinary mutable path during a release build.
 
 ## Release automation
 
@@ -41,6 +43,8 @@ resourcepacks/platform/<sha1>.zip
 ```
 
 They are served directly as `https://cdn.grounds.gg/resourcepacks/content/<sha1>.zip` and `https://cdn.grounds.gg/resourcepacks/platform/<sha1>.zip` with `application/zip` and `public, max-age=31536000, immutable`. The public CDN check has no R2 or Cloudflare credentials.
+
+CI and the release build/publish jobs require the repository's built-in `GITHUB_TOKEN` to have read access to the private `groundsgg` package dependencies. The workflows pass the masked token to Gradle only through `GITHUB_ACTOR` and `GITHUB_TOKEN`; public CDN and release-asset jobs receive no package-resolution token. Pull requests from forks are unsupported unless their token can read the same private organization packages.
 
 ## Out of scope
 
