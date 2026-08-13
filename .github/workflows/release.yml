@@ -124,7 +124,7 @@ jobs:
           name: immutable-packset-release
           path: ${{ runner.temp }}/release
       - name: Verify public CDN bytes without production credentials
-        run: env -u R2_BUCKET -u R2_ENDPOINT -u R2_ACCESS_KEY_ID -u R2_SECRET_ACCESS_KEY node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --base-url https://cdn.grounds.gg
+        run: node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --base-url https://cdn.grounds.gg
 
   release-assets:
     needs: [build, public-cdn]

@@ -8,186 +8,227 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.yaml.snakeyaml.Yaml
 
 class AutomationContractTest {
-    private val root: Path =
+    private val root =
         generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
             .first { it.resolve("settings.gradle.kts").exists() }
 
     @Test
-    fun `automation files define the immutable packset release contract`() {
-        val ci = workflow("ci.yml")
-        val releasePlease = workflow("release-please.yml")
-        val release = workflow("release.yml")
-
-        assertEquals("CI", ci.requireScalar("name"))
-        assertTrue(ci.hasSequenceValue("on.push.branches", "main"))
-        assertTrue(ci.hasKey("on.pull_request"))
-        assertEquals("read", ci.requireScalar("permissions.contents"))
-        assertFalse(ci.hasKey("env"))
-        assertFalse(ci.allScalars().any { it.contains("secrets.") })
-        assertTrue(ci.allScalars().any { it == "25" })
-        assertTrue(ci.allScalars().any { it == "24" })
-        assertTrue(ci.allScalars().any { it.contains("version.txt") })
-        assertTrue(ci.allScalars().any { it.contains("buildPackSet") })
-        assertFalse(ci.hasKey("on.workflow_dispatch"))
-
-        assertEquals("Release Please", releasePlease.requireScalar("name"))
-        assertEquals("write", releasePlease.requireScalar("permissions.contents"))
-        assertTrue(
-            releasePlease.allScalars().any {
-                it.contains("groundsgg/.github/.github/workflows/release-please.yml@main")
-            }
-        )
-        assertTrue(releasePlease.allScalars().any { it.trim() == "inherit" })
-
-        assertTrue(release.hasSequenceValue("on.push.tags", "v*"))
-        assertEquals("false", release.requireScalar("concurrency.cancel-in-progress"))
-        assertEquals("production", release.requireScalar("jobs.publish.environment"))
-        assertEquals("read", release.requireScalar("permissions.contents"))
-        assertTrue(release.hasKey("jobs.public-cdn.needs"))
-        assertFalse(
-            release.allScalars().any {
-                it.contains("rm -rf") || it.contains("--clobber") || it.contains("delete-object")
-            }
-        )
-
-        val ciSource = releaseSourcePath("ci.yml")
-        val releaseSource = releaseSourcePath("release.yml")
-        assertEquals(2, Regex("persist-credentials: false").findAll(ciSource).count())
-        assertEquals(4, Regex("persist-credentials: false").findAll(releaseSource).count())
-        assertTrue(
-            Regex(
-                    "publish:\\n.*?permissions:\\n\\s+contents: read\\n\\s+packages: write",
-                    RegexOption.DOT_MATCHES_ALL,
-                )
-                .containsMatchIn(releaseSource)
-        )
-        assertTrue(
-            Regex(
-                    "release-assets:\\n.*?permissions:\\n\\s+contents: write",
-                    RegexOption.DOT_MATCHES_ALL,
-                )
-                .containsMatchIn(releaseSource)
-        )
-
-        val gate = releaseSource.indexOf("id: maven-gate")
-        val publish = releaseSource.indexOf("name: Publish the unchanged Maven staging workspace")
-        val r2 = releaseSource.indexOf("name: Create or compare immutable R2 ZIP objects")
-        assertTrue(gate >= 0 && publish > gate && r2 > publish)
+    fun `workflow contracts are structurally exact`() {
+        val ci = parse("ci.yml")
+        val release = parse("release.yml")
+        assertCi(ci)
+        assertRelease(release)
+        val please = parse("release-please.yml")
+        assertEquals(setOf("push", "workflow_dispatch"), mapping(please, "on").keys)
+        assertEquals(listOf("main"), sequence(mapping(mapping(please, "on"), "push"), "branches"))
         assertEquals(
-            0,
-            Regex("\\n\\s*- name:").findAll(releaseSource.substring(gate, publish)).count(),
-            "Maven gate must directly precede publication",
+            mapOf("contents" to "write", "issues" to "write", "pull-requests" to "write"),
+            mapping(please, "permissions"),
         )
-        listOf(
-                "grounds-content-",
-                "grounds-platform-",
-                "grounds-resourcepacks-catalog-",
-                "manifest.json",
-            )
-            .forEach { assertTrue(root.resolve("README.md").readText().contains(it)) }
+        val caller = mapping(mapping(please, "jobs"), "release-please")
+        assertEquals(
+            "groundsgg/.github/.github/workflows/release-please.yml@main",
+            scalar(caller, "uses"),
+        )
+        assertEquals("inherit", scalar(caller, "secrets"))
+    }
 
-        val config = root.resolve("release-please-config.json").readText()
-        val manifest = root.resolve(".release-please-manifest.json").readText()
-        assertTrue(config.contains("\"release-type\": \"simple\""))
-        assertTrue(config.contains("\"version-file\": \"version.txt\""))
-        assertTrue(config.contains("\"initial-version\": \"0.1.0\""))
-        assertEquals("{}", manifest.trim())
+    @Test
+    fun `contract mutations reject the reviewed weak workflow shapes`() {
+        val ci = source("ci.yml")
+        val release = source("release.yml")
+        assertFails { assertCi(parseText(ci.replace("path: run2/src", "path: run1/src"))) }
+        assertFails {
+            assertRelease(
+                parseText(
+                    release
+                        .replace("decision=$(node", "echo \"decision=$(node")
+                        .replace(
+                            "          case \"\$decision\" in\n            publish|skip) ;;\n            *) echo \"Maven decision is invalid\" >&2; exit 1 ;;\n          esac\n",
+                            "",
+                        )
+                )
+            )
+        }
+        assertFails {
+            assertRelease(
+                parseText(
+                    release
+                        .replace("      packages: write\n", "")
+                        .replace(
+                            "permissions:\n  contents: read",
+                            "permissions:\n  contents: write\n  packages: write",
+                        )
+                )
+            )
+        }
     }
 
     @Test
     fun `Maven decision gate rejects failed empty and invalid output before the R2 successor`() {
-        val release = root.resolve(".github/workflows/release.yml").readText()
-        val gate = release.substringAfter("id: maven-gate").substringBefore("      - name: Publish")
-        assertTrue(gate.contains("case \"\$decision\" in"), gate)
-        assertTrue(gate.contains("publish|skip"), gate)
-
+        val gate =
+            source("release.yml")
+                .substringAfter("id: maven-gate")
+                .substringBefore("      - name: Publish")
         listOf("fail", "", "garbage").forEach { result ->
             val directory = kotlin.io.path.createTempDirectory("maven-gate-")
             val bin = directory.resolve("bin").createDirectory()
-            val r2Sentinel = directory.resolve("r2-reached")
-            val output = directory.resolve("github-output")
+            val sentinel = directory.resolve("r2-reached")
             bin.resolve("node")
                 .writeText(
                     "#!/bin/sh\n" +
-                        if (result == "fail") "exit 13\n" else "printf '%s\\n' '${result}'\n"
+                        if (result == "fail") "exit 13\n" else "printf '%s\\n' '$result'\n"
                 )
             bin.resolve("node").toFile().setExecutable(true)
-            val script = gate.substringAfter("run: |").trimIndent() + "\ntouch '${r2Sentinel}'\n"
             val process =
-                ProcessBuilder("bash", "-e", "-c", script)
+                ProcessBuilder(
+                        "bash",
+                        "-e",
+                        "-c",
+                        gate.substringAfter("run: |").trimIndent() + "\ntouch '$sentinel'\n",
+                    )
                     .directory(root.toFile())
                     .apply {
                         environment()["PATH"] = "$bin:${environment().getValue("PATH")}"
-                        environment()["GITHUB_OUTPUT"] = output.toString()
+                        environment()["GITHUB_OUTPUT"] = directory.resolve("output").toString()
                         environment()["RUNNER_TEMP"] = directory.toString()
                     }
                     .start()
-            assertTrue(process.waitFor() != 0, "gate accepted '$result'")
-            assertFalse(r2Sentinel.isRegularFile(), "R2 successor reached for '$result'")
+            assertTrue(process.waitFor() != 0)
+            assertFalse(sentinel.isRegularFile())
         }
     }
 
-    private fun workflow(name: String): YamlDocument = YamlDocument.parse(releaseSourcePath(name))
+    private fun assertCi(ci: Map<String, Any?>) {
+        assertEquals(setOf("push", "pull_request"), mapping(ci, "on").keys)
+        assertEquals(listOf("main"), sequence(mapping(mapping(ci, "on"), "push"), "branches"))
+        assertEquals(mapOf("contents" to "read"), mapping(ci, "permissions"))
+        val steps = sequence(mapping(mapping(ci, "jobs"), "verify"), "steps").map(::mapping)
+        val checkouts = steps.filter { scalar(it, "uses") == "actions/checkout@v7" }
+        assertEquals(2, checkouts.size)
+        assertEquals(
+            setOf("run1/src", "run2/src"),
+            checkouts.map { scalar(mapping(it, "with"), "path") }.toSet(),
+        )
+        checkouts.forEach {
+            assertEquals("${'$'}{{ github.sha }}", scalar(mapping(it, "with"), "ref"))
+            assertEquals(false, mapping(it, "with")["persist-credentials"])
+        }
+        val clean = steps.filter { scalar(it, "name").startsWith("Build clean checkout") }
+        val packs = steps.filter { scalar(it, "name").startsWith("Build release candidate") }
+        assertEquals(
+            setOf("run1/src", "run2/src"),
+            clean.map { scalar(it, "working-directory") }.toSet(),
+        )
+        assertEquals(
+            setOf("run1/src", "run2/src"),
+            packs.map { scalar(it, "working-directory") }.toSet(),
+        )
+        clean.forEach { assertTrue(scalar(it, "run").contains("--no-build-cache clean build")) }
+        packs.forEach {
+            assertTrue(
+                scalar(it, "run").contains("buildPackSet") &&
+                    scalar(it, "run").contains("-PreleaseOutput=")
+            )
+        }
+        assertTrue(
+            scalar(steps.single { scalar(it, "name").startsWith("Inspect") }, "run")
+                .contains("diff -r")
+        )
+    }
 
-    private fun releaseSourcePath(name: String): String =
-        root.resolve(".github/workflows").resolve(name).readText()
-}
+    private fun assertRelease(release: Map<String, Any?>) {
+        assertEquals(listOf("v*"), sequence(mapping(mapping(release, "on"), "push"), "tags"))
+        assertEquals(mapOf("contents" to "read"), mapping(release, "permissions"))
+        val concurrency = mapping(release, "concurrency")
+        assertEquals(false, concurrency["cancel-in-progress"])
+        assertTrue(scalar(concurrency, "group").contains("github.ref_name"))
+        val jobs = mapping(release, "jobs")
+        assertEquals(setOf("build", "publish", "public-cdn", "release-assets"), jobs.keys)
+        assertEquals("build", scalar(mapping(jobs, "publish"), "needs"))
+        assertEquals("publish", scalar(mapping(jobs, "public-cdn"), "needs"))
+        assertEquals(
+            listOf("build", "public-cdn"),
+            sequence(mapping(jobs, "release-assets"), "needs"),
+        )
+        assertEquals("production", scalar(mapping(jobs, "publish"), "environment"))
+        assertFalse(mapping(jobs, "build").containsKey("environment"))
+        assertFalse(mapping(jobs, "public-cdn").containsKey("environment"))
+        assertFalse(mapping(jobs, "release-assets").containsKey("environment"))
+        assertEquals(
+            mapOf("contents" to "read", "packages" to "write"),
+            mapping(mapping(jobs, "publish"), "permissions"),
+        )
+        assertEquals(
+            mapOf("contents" to "write"),
+            mapping(mapping(jobs, "release-assets"), "permissions"),
+        )
+        listOf("build", "publish", "public-cdn", "release-assets").forEach { job ->
+            steps(mapping(jobs, job))
+                .filter { scalar(it, "uses") == "actions/checkout@v7" }
+                .single()
+                .let { assertEquals(false, mapping(it, "with")["persist-credentials"]) }
+        }
+        val publish = steps(mapping(jobs, "publish"))
+        val gate = publish.indexOfFirst { scalar(it, "id") == "maven-gate" }
+        assertTrue(gate >= 0)
+        assertTrue(
+            scalar(publish[gate], "run").contains("maven-create-or-compare.mjs") &&
+                scalar(publish[gate], "run").contains("case \"\$decision\" in") &&
+                scalar(publish[gate], "run").contains("decision=\$decision")
+        )
+        assertEquals(
+            "Publish the unchanged Maven staging workspace",
+            scalar(publish[gate + 1], "name"),
+        )
+        assertEquals(
+            "steps.maven-gate.outputs.decision == 'publish'",
+            scalar(publish[gate + 1], "if"),
+        )
+        assertTrue(
+            scalar(publish[gate + 1], "run")
+                .contains("publishMavenJavaPublicationToGitHubPackagesRepository")
+        )
+        assertTrue(scalar(publish[gate + 2], "run").contains("r2-create-or-compare.mjs"))
+        val cdn = mapping(jobs, "public-cdn")
+        assertFalse(
+            cdn.toString().contains("secrets.") ||
+                cdn.toString().contains("R2_") ||
+                cdn.toString().contains("CLOUDFLARE")
+        )
+        assertTrue(steps(cdn).any { scalar(it, "run").contains("verify-cdn.mjs") })
+    }
 
-/** Small structured YAML reader for the restricted workflow subset used by this contract. */
-private class YamlDocument private constructor(private val values: Map<String, List<String>>) {
-    fun requireScalar(path: String): String =
-        values[path]?.singleOrNull() ?: error("Missing scalar $path: $values")
+    private fun steps(job: Map<String, Any?>) = sequence(job, "steps").map(::mapping)
 
-    fun hasKey(path: String): Boolean = path in values
+    private fun parse(name: String) = parseText(source(name))
 
-    fun hasSequenceValue(path: String, value: String): Boolean =
-        values[path]?.any { it == value } == true
+    private fun source(name: String) = root.resolve(".github/workflows").resolve(name).readText()
 
-    fun allScalars(): List<String> = values.values.flatten()
-
-    companion object {
-        fun parse(input: String): YamlDocument {
-            val values = linkedMapOf<String, MutableList<String>>()
-            val parents = mutableListOf<Pair<Int, String>>()
-            input.lineSequence().forEach { raw ->
-                if (raw.isBlank() || raw.trimStart().startsWith("#")) return@forEach
-                val indent = raw.indexOfFirst { !it.isWhitespace() }
-                val text = raw.trim()
-                while (parents.isNotEmpty() && parents.last().first >= indent) parents.removeLast()
-                val parent = parents.joinToString(".") { it.second }
-                if (text.startsWith("- ")) {
-                    values
-                        .getOrPut(parent) { mutableListOf() }
-                        .add(text.removePrefix("- ").trim('"', '\''))
-                } else {
-                    val separator = text.indexOf(":")
-                    if (separator > 0) {
-                        val key = text.substring(0, separator).trim('"', '\'')
-                        val path = listOf(parent, key).filter { it.isNotEmpty() }.joinToString(".")
-                        val value = text.substring(separator + 1).trim()
-                        values.getOrPut(path) { mutableListOf() }
-                        if (value.startsWith("[") && value.endsWith("]")) {
-                            value
-                                .removePrefix("[")
-                                .removeSuffix("]")
-                                .split(',')
-                                .map { it.trim().trim('"', '\'') }
-                                .filter { it.isNotEmpty() }
-                                .forEach(values.getValue(path)::add)
-                        } else if (value.isNotEmpty()) {
-                            values.getValue(path).add(value.trim('"', '\''))
-                        }
-                        parents.add(indent to key)
-                    } else if (parent.isNotEmpty()) {
-                        values.getOrPut(parent) { mutableListOf() }.add(text)
-                    }
-                }
-            }
-            return YamlDocument(values)
+    private fun parseText(text: String): Map<String, Any?> {
+        val raw = Yaml().load<Any?>(text) as Map<*, *>
+        return raw.entries.associate {
+            (if (it.key == true) "on" else it.key.toString()) to it.value
         }
     }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun mapping(value: Any?): Map<String, Any?> =
+        (value as Map<Any?, Any?>).entries.associate { it.key.toString() to it.value }
+
+    private fun mapping(parent: Map<String, Any?>, key: String) =
+        mapping(parent[key] ?: error("missing $key"))
+
+    @Suppress("UNCHECKED_CAST")
+    private fun sequence(parent: Map<String, Any?>, key: String): List<Any?> =
+        parent[key] as? List<Any?> ?: error("missing list $key")
+
+    private fun scalar(parent: Map<String, Any?>, key: String): String =
+        parent[key]?.toString() ?: ""
 }

@@ -90,6 +90,7 @@ dependencies {
     implementation("tools.jackson.core:jackson-databind:3.1.5")
 
     testImplementation("gg.grounds:resource-pack-testkit:0.1.0")
+    testImplementation("org.yaml:snakeyaml:2.6")
     testImplementation(kotlin("test"))
     testImplementation(gradleTestKit())
 }
