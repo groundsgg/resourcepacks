@@ -3,7 +3,7 @@ import { symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadRelease } from '../src/manifest.mjs';
+import { loadRelease, openVerifiedArtifact } from '../src/manifest.mjs';
 import { canonicalJson, createReleaseFixture } from './fixtures.mjs';
 
 test('loadRelease binds the canonical manifest to exactly four measured regular files', async () => {
@@ -18,6 +18,7 @@ test('loadRelease binds the canonical manifest to exactly four measured regular 
     `resourcepacks/content/${fixture.manifest.packs[0].sha1}.zip`,
     `resourcepacks/platform/${fixture.manifest.packs[1].sha1}.zip`,
   ]);
+  await release.close();
 });
 
 test('loadRelease rejects noncanonical, unknown, duplicate, and semantically drifted manifest data', async () => {
@@ -68,4 +69,15 @@ test('readManifest applies fixed product size caps independent of manifest claim
   fixture.manifest.packs[0].size=Number.MAX_SAFE_INTEGER;
   await writeFile(join(fixture.root,'manifest.json'),canonicalJson(fixture.manifest));
   await assert.rejects(()=>loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root}),/product limit/i);
+});
+
+test('loadRelease binds manifest parsing, digest, and later upload reads to one private snapshot',async()=>{
+  for(const replacement of ['in-place','replace']){
+    const fixture=await createReleaseFixture();const manifestPath=join(fixture.root,'manifest.json');const original=fixture.files.get('manifest.json');
+    const release=await loadRelease({manifestFile:manifestPath,releaseDirectory:fixture.root});
+    if(replacement==='replace'){const {rename}=await import('node:fs/promises');const next=`${manifestPath}.next`;await writeFile(next,'attacker replacement');await rename(next,manifestPath);}else await writeFile(manifestPath,'attacker in-place');
+    const verified=await openVerifiedArtifact(release.manifestArtifact);const chunks=[];for await(const chunk of verified.stream())chunks.push(Buffer.from(chunk));await verified.close();
+    assert.deepEqual(Buffer.concat(chunks),original,replacement);
+    await release.close();
+  }
 });

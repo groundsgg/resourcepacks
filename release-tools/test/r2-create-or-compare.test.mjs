@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
+
+import { S3ServiceException } from '@aws-sdk/client-s3';
 
 import { fakeHttp } from './fake-http.mjs';
 import { createOrCompare } from '../src/r2-create-or-compare.mjs';
@@ -87,4 +90,13 @@ test('createOrCompare uploads a verified private snapshot despite in-place sourc
   const client={async send(command){await writeFile(file,'modified');const chunks=[];for await(const chunk of command.input.Body)chunks.push(Buffer.from(chunk));uploaded=Buffer.concat(chunks);return {};}};
   assert.deepEqual(await createOrCompare({endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',key:'x',file,accessKey:'test',secretKey:'test',expected:expected(original),client}),{created:true});
   assert.deepEqual(uploaded,original);
+});
+test('createOrCompare times out a stalled AWS request with stable diagnostics',async()=>{const body=Buffer.from('same');const directory=await mkdtemp(join(tmpdir(),'r2-test-'));const file=join(directory,'pack.zip');await writeFile(file,body);const operation=createOrCompare({endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',key:'x',file,accessKey:'ACCESS_MARKER',secretKey:'SECRET_MARKER',expected:expected(body),client:{send:()=>new Promise(()=>{})},timeoutMs:20});assert.equal(await Promise.race([assert.rejects(()=>operation,/R2 request timed out/).then(()=> 'timeout'),new Promise(resolve=>setTimeout(()=>resolve('hung'),200))]),'timeout');});
+
+test('createOrCompare times out a stalled R2 comparison body',async()=>{
+  const body=Buffer.from('same');const directory=await mkdtemp(join(tmpdir(),'r2-test-'));const file=join(directory,'pack.zip');await writeFile(file,body);const stalled=new PassThrough();let calls=0;
+  const client={async send(){calls+=1;if(calls===1)throw new S3ServiceException({name:'PreconditionFailed',$fault:'client',$metadata:{httpStatusCode:412}});return{Body:stalled,ContentType:'application/zip',CacheControl:'public, max-age=31536000, immutable'};}};
+  const operation=createOrCompare({endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',key:'x',file,accessKey:'test',secretKey:'test',expected:expected(body),client,timeoutMs:20});
+  assert.equal(await Promise.race([assert.rejects(()=>operation,/R2 request timed out/).then(()=> 'timeout'),new Promise(resolve=>setTimeout(()=>resolve('hung'),200))]),'timeout');
+  assert.equal(stalled.destroyed,true);
 });

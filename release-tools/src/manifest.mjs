@@ -100,6 +100,10 @@ async function readNoFollow(path) {
 export async function readManifest(file) {
   await assertNoSymlinkComponents(dirname(resolve(file)));
   const bytes = await readNoFollow(file);
+  return parseManifestBytes(bytes);
+}
+
+function parseManifestBytes(bytes) {
   let text;
   try { text = new TextDecoder('utf-8', {fatal:true}).decode(bytes); } catch { fail('manifest is not UTF-8'); }
   let manifest;
@@ -108,7 +112,7 @@ export async function readManifest(file) {
   return validateManifest(manifest);
 }
 
-async function assertNoSymlinkComponents(path) {
+export async function assertNoSymlinkComponents(path) {
   const absolute = resolve(path);
   const root = parse(absolute).root;
   let current = root;
@@ -133,40 +137,52 @@ async function digestRegularFile(path, maximumSize) {
 }
 
 export async function openVerifiedArtifact(artifact) {
+  if(artifact.snapshot){
+    if(artifact.snapshot.size!==artifact.size||artifact.snapshot.sha1!==artifact.sha1||artifact.snapshot.sha256!==artifact.sha256)throw new Error('artifact snapshot contract mismatch');
+    return {size:artifact.snapshot.size,stream:()=>artifact.snapshot.handle.createReadStream({start:0,autoClose:false}),close:async()=>{}};
+  }
   const path = artifact.path ?? artifact.file;
+  return snapshotPath(path,artifact,artifact.size);
+}
+
+async function snapshotPath(path,expected,maximumSize,captureBytes=false,tooLargeMessage='artifact does not match manifest') {
   let source; let snapshot;
   try {
     await assertNoSymlinkComponents(dirname(resolve(path)));
     source = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const stats = await source.stat();
     if (!stats.isFile()) throw new Error('not regular');
-    if (!Number.isSafeInteger(artifact.size) || artifact.size <= 0 || artifact.size > CATALOG_SIZE_LIMIT || !HEX40.test(artifact.sha1) || !HEX64.test(artifact.sha256)) throw new Error('missing artifact contract');
+    if (!Number.isSafeInteger(maximumSize) || maximumSize <= 0 || maximumSize > CATALOG_SIZE_LIMIT) throw new Error('missing artifact contract');
     const snapshotPath = join(tmpdir(),`grounds-release-${process.pid}-${randomUUID()}.snapshot`);
     snapshot = await open(snapshotPath,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR,0o600);
     await unlink(snapshotPath);
-    const sha1=createHash('sha1');const sha256=createHash('sha256');let size=0;
+    const sha1=createHash('sha1');const sha256=createHash('sha256');let size=0;const captured=[];
     for await(const chunk of source.createReadStream({start:0,autoClose:false})){
       const bytes=Buffer.from(chunk);size+=bytes.length;
-      if(size>artifact.size)throw new Error('artifact does not match manifest');
+      if(size>maximumSize)throw new Error(tooLargeMessage);
       sha1.update(bytes);sha256.update(bytes);
+      if(captureBytes)captured.push(bytes);
       let offset=0;while(offset<bytes.length){const {bytesWritten}=await snapshot.write(bytes,offset,bytes.length-offset,null);offset+=bytesWritten;}
     }
     const actual={size,sha1:sha1.digest('hex'),sha256:sha256.digest('hex')};
-    if (actual.size !== artifact.size || actual.sha1 !== artifact.sha1 || actual.sha256 !== artifact.sha256) throw new Error('artifact does not match manifest');
+    if (expected && (actual.size !== expected.size || actual.sha1 !== expected.sha1 || actual.sha256 !== expected.sha256)) throw new Error('artifact does not match manifest');
     await source.close();source=undefined;
     return {
       handle:snapshot,
-      size:actual.size,
+      ...actual,
+      bytes:captureBytes?Buffer.concat(captured):undefined,
       stream:()=>snapshot.createReadStream({start:0,autoClose:false}),
       close:()=>snapshot.close(),
     };
   } catch (error) {
     await source?.close().catch(()=>{});
     await snapshot?.close().catch(()=>{});
-    if (error instanceof Error && error.message === 'artifact does not match manifest') throw error;
+    if (error instanceof Error && [tooLargeMessage,'artifact does not match manifest'].includes(error.message)) throw error;
     throw new Error('artifact cannot be opened as a verified regular file');
   }
 }
+
+export async function snapshotRegularFile(path,maximumSize=CATALOG_SIZE_LIMIT){return snapshotPath(path,null,maximumSize);}
 
 function inside(parent, child) {
   const rel = relative(parent, child);
@@ -181,7 +197,13 @@ export async function loadRelease({ manifestFile, releaseDirectory }) {
   const directoryStats = await lstat(directory);
   if (!directoryStats.isDirectory() || directoryStats.isSymbolicLink()) throw new Error('release directory must be a regular directory');
   if (await realpath(directory) !== directory) throw new Error('release directory path is not canonical');
-  const parsed = await readManifest(manifestPath);
+  const manifestSnapshot=await snapshotPath(manifestPath,null,MAX_MANIFEST_SIZE,true,'manifest is too large');
+  let parsed;
+  try{parsed=parseManifestBytes(manifestSnapshot.bytes);}catch(error){await manifestSnapshot.close().catch(()=>{});throw error;}
+  try{return await finishLoadRelease(directory,parsed,manifestSnapshot);}catch(error){await manifestSnapshot.close().catch(()=>{});throw error;}
+}
+
+async function finishLoadRelease(directory,parsed,manifestSnapshot) {
   const expected = new Map([
     [parsed.packs[0].file, {sha1:parsed.packs[0].sha1,sha256:parsed.packs[0].sha256,size:parsed.packs[0].size,role:'content'}],
     [parsed.packs[1].file, {sha1:parsed.packs[1].sha1,sha256:parsed.packs[1].sha256,size:parsed.packs[1].size,role:'platform'}],
@@ -198,11 +220,11 @@ export async function loadRelease({ manifestFile, releaseDirectory }) {
     if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`release artifact must be a regular file, not a symbolic link: ${name}`);
     const contract = expected.get(name);
     const path = join(directory, name);
-    const actual = await digestRegularFile(path, contract.size === undefined ? 16 * 1024 * 1024 : contract.size);
+    const actual = name==='manifest.json'?manifestSnapshot:await digestRegularFile(path,contract.size);
     if (contract.size !== undefined && actual.size !== contract.size) throw new Error(`release artifact size mismatch: ${name}`);
     if (contract.sha1 !== undefined && actual.sha1 !== contract.sha1) throw new Error(`release artifact digest mismatch: ${name}`);
     if (contract.sha256 !== undefined && actual.sha256 !== contract.sha256) throw new Error(`release artifact digest mismatch: ${name}`);
-    artifacts.push({name,path,role:contract.role,size:actual.size,sha1:actual.sha1,sha256:actual.sha256});
+    artifacts.push({name,path,role:contract.role,size:actual.size,sha1:actual.sha1,sha256:actual.sha256,snapshot:name==='manifest.json'?manifestSnapshot:undefined});
   }
   const byName = new Map(artifacts.map(artifact => [artifact.name, artifact]));
   return {
@@ -212,5 +234,6 @@ export async function loadRelease({ manifestFile, releaseDirectory }) {
     packs: parsed.packs.map(pack => ({...pack, artifact:byName.get(pack.file)})),
     catalog: byName.get(parsed.catalogFile),
     manifestArtifact: byName.get('manifest.json'),
+    close:()=>manifestSnapshot.close(),
   };
 }

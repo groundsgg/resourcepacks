@@ -73,19 +73,21 @@ test('Maven CLI gates the exact manifest coordinate and prints a workflow-safe d
   await mkdir(versionDirectory, {recursive:true});
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.pom'), '<project/>');
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.jar'), fixture.files.get('grounds-resourcepacks-catalog-0.1.0.jar'));
-  const paths = [];
-  const http = await fakeHttp((request,response)=>{paths.push(request.url);response.writeHead(404).end();});
-  t.after(http.close);
+  await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0-sources.jar'), 'sources');
+  await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.module'), '{}');
+  const log=`${fixture.root}-maven.log`;const preload=fileURLToPath(new URL('./maven-fetch-preload.mjs',import.meta.url));
   const result = await run('maven-create-or-compare', [
     '--manifest',join(fixture.root,'manifest.json'),'--staging-directory',join(fixture.root,'maven'),
-    '--repository-url',http.url,'--username','actor','--token','TOKEN_MARKER',
-  ]);
+    '--username','actor','--token','TOKEN_MARKER',
+  ],{NODE_OPTIONS:`--import=${preload}`,MAVEN_FAKE_LOG:log});
   assert.equal(result.code,0,result.stderr);
-  assert.equal(result.stdout,'publish\n');
-  assert.deepEqual(paths.sort(), [
-    '/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.jar',
-    '/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.pom',
-  ]);
+  assert.match(result.stdout,/^publish-directory=\/tmp\//);
+  assert.deepEqual((await readFile(log,'utf8')).trim().split('\n').sort(), [
+    '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.jar',
+    '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0-sources.jar',
+    '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.module',
+    '/groundsgg/resourcepacks/gg/grounds/resourcepacks-catalog/0.1.0/resourcepacks-catalog-0.1.0.pom',
+  ].sort());
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /TOKEN_MARKER/);
 });
 
