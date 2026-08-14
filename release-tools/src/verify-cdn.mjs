@@ -10,11 +10,14 @@ import { withTimeout } from './timeout.mjs';
 const REQUIRED_CACHE_DIRECTIVES = new Map([['public', true], ['immutable', true], ['max-age', '31536000']]);
 
 function cacheControlIsImmutable(value) {
-  const directives = new Map((value ?? '').split(',').map(part => part.trim().toLowerCase()).filter(Boolean).map(part => {
+  const parsed = (value ?? '').split(',').map(part => part.trim().toLowerCase()).filter(Boolean).map(part => {
     const [name, rawValue] = part.split('=', 2);
     return [name, rawValue?.replace(/^"|"$/g, '') ?? true];
-  }));
-  return [...REQUIRED_CACHE_DIRECTIVES].every(([name, expected]) => directives.get(name) === expected);
+  });
+  const directives = new Map(parsed);
+  return parsed.length === REQUIRED_CACHE_DIRECTIVES.size
+    && directives.size === parsed.length
+    && [...REQUIRED_CACHE_DIRECTIVES].every(([name, expected]) => directives.get(name) === expected);
 }
 
 async function fetchSameOrigin(url, fetchImpl, signal) {

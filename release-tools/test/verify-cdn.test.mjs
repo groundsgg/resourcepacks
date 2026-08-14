@@ -23,6 +23,29 @@ test('verifyCdn accepts complete bytes and semantic cache directives in any orde
   await verifyCdn({ packs: [{ url: 'https://cdn.grounds.gg/pack.zip', sha1, sha256, size: bytes.length }] }, {baseUrl:http.url});
 });
 
+test('verifyCdn rejects duplicate and conflicting cache directives', async t => {
+  for (const cacheControl of [
+    'public, immutable, max-age=31536000, public',
+    'public, immutable, max-age=31536000, no-store',
+    'public, immutable, max-age=31536000, private',
+    'public, immutable, max-age=31536000, s-maxage=0',
+  ]) {
+    const http = await fakeHttp((request, response) => {
+      response.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Cache-Control': cacheControl,
+      });
+      response.end(bytes);
+    });
+    t.after(http.close);
+
+    await assert.rejects(
+      () => verifyCdn({ packs: [{ url: 'https://cdn.grounds.gg/pack.zip', sha1, sha256, size: bytes.length }] }, {baseUrl:http.url}),
+      /Cache-Control mismatch/,
+    );
+  }
+});
+
 test('verifyCdn rejects a redirect to another host without downloading it', async t => {
   const http = await fakeHttp((request, response) => {
     response.writeHead(302, { Location: 'http://example.invalid/pack.zip' });
