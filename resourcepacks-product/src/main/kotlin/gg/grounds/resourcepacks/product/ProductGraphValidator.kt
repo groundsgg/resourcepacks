@@ -1,5 +1,6 @@
 package gg.grounds.resourcepacks.product
 
+import gg.grounds.resourcepack.api.PackEntrySource
 import java.io.IOException
 import java.util.Collections
 
@@ -85,9 +86,10 @@ internal object ProductGraphValidator {
                 problems += ProductProblem(ProductProblemCode.INVALID_LIMITS, pack = pack.id)
             }
             val entries = pack.contributions.flatMap { it.entries }
-            val limits = pack.definition.policy.limits
             val enforcementLimits = expectedLimits(pack.role)
-            if (entries.size > requireNotNull(enforcementLimits.maxEntries)) {
+            val physicalEntryCount =
+                entries.size.toLong() + 1L + if (pack.definition.icon == null) 0L else 1L
+            if (physicalEntryCount > requireNotNull(enforcementLimits.maxEntries).toLong()) {
                 problems += ProductProblem(ProductProblemCode.ENTRY_LIMIT_EXCEEDED, pack = pack.id)
             }
             val totalSize = sourceSize(pack, problems)
@@ -159,37 +161,30 @@ internal object ProductGraphValidator {
         }
 
     private fun sourceSize(pack: PhysicalPack, problems: MutableList<ProductProblem>): TotalSize {
-        var total = 0L
+        var total =
+            try {
+                ProductPackMetadata.size(pack.definition)
+            } catch (_: ArithmeticException) {
+                return TotalSize(Long.MAX_VALUE, overflowed = true)
+            }
+        pack.definition.icon?.let { icon ->
+            val size = sourceSize(pack, null, "pack.png", icon, problems) ?: return@let
+            try {
+                total = checkedSizeAdd(total, size)
+            } catch (_: ArithmeticException) {
+                return TotalSize(Long.MAX_VALUE, overflowed = true)
+            }
+        }
         pack.contributions.forEach { contribution ->
             contribution.entries.forEach { entry ->
                 val size =
-                    try {
-                        entry.source.size()
-                    } catch (_: IOException) {
-                        problems +=
-                            sourceSizeFailure(
-                                pack,
-                                contribution.id.toString(),
-                                entry.path.toString(),
-                            )
-                        return@forEach
-                    } catch (_: SecurityException) {
-                        problems +=
-                            sourceSizeFailure(
-                                pack,
-                                contribution.id.toString(),
-                                entry.path.toString(),
-                            )
-                        return@forEach
-                    } catch (_: ArithmeticException) {
-                        problems +=
-                            sourceSizeFailure(
-                                pack,
-                                contribution.id.toString(),
-                                entry.path.toString(),
-                            )
-                        return@forEach
-                    }
+                    sourceSize(
+                        pack,
+                        contribution.id.toString(),
+                        entry.path.toString(),
+                        entry.source,
+                        problems,
+                    ) ?: return@forEach
                 try {
                     total = checkedSizeAdd(total, size)
                 } catch (_: ArithmeticException) {
@@ -200,12 +195,32 @@ internal object ProductGraphValidator {
         return TotalSize(total, overflowed = false)
     }
 
-    private fun sourceSizeFailure(pack: PhysicalPack, contributionId: String, path: String) =
+    private fun sourceSize(
+        pack: PhysicalPack,
+        contributionId: String?,
+        path: String,
+        source: PackEntrySource,
+        problems: MutableList<ProductProblem>,
+    ): Long? =
+        try {
+            source.size()
+        } catch (_: IOException) {
+            problems += sourceSizeFailure(pack, contributionId, path)
+            null
+        } catch (_: SecurityException) {
+            problems += sourceSizeFailure(pack, contributionId, path)
+            null
+        } catch (_: ArithmeticException) {
+            problems += sourceSizeFailure(pack, contributionId, path)
+            null
+        }
+
+    private fun sourceSizeFailure(pack: PhysicalPack, contributionId: String?, path: String) =
         ProductProblem(
             ProductProblemCode.SOURCE_SIZE_FAILURE,
             pack.id,
             path,
-            contributionIds = listOf(contributionId),
+            contributionIds = listOfNotNull(contributionId),
         )
 
     private fun lockedPackProblems(pack: PhysicalPack): List<ProductProblem> {

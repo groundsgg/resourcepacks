@@ -1,11 +1,9 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepack.api.ContributionId
-import gg.grounds.resourcepack.api.PackBuildException
 import gg.grounds.resourcepack.api.PackContribution
 import gg.grounds.resourcepack.api.PackEntry
 import gg.grounds.resourcepack.api.PackFormatRange
-import gg.grounds.resourcepack.api.PackProblemCode
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.file.Files
@@ -113,10 +111,14 @@ internal object StreamingReleaseFixture {
             )
             check(mode == "exact") { "Overflow fixture unexpectedly published." }
             println("OK")
-        } catch (failure: PackBuildException) {
-            check(mode == "overflow") { "Exact fixture hit a limit: ${failure.problems}" }
-            check(failure.problems.any { it.code == PackProblemCode.SIZE_LIMIT_EXCEEDED }) {
-                "Overflow fixture returned the wrong problem: ${failure.problems}"
+        } catch (failure: ProductValidationException) {
+            check(mode == "overflow") { "Exact fixture hit a limit: ${failure.result.problems}" }
+            check(
+                failure.result.problems.any {
+                    it.code == ProductProblemCode.UNCOMPRESSED_SIZE_LIMIT_EXCEEDED
+                }
+            ) {
+                "Overflow fixture returned the wrong problem: ${failure.result.problems}"
             }
             println("LIMIT")
         }

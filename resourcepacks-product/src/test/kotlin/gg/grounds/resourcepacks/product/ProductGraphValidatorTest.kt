@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepack.api.ContributionId
+import gg.grounds.resourcepack.api.FileEntrySource
 import gg.grounds.resourcepack.api.PackContribution
 import gg.grounds.resourcepack.api.PackEntry
 import gg.grounds.resourcepack.api.PackFormat
@@ -331,6 +332,37 @@ class ProductGraphValidatorTest {
     @Test
     fun `validator reports source size overflow without wrapping`() {
         assertFailsWith<ArithmeticException> { checkedSizeAdd(Long.MAX_VALUE, 1) }
+    }
+
+    @Test
+    fun `validator reports an unreadable optional icon as the generated pack png path`() {
+        val root = Files.createTempDirectory("product-validator-missing-icon")
+        try {
+            val platform =
+                ProductGraph.packs
+                    .last()
+                    .copy(
+                        definition =
+                            ProductGraph.packs
+                                .last()
+                                .definition
+                                .copy(icon = FileEntrySource(root.resolve("missing.png")))
+                    )
+
+            assertEquals(
+                listOf(
+                    ProductProblem(
+                        ProductProblemCode.SOURCE_SIZE_FAILURE,
+                        "grounds-platform",
+                        "pack.png",
+                    )
+                ),
+                ProductGraphValidator.validate(listOf(ProductGraph.packs.first(), platform))
+                    .problems,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
     }
 
     private fun contribution(id: String, bytes: String) =

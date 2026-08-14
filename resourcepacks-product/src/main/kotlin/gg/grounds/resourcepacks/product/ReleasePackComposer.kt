@@ -6,8 +6,6 @@ import gg.grounds.resourcepack.api.PackProblem
 import gg.grounds.resourcepack.api.PackProblemCode
 import gg.grounds.resourcepack.builder.ResourcePackComposer
 import java.io.OutputStream
-import java.io.OutputStreamWriter
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.util.zip.Deflater
@@ -79,7 +77,8 @@ internal object ReleasePackComposer {
                 )
                 when (entry) {
                     is StreamingEntry.Source -> streamSource(entry.source, zip)
-                    is StreamingEntry.Metadata -> writePackMetadata(entry.pack, zip)
+                    is StreamingEntry.Metadata ->
+                        ProductPackMetadata.write(entry.pack.definition, zip)
                 }
                 zip.closeEntry()
             }
@@ -95,38 +94,6 @@ internal object ReleasePackComposer {
                 output.write(buffer, 0, read)
             }
         }
-    }
-
-    private fun writePackMetadata(pack: PhysicalPack, output: OutputStream) {
-        val writer = OutputStreamWriter(output, StandardCharsets.UTF_8)
-        val format = pack.definition.format
-        writer.append("{\"pack\":{\"pack_format\":")
-        writer.append(format.format.toString())
-        writer.append(",\"min_format\":")
-        writer.append(format.range.minInclusive.toString())
-        writer.append(",\"max_format\":")
-        writer.append(format.range.maxInclusive.toString())
-        writer.append(",\"description\":\"")
-        pack.definition.description.forEach { character ->
-            when (character) {
-                '"' -> writer.append("\\\"")
-                '\\' -> writer.append("\\\\")
-                '\b' -> writer.append("\\b")
-                '\u000C' -> writer.append("\\f")
-                '\n' -> writer.append("\\n")
-                '\r' -> writer.append("\\r")
-                '\t' -> writer.append("\\t")
-                else ->
-                    if (character < ' ') {
-                        writer.append("\\u")
-                        writer.append(character.code.toString(16).padStart(4, '0'))
-                    } else {
-                        writer.append(character)
-                    }
-            }
-        }
-        writer.append("\"}}\n")
-        writer.flush()
     }
 
     private sealed interface StreamingEntry {
