@@ -96,15 +96,19 @@ class BuildBoundaryTest {
     }
 
     private fun assertInvalidVersion(contents: String) {
-        val versionFile = rootDirectory.resolve("version.txt")
-        val originalVersion = versionFile.readText()
+        val fixtureDirectory = Files.createTempDirectory("resourcepacks-version-fixture")
 
         try {
-            versionFile.writeText(contents)
-            val failure = runGradleAndFail("help")
+            copyFixtureFile("settings.gradle.kts", fixtureDirectory)
+            copyFixtureFile("build.gradle.kts", fixtureDirectory)
+            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-catalog"))
+            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-product"))
+            fixtureDirectory.resolve("version.txt").writeText(contents)
+
+            val failure = runGradleAndFail(fixtureDirectory, "help")
             assertContains(failure, "version.txt must contain an exact ASCII SemVer value")
         } finally {
-            versionFile.writeText(originalVersion)
+            fixtureDirectory.toFile().deleteRecursively()
         }
     }
 
