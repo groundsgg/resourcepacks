@@ -1,0 +1,24 @@
+{
+  "approvedExampleCopies": {
+    "frames/hover.png": {
+      "source": "library-gui/examples/theme-demo/art/frame/square.png",
+      "sha256": "73460b5b00c8d5f984dd274c8852c44dd05f8819679691f92e624f8ada3e9a31"
+    },
+    "icons/blank.png": {
+      "source": "library-gui/examples/theme-demo/art/icons/blank.png",
+      "sha256": "a901afae7bdb66678f08a39b32f8a46da9864c8a64fabc0e77a7f12b93df12ba"
+    },
+    "panels/menu.png": {
+      "source": "library-gui/examples/theme-demo/art/panels/shop.png",
+      "sha256": "9e9e6760d0ce3562000b11c6a6e9eb84d20bdd59f9d7dc9c5a72dc51c856fd64"
+    },
+    "tooltips/default_bg.png": {
+      "source": "library-gui/examples/theme-demo/art/tooltips/steel_bg.png",
+      "sha256": "364059a08c651259e009cdd0aeb98f36379f6db113917a23674469ff27de3f48"
+    },
+    "tooltips/default_frame.png": {
+      "source": "library-gui/examples/theme-demo/art/tooltips/steel_frame.png",
+      "sha256": "a1c5355ab5945428d821a62a0eab7948f04443c7622e1fbd96ea67776e6da966"
+    }
+  }
+}

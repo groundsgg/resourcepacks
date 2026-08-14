@@ -1,7 +1,9 @@
-.gradle/
-build/
-**/build/
+/.gradle/
+/build/
+/**/build/
 .idea/
 .worktrees/
 .superpowers/
-
+*.class
+*.iml
+node_modules/

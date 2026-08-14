@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          path: run1/src
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          path: run2/src
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: run1/src/release-tools/package-lock.json
+      - id: version
+        name: Read the authoritative version once
+        working-directory: run1/src
+        run: echo "value=$(tr -d '\n' < version.txt)" >> "$GITHUB_OUTPUT"
+      - name: Build clean checkout one
+        working-directory: run1/src
+        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
+      - name: Build clean checkout two
+        working-directory: run2/src
+        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
+      - name: Run Node release-tool tests twice and audit dependencies
+        working-directory: run1/src/release-tools
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm test
+          npm audit --audit-level=high
+      - name: Build release candidate one
+        working-directory: run1/src
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-one"
+      - name: Build release candidate two
+        working-directory: run2/src
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
+      - name: Inspect exact archives and compare both release directories
+        run: |
+          release_one="$RUNNER_TEMP/release-one"
+          release_two="$RUNNER_TEMP/release-two"
+          test "$(find "$release_one" -maxdepth 1 -type f | wc -l)" -eq 4
+          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `${pack.id}-${pack.sha1}.zip`), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch");' "$release_one/manifest.json" "$release_one"
+          zipinfo -1 "$release_one"/grounds-content-*.zip
+          zipinfo -1 "$release_one"/grounds-platform-*.zip
+          zipinfo -1 "$release_one"/grounds-resourcepacks-catalog-*.jar
+          cmp "$release_one/manifest.json" "$release_two/manifest.json"
+          diff --no-dereference -r "$release_one" "$release_two"
