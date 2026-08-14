@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'; import { mkdir, mkdtemp, readdir, rename, symlink, writeFile } from 'node:fs/promises'; import { tmpdir } from 'node:os'; import { join } from 'node:path'; import test from 'node:test';
 import { fakeHttp } from './fake-http.mjs'; import { collectMavenPublication, mavenCreateOrCompare } from '../src/maven-create-or-compare.mjs';
 import { createReleaseFixture } from './fixtures.mjs';
-async function stage() { const d = await mkdtemp('/tmp/resourcepacks-task8/maven-'); await writeFile(join(d, 'a.jar'), 'a'); await writeFile(join(d, 'a.pom'), 'p'); return d; }
+async function stage() { const d = await mkdtemp(join(tmpdir(), 'resourcepacks-task8-maven-')); await writeFile(join(d, 'a.jar'), 'a'); await writeFile(join(d, 'a.pom'), 'p'); return d; }
 test('maven permits publish only when every remote file is absent', async t => { const h = await fakeHttp((q,s)=>s.writeHead(404).end()); t.after(h.close); assert.deepEqual(await mavenCreateOrCompare({repositoryUrl:h.url,directory:await stage(),allowLocalhostForTests:true}),{publish:true}); });
 test('maven skips only when every remote file is byte identical', async t => { const h = await fakeHttp((q,s)=>s.writeHead(200).end(q.url.endsWith('.jar')?'a':'p')); t.after(h.close); assert.deepEqual(await mavenCreateOrCompare({repositoryUrl:h.url,directory:await stage(),allowLocalhostForTests:true}),{publish:false}); });
 test('maven rejects partial remote publication', async t => { const h = await fakeHttp((q,s)=>q.url.endsWith('.jar')?s.writeHead(200).end('a'):s.writeHead(404).end()); t.after(h.close); const directory = await stage(); await assert.rejects(()=>mavenCreateOrCompare({repositoryUrl:h.url,directory,allowLocalhostForTests:true}),/partial/); });
