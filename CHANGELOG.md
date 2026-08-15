@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/groundsgg/resourcepacks/compare/v0.1.0...v0.1.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **release:** follow trusted package redirects ([#3](https://github.com/groundsgg/resourcepacks/issues/3)) ([a61f01c](https://github.com/groundsgg/resourcepacks/commit/a61f01c5db8258e630ecd64920e52e243fe5cdf4))
+
 ## 0.1.0 (2026-08-15)
 
 
