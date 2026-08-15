@@ -13,6 +13,16 @@ import { withTimeout } from './timeout.mjs';
 
 export const MAVEN_REPOSITORY_URL='https://maven.pkg.github.com/groundsgg/resourcepacks/';
 const MAX_MAVEN_FILE_SIZE=1024*1024*1024;
+const GITHUB_PACKAGE_STORAGE_HOST='pkg-containers.githubusercontent.com';
+
+function trustedPackageRedirect(response,official){
+  if(!official||response.status<300||response.status>=400)return null;
+  const location=response.headers.get('location');
+  if(!location)return null;
+  const target=new URL(location);
+  if(target.protocol!=='https:'||target.hostname!==GITHUB_PACKAGE_STORAGE_HOST||target.username||target.password||target.port)return null;
+  return target;
+}
 
 async function requireExactEntries(directory,expectedNames,kind){
   const entries=(await readdir(directory,{withFileTypes:true})).sort((left,right)=>left.name.localeCompare(right.name));
@@ -89,7 +99,7 @@ export async function mavenCreateOrCompare({repositoryUrl=MAVEN_REPOSITORY_URL,d
     try{if(!verified&&!stats.isFile())throw new Error(`Maven staging entry is not a file: ${entry.path}`);
     await withTimeout(`Maven request timed out for ${entry.path}`,async({signal,onTimeout})=>{
       let response;try{response=await fetchImpl(new URL(entry.path,base),{headers,redirect:'manual',signal});}catch(error){if(signal.aborted)throw error;throw new Error(`Maven comparison request failed for ${entry.path}`);}
-      if(response.status===404){results.push('missing');return;}if(response.status>=300&&response.status<400)throw new Error(`Maven comparison refused redirect for ${entry.path}`);if(!response.ok||!response.body)throw new Error(`Maven comparison returned HTTP ${response.status} for ${entry.path}`);
+      if(response.status===404){results.push('missing');return;}if(response.status>=300&&response.status<400){const target=trustedPackageRedirect(response,official);if(!target)throw new Error(`Maven comparison refused redirect for ${entry.path}`);await response.body?.cancel();try{response=await fetchImpl(target,{headers:{},redirect:'manual',signal});}catch(error){if(signal.aborted)throw error;throw new Error(`Maven comparison request failed for ${entry.path}`);}if(response.status>=300&&response.status<400)throw new Error(`Maven comparison refused redirect for ${entry.path}`);}if(!response.ok||!response.body)throw new Error(`Maven comparison returned HTTP ${response.status} for ${entry.path}`);
       const local=verified?verified.stream():createReadStream(entry.file);const remote=Readable.fromWeb(response.body);onTimeout(()=>{local.destroy();remote.destroy();});results.push(await sameStreamBytes(local,remote,stats.size)?'same':'different');
     },timeoutMs);}finally{await verified?.close();}
   }
