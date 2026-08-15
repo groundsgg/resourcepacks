@@ -96,5 +96,8 @@ dependencies {
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(catalogJar)
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+    systemProperty("catalog.version", rootProject.version.toString())
+    doFirst { systemProperty("catalog.jar", catalogJar.get().asFile.absolutePath) }
 }

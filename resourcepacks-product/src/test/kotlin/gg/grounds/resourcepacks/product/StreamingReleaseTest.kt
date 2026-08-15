@@ -67,6 +67,7 @@ class StreamingReleaseTest {
                     source.toString(),
                     catalog.toString(),
                     output.toString(),
+                    ReleaseTestContext.version,
                 )
                 .start()
         val stdout = process.inputStream.bufferedReader().readText()
@@ -82,6 +83,7 @@ internal object StreamingReleaseFixture {
         val source = Path.of(args[1])
         val catalog = Path.of(args[2])
         val output = Path.of(args[3])
+        val version = args[4]
         val platform =
             ProductGraph.packs
                 .last()
@@ -104,7 +106,7 @@ internal object StreamingReleaseFixture {
                 )
         try {
             PackSetBuilder.build(
-                ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                ReleaseInputs(version, "a".repeat(40), "v$version", output),
                 catalog,
                 PackSetBuilderHooks(),
                 listOf(ProductGraph.packs.first(), platform),
@@ -132,7 +134,4 @@ private data class FixtureResult(val exitCode: Int, val stdout: String, val stde
 private val PACK_LIMIT_SOURCE_BOUNDARY =
     PackSetConstants.platformLimits.maxUncompressedBytes!! - 78L
 
-private fun streamingCatalogJar(): Path =
-    generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
-        .first { it.resolve("settings.gradle.kts").toFile().isFile }
-        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+private fun streamingCatalogJar(): Path = ReleaseTestContext.catalogJar

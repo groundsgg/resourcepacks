@@ -131,6 +131,9 @@ class AutomationContractTest {
                 parseDocument(root.resolve(".release-please-manifest.json").readText()),
             )
         }
+        assertFails {
+            assertReleaseConfiguration(parseDocument(config), mapOf("." to "999.999.999"))
+        }
     }
 
     @Test
@@ -509,7 +512,10 @@ class AutomationContractTest {
             ),
             config,
         )
-        assertEquals(mapOf("." to "0.0.0"), manifest)
+        assertEquals(
+            mapOf("." to root.resolve("version.txt").readText().removeSuffix("\n")),
+            manifest,
+        )
     }
 
     private fun assertDocumentation(readme: String, pullRequestTemplate: String) {

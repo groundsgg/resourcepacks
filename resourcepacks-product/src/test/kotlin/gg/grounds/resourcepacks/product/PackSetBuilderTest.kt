@@ -56,11 +56,7 @@ class PackSetBuilderTest {
             cases.forEachIndexed { index, (name, hooks) ->
                 val output = parent.resolve("release-$index")
                 assertFailsWith<Exception>(name) {
-                    PackSetBuilder.build(
-                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
-                        catalog,
-                        hooks,
-                    )
+                    PackSetBuilder.build(ReleaseTestContext.inputs(output), catalog, hooks)
                 }
                 assertFalse(Files.exists(output, NOFOLLOW_LINKS), name)
                 assertEquals(before, sourcePaths.associateWith(::immutableFileState), name)
@@ -117,7 +113,7 @@ class PackSetBuilderTest {
             val failure =
                 assertFailsWith<IOException> {
                     PackSetBuilder.build(
-                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        ReleaseTestContext.inputs(output),
                         catalog,
                         PackSetBuilderHooks(
                             afterComposeBeforePackWrite = { pack, _ ->
@@ -152,7 +148,7 @@ class PackSetBuilderTest {
             val failure =
                 assertFailsWith<IOException> {
                     PackSetBuilder.build(
-                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
+                        ReleaseTestContext.inputs(output),
                         catalog,
                         PackSetBuilderHooks(
                             afterArtifactHashFirstChunk = { artifact ->
@@ -181,11 +177,7 @@ class PackSetBuilderTest {
         val parent = Files.createTempDirectory("packset-builder-")
         val output = parent.resolve("release")
         try {
-            val artifacts =
-                PackSetBuilder.build(
-                    ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
-                    catalogJar(),
-                )
+            val artifacts = PackSetBuilder.build(ReleaseTestContext.inputs(output), catalogJar())
 
             assertEquals(
                 setOf(
@@ -203,7 +195,7 @@ class PackSetBuilderTest {
             assertTrue(artifacts.platform.file.fileName.toString().startsWith("grounds-platform-"))
             assertTrue(
                 artifacts.catalog.file.fileName.toString() ==
-                    "grounds-resourcepacks-catalog-0.0.0.jar"
+                    "grounds-resourcepacks-catalog-${ReleaseTestContext.version}.jar"
             )
             listOf(artifacts.content, artifacts.platform, artifacts.catalog, artifacts.manifest)
                 .forEach { artifact ->
@@ -233,7 +225,7 @@ class PackSetBuilderTest {
         try {
             assertFailsWith<IllegalArgumentException> {
                 PackSetBuilder.build(
-                    ReleaseInputs("0.0.0", "A".repeat(40), "v0.0.0", output),
+                    ReleaseTestContext.inputs(output, "A".repeat(40)),
                     catalogJar(),
                 )
             }
@@ -265,7 +257,7 @@ class PackSetBuilderTest {
     @Test
     fun `catalog provider rejects missing wrong-name and stale jar bytes without publication`() {
         val parent = Files.createTempDirectory("packset-catalog-input-")
-        val correctName = "resourcepacks-catalog-0.0.0.jar"
+        val correctName = "resourcepacks-catalog-${ReleaseTestContext.version}.jar"
         try {
             val cases =
                 listOf(
@@ -276,10 +268,7 @@ class PackSetBuilderTest {
             cases.forEachIndexed { index, candidate ->
                 val output = parent.resolve("release-$index")
                 assertFailsWith<Exception>(candidate.toString()) {
-                    PackSetBuilder.build(
-                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
-                        candidate,
-                    )
+                    PackSetBuilder.build(ReleaseTestContext.inputs(output), candidate)
                 }
                 assertFalse(Files.exists(output, NOFOLLOW_LINKS))
             }
@@ -291,7 +280,7 @@ class PackSetBuilderTest {
     @Test
     fun `catalog provider rejects complete jars with mutated manifest or kotlin module bytes`() {
         val parent = Files.createTempDirectory("packset-catalog-complete-provenance-")
-        val exactName = "resourcepacks-catalog-0.0.0.jar"
+        val exactName = "resourcepacks-catalog-${ReleaseTestContext.version}.jar"
         try {
             val cases =
                 listOf(
@@ -310,10 +299,7 @@ class PackSetBuilderTest {
                 val output = parent.resolve("release-$index")
 
                 assertFailsWith<IOException>(entry) {
-                    PackSetBuilder.build(
-                        ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output),
-                        candidate,
-                    )
+                    PackSetBuilder.build(ReleaseTestContext.inputs(output), candidate)
                 }
                 assertFalse(Files.exists(output, NOFOLLOW_LINKS), entry)
             }
@@ -329,18 +315,9 @@ class PackSetBuilderTest {
             val first = parent.resolve("first")
             val second = parent.resolve("second")
             val changed = parent.resolve("changed")
-            PackSetBuilder.build(
-                ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", first),
-                catalogJar(),
-            )
-            PackSetBuilder.build(
-                ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", second),
-                catalogJar(),
-            )
-            PackSetBuilder.build(
-                ReleaseInputs("0.0.0", "b".repeat(40), "v0.0.0", changed),
-                catalogJar(),
-            )
+            PackSetBuilder.build(ReleaseTestContext.inputs(first), catalogJar())
+            PackSetBuilder.build(ReleaseTestContext.inputs(second), catalogJar())
+            PackSetBuilder.build(ReleaseTestContext.inputs(changed, "b".repeat(40)), catalogJar())
 
             val names =
                 Files.list(first).use {
@@ -383,8 +360,7 @@ class PackSetBuilderTest {
     }
 }
 
-private fun catalogJar(): java.nio.file.Path =
-    repositoryRoot().resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+private fun catalogJar(): java.nio.file.Path = ReleaseTestContext.catalogJar
 
 private fun repositoryRoot(): Path =
     generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }

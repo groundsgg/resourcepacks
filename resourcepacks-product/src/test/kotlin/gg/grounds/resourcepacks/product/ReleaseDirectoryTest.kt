@@ -454,12 +454,9 @@ class ReleaseDirectoryTest {
     }
 }
 
-private fun releaseInputs(output: Path) = ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output)
+private fun releaseInputs(output: Path) = ReleaseTestContext.inputs(output)
 
-private fun releaseCatalogJar(): Path =
-    generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
-        .first { it.resolve("settings.gradle.kts").toFile().isFile }
-        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+private fun releaseCatalogJar(): Path = ReleaseTestContext.catalogJar
 
 private fun deleteTreeNoFollow(root: Path) {
     if (!Files.exists(root, NOFOLLOW_LINKS)) return
