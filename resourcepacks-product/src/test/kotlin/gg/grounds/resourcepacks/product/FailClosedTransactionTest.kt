@@ -397,12 +397,9 @@ class FailClosedTransactionTest {
             )
 }
 
-private fun inputs(output: Path) = ReleaseInputs("0.0.0", "a".repeat(40), "v0.0.0", output)
+private fun inputs(output: Path) = ReleaseTestContext.inputs(output)
 
-private fun catalogJar(): Path =
-    generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
-        .first { it.resolve("settings.gradle.kts").toFile().isFile }
-        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+private fun catalogJar(): Path = ReleaseTestContext.catalogJar
 
 private fun repositoryRoot(): Path =
     generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }

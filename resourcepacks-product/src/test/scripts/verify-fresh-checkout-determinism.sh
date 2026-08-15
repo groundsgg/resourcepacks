@@ -3,6 +3,7 @@ set -euo pipefail
 
 source_root=${1:-$(git rev-parse --show-toplevel)}
 source_head=$(git -C "$source_root" rev-parse HEAD)
+version=$(tr -d '\n' < "$source_root/version.txt")
 scratch=$(mktemp -d /tmp/resourcepacks-clone-determinism-XXXXXX)
 trap 'rm -rf -- "$scratch"' EXIT
 
@@ -17,9 +18,9 @@ build_release() {
   "$scratch/$clone_name/gradlew" \
     -p "$scratch/$clone_name" \
     :resourcepacks-product:buildPackSet \
-    -PpackSetVersion=0.0.0 \
+    -PpackSetVersion="$version" \
     -PprovenanceCommit="$commit" \
-    -PprovenanceTag=v0.0.0 \
+    -PprovenanceTag="v$version" \
     -PreleaseOutput="$scratch/output-$clone_name"
 }
 

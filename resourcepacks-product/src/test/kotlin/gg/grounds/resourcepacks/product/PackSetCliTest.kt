@@ -37,11 +37,11 @@ class PackSetCliTest {
                 runCli(
                     listOf(
                         "--version",
-                        "0.0.0",
+                        ReleaseTestContext.version,
                         "--commit",
                         "b".repeat(40),
                         "--tag",
-                        "v0.0.0",
+                        "v${ReleaseTestContext.version}",
                         "--output",
                         output.toString(),
                     )
@@ -79,10 +79,7 @@ class PackSetCliTest {
 
 private data class CliResult(val exitCode: Int, val stdout: String, val stderr: String)
 
-private fun cliCatalogJar(): Path =
-    generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
-        .first { it.resolve("settings.gradle.kts").toFile().isFile }
-        .resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+private fun cliCatalogJar(): Path = ReleaseTestContext.catalogJar
 
 private fun deleteCliTree(root: Path) {
     if (!Files.exists(root)) return

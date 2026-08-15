@@ -5,6 +5,7 @@ import kotlin.io.path.exists
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class BuildPackSetTaskTest {
@@ -23,15 +24,30 @@ class BuildPackSetTaskTest {
 
     @Test
     fun `generated catalog provenance equals the complete current Gradle jar`() {
-        val root =
-            generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
-                .first { it.resolve("settings.gradle.kts").exists() }
-        val catalog =
-            root.resolve("resourcepacks-catalog/build/libs/resourcepacks-catalog-0.0.0.jar")
+        val catalog = ReleaseTestContext.catalogJar
         val actual = ArtifactDigests.readRegularFile(catalog)
         val expected = CatalogJarProvider.expectation()
 
         assertEquals(actual.size, expected.size)
         assertEquals(actual.sha256, expected.sha256)
+    }
+
+    @Test
+    fun `fresh checkout determinism uses the authoritative version file`() {
+        val root =
+            generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
+                .first { it.resolve("settings.gradle.kts").exists() }
+        val script =
+            root
+                .resolve(
+                    "resourcepacks-product/src/test/scripts/verify-fresh-checkout-determinism.sh"
+                )
+                .toFile()
+                .readText()
+
+        assertContains(script, "version.txt")
+        assertContains(script, "-PpackSetVersion=\"\$version\"")
+        assertContains(script, "-PprovenanceTag=\"v\$version\"")
+        assertFalse("0.0.0" in script)
     }
 }
