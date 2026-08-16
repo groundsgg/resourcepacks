@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/groundsgg/resourcepacks/compare/v0.1.1...v0.2.0) (2026-08-16)
+
+
+### Features
+
+* add PackSet publishing channels ([#5](https://github.com/groundsgg/resourcepacks/issues/5)) ([9064d33](https://github.com/groundsgg/resourcepacks/commit/9064d33c58aba1dab83394c8ed0e2009eccbe8ad))
+
 ## [0.1.1](https://github.com/groundsgg/resourcepacks/compare/v0.1.0...v0.1.1) (2026-08-15)
 
 
