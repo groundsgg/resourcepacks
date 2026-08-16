@@ -96,32 +96,44 @@ class AutomationContractTest {
                     release,
                     "          name: immutable-packset-release",
                     "          name: mutable-packset-release",
-                    4,
+                    5,
                 )
                 .let {
                     replaceFirstOf(
                         it,
                         "          path: \${{ runner.temp }}/release",
                         "          path: \${{ runner.temp }}/other-release",
-                        4,
+                        5,
                     )
                 }
         assertFails { assertRelease(parseText(changedArtifactBinding)) }
         val removedLocalVerification = removeStep(release, "Locally verify the immutable release")
         assertFails { assertRelease(parseText(removedLocalVerification)) }
         val changedJava = replaceExactly(release, "java-version: '25'", "java-version: '21'", 2)
-        val changedNode = replaceExactly(release, "node-version: '24'", "node-version: '22'", 4)
+        val changedNode = replaceExactly(release, "node-version: '24'", "node-version: '22'", 5)
         assertFails { assertRelease(parseText(changedJava)) }
         assertFails { assertRelease(parseText(changedNode)) }
         val removedGitHubCommand = removeStep(release, "Attach only byte-identical release assets")
         assertFails { assertRelease(parseText(removedGitHubCommand)) }
-        val changedR2Binding =
-            replaceOnce(
+        val changedImmutableR2Binding =
+            replaceFirstOf(
                 release,
                 "--bucket '\${{ secrets.R2_BUCKET }}'",
                 "--container '\${{ secrets.R2_OTHER_BUCKET }}'",
+                2,
             )
-        assertFails { assertRelease(parseText(changedR2Binding)) }
+        val changedStableR2Binding =
+            replaceLastOf(
+                release,
+                "--bucket '\${{ secrets.R2_BUCKET }}'",
+                "--container '\${{ secrets.R2_OTHER_BUCKET }}'",
+                2,
+            )
+        assertFails { assertRelease(parseText(changedImmutableR2Binding)) }
+        assertFails { assertRelease(parseText(changedStableR2Binding)) }
+        val unsafeRefInterpolation =
+            replaceOnce(release, "tag=\"\$RELEASE_TAG\"", "tag='${'$'}{{ github.ref_name }}'")
+        assertFails { assertRelease(parseText(unsafeRefInterpolation)) }
 
         val config = root.resolve("release-please-config.json").readText()
         val changedReleaseConfig = replaceExactly(config, "\"version.txt\"", "\"VERSION\"", 2)
@@ -286,7 +298,10 @@ class AutomationContractTest {
         )
 
         val jobs = mapping(release, "jobs")
-        assertEquals(setOf("build", "publish", "public-cdn", "release-assets"), jobs.keys)
+        assertEquals(
+            setOf("build", "publish", "public-cdn", "release-assets", "stable-channel"),
+            jobs.keys,
+        )
         jobs.forEach { (name, raw) ->
             assertEquals("ubuntu-24.04", scalar(mapping(raw), "runs-on"), "$name runner")
         }
@@ -294,12 +309,14 @@ class AutomationContractTest {
         assertEquals("build", mapping(jobs, "publish")["needs"])
         assertEquals("publish", mapping(jobs, "public-cdn")["needs"])
         assertEquals(listOf("build", "public-cdn"), mapping(jobs, "release-assets")["needs"])
+        assertEquals(listOf("build", "release-assets"), mapping(jobs, "stable-channel")["needs"])
         assertEquals(
             mapOf(
                 "build" to mapOf("contents" to "read", "packages" to "read"),
                 "publish" to mapOf("contents" to "read", "packages" to "write"),
                 "public-cdn" to mapOf("contents" to "read"),
                 "release-assets" to mapOf("contents" to "write"),
+                "stable-channel" to mapOf("contents" to "read"),
             ),
             jobs.mapValues { mapping(mapping(it.value), "permissions") },
         )
@@ -313,7 +330,10 @@ class AutomationContractTest {
         )
         jobs.forEach { (name, raw) ->
             val job = mapping(raw)
-            assertEquals(if (name == "publish") "production" else null, job["environment"])
+            assertEquals(
+                if (name == "publish" || name == "stable-channel") "production" else null,
+                job["environment"],
+            )
             assertEquals(
                 if (name == "build" || name == "publish") packageResolutionEnvironment else null,
                 job["env"],
@@ -364,12 +384,26 @@ class AutomationContractTest {
         assertReleasePublish(allSteps.getValue("publish"))
         assertPublicCdn(mapping(jobs, "public-cdn"), allSteps.getValue("public-cdn"))
         assertReleaseAssets(allSteps.getValue("release-assets"))
-        allSteps.values.forEach(::assertNoDestructiveCommands)
+        assertAdvanceStable(allSteps.getValue("stable-channel"))
+        allSteps.values.forEach { steps ->
+            assertNoDestructiveCommands(steps)
+            steps.forEach stepLoop@{ step ->
+                val script = step["run"] as? String ?: return@stepLoop
+                assertFalse(
+                    script.contains("${'$'}{{ github.ref_name }}"),
+                    "attacker-controlled ref_name must enter scripts only through step env",
+                )
+            }
+        }
     }
 
     private fun assertReleaseBuild(steps: List<Map<String, Any?>>) {
         val derive = stepByName(steps, "Derive exact tag, commit, and version")
         assertEquals("release", scalar(derive, "id"))
+        assertEquals(
+            mapOf("RELEASE_TAG" to "${'$'}{{ github.ref_name }}", "RELEASE_COMMIT" to githubSha),
+            mapping(derive, "env"),
+        )
         assertEquals(releaseDerivationScript, scalar(derive, "run"))
         assertEquals(
             "./gradlew --no-build-cache :resourcepacks-product:buildPackSet " +
@@ -445,6 +479,7 @@ class AutomationContractTest {
         assertEquals(
             "node release-tools/src/verify-cdn.mjs " +
                 "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
+                "--release-directory \"\$RUNNER_TEMP/release\" " +
                 "--base-url https://cdn.grounds.gg",
             scalar(
                 stepByName(steps, "Verify public CDN bytes without production credentials"),
@@ -455,13 +490,41 @@ class AutomationContractTest {
 
     private fun assertReleaseAssets(steps: List<Map<String, Any?>>) {
         assertDownloadBindings(steps)
+        val attach = stepByName(steps, "Attach only byte-identical release assets")
         assertEquals(
-            "test '${'$'}{{ needs.build.outputs.tag }}' = '${'$'}{{ github.ref_name }}'\n" +
+            mapOf(
+                "EXPECTED_TAG" to "${'$'}{{ needs.build.outputs.tag }}",
+                "TRIGGER_TAG" to "${'$'}{{ github.ref_name }}",
+            ),
+            mapping(attach, "env"),
+        )
+        assertEquals(
+            "test \"\$EXPECTED_TAG\" = \"\$TRIGGER_TAG\"\n" +
                 "node release-tools/src/release-assets-create-or-compare.mjs " +
                 "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
                 "--release-directory \"\$RUNNER_TEMP/release\" " +
                 "--token '${'$'}{{ secrets.GITHUB_TOKEN }}'",
-            scalar(stepByName(steps, "Attach only byte-identical release assets"), "run"),
+            scalar(attach, "run"),
+        )
+    }
+
+    private fun assertAdvanceStable(steps: List<Map<String, Any?>>) {
+        assertDownloadBindings(steps)
+        assertEquals(
+            "npm ci --ignore-scripts",
+            run(stepByName(steps, "Install locked release tools"), "release-tools"),
+        )
+        assertEquals(
+            "node release-tools/src/r2-channel-advance.mjs " +
+                "--channel stable " +
+                "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
+                "--release-directory \"\$RUNNER_TEMP/release\" " +
+                "--bucket '${'$'}{{ secrets.R2_BUCKET }}' " +
+                "--endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' " +
+                "--access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' " +
+                "--secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}' " +
+                "--sequence '${'$'}{{ github.run_number }}'",
+            scalar(stepByName(steps, "Advance Stable channel last"), "run"),
         )
     }
 
@@ -524,9 +587,8 @@ class AutomationContractTest {
                 "-PpackSetVersion=\"\$(tr -d '\\n' < version.txt)\"",
                 "-PprovenanceCommit=<40-lowercase-git-sha>",
                 "-PprovenanceTag=\"v\$(tr -d '\\n' < version.txt)\"",
-                "grounds-content-<sha1>.zip",
-                "grounds-platform-<sha1>.zip",
-                "grounds-resourcepacks-catalog-<version>.jar",
+                "grounds-*-pack-v<version>.zip",
+                "grounds-resourcepack-catalog-v<version>.jar",
                 "manifest.json",
                 "gg.grounds:resourcepacks-catalog:<packSetVersion>",
                 "GroundsGuiIds",
@@ -535,8 +597,8 @@ class AutomationContractTest {
                 "R2_ENDPOINT",
                 "R2_ACCESS_KEY_ID",
                 "R2_SECRET_ACCESS_KEY",
-                "https://cdn.grounds.gg/resourcepacks/content/<sha1>.zip",
-                "https://cdn.grounds.gg/resourcepacks/platform/<sha1>.zip",
+                "resourcepacks/packsets/grounds-global/releases/v<version>/",
+                "channels/stable.json",
                 "## Out of scope",
                 "does not activate a PackSet in Config Service",
             )
@@ -671,6 +733,18 @@ class AutomationContractTest {
         return source.replaceFirst(old, replacement)
     }
 
+    private fun replaceLastOf(
+        source: String,
+        old: String,
+        replacement: String,
+        expectedCount: Int,
+    ): String {
+        assertEquals(expectedCount, Regex(Regex.escape(old)).findAll(source).count())
+        val index = source.lastIndexOf(old)
+        assertTrue(index >= 0, "missing mutation anchor $old")
+        return source.replaceRange(index, index + old.length, replacement)
+    }
+
     private fun removeStep(source: String, name: String): String {
         val marker = "      - name: $name\n"
         val start = source.indexOf(marker)
@@ -687,10 +761,10 @@ class AutomationContractTest {
                 "release_one=\"\$RUNNER_TEMP/release-one\"",
                 "release_two=\"\$RUNNER_TEMP/release-two\"",
                 "test \"\$(find \"\$release_one\" -maxdepth 1 -type f | wc -l)\" -eq 4",
-                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `\${pack.id}-\${pack.sha1}.zip`), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\");' \"\$release_one/manifest.json\" \"\$release_one\"",
-                "zipinfo -1 \"\$release_one\"/grounds-content-*.zip",
-                "zipinfo -1 \"\$release_one\"/grounds-platform-*.zip",
-                "zipinfo -1 \"\$release_one\"/grounds-resourcepacks-catalog-*.jar",
+                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split(\"/\").at(-1)), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\");' \"\$release_one/manifest.json\" \"\$release_one\"",
+                "zipinfo -1 \"\$release_one\"/grounds-content-pack-*.zip",
+                "zipinfo -1 \"\$release_one\"/grounds-platform-pack-*.zip",
+                "zipinfo -1 \"\$release_one\"/grounds-resourcepack-catalog-*.jar",
                 "cmp \"\$release_one/manifest.json\" \"\$release_two/manifest.json\"",
                 "diff --no-dereference -r \"\$release_one\" \"\$release_two\"",
             )
@@ -698,13 +772,13 @@ class AutomationContractTest {
 
     private val releaseDerivationScript =
         listOf(
-                "tag='${'$'}{{ github.ref_name }}'",
+                "tag=\"\$RELEASE_TAG\"",
                 "version=\"\${tag#v}\"",
                 "test -n \"\$version\"",
                 "test \"\$version\" = \"\$(tr -d '\\n' < version.txt)\"",
                 "echo \"tag=\$tag\" >> \"\$GITHUB_OUTPUT\"",
                 "echo \"version=\$version\" >> \"\$GITHUB_OUTPUT\"",
-                "echo \"commit=${'$'}{{ github.sha }}\" >> \"\$GITHUB_OUTPUT\"",
+                "echo \"commit=\$RELEASE_COMMIT\" >> \"\$GITHUB_OUTPUT\"",
             )
             .joinToString("\n")
 
@@ -712,10 +786,10 @@ class AutomationContractTest {
         listOf(
                 "release=\"\$RUNNER_TEMP/release\"",
                 "test \"\$(find \"\$release\" -maxdepth 1 -type f | wc -l)\" -eq 4",
-                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `\${pack.id}-\${pack.sha1}.zip`), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\"); if (manifest.version !== process.argv[3] || manifest.provenance.tag !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error(\"release manifest provenance mismatch\");' \"\$release/manifest.json\" \"\$release\" '${'$'}{{ steps.release.outputs.version }}' '${'$'}{{ steps.release.outputs.tag }}' '${'$'}{{ steps.release.outputs.commit }}'",
-                "zipinfo -1 \"\$release\"/grounds-content-*.zip",
-                "zipinfo -1 \"\$release\"/grounds-platform-*.zip",
-                "zipinfo -1 \"\$release\"/grounds-resourcepacks-catalog-*.jar",
+                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split(\"/\").at(-1)), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\"); if (manifest.version !== process.argv[3] || manifest.publication.type !== \"release\" || manifest.publication.id !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error(\"release manifest provenance mismatch\");' \"\$release/manifest.json\" \"\$release\" '${'$'}{{ steps.release.outputs.version }}' '${'$'}{{ steps.release.outputs.tag }}' '${'$'}{{ steps.release.outputs.commit }}'",
+                "zipinfo -1 \"\$release\"/grounds-content-pack-*.zip",
+                "zipinfo -1 \"\$release\"/grounds-platform-pack-*.zip",
+                "zipinfo -1 \"\$release\"/grounds-resourcepack-catalog-*.jar",
             )
             .joinToString("\n")
 

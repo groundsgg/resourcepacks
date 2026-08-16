@@ -65,9 +65,9 @@ jobs:
           release_one="$RUNNER_TEMP/release-one"
           release_two="$RUNNER_TEMP/release-two"
           test "$(find "$release_one" -maxdepth 1 -type f | wc -l)" -eq 4
-          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `${pack.id}-${pack.sha1}.zip`), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch");' "$release_one/manifest.json" "$release_one"
-          zipinfo -1 "$release_one"/grounds-content-*.zip
-          zipinfo -1 "$release_one"/grounds-platform-*.zip
-          zipinfo -1 "$release_one"/grounds-resourcepacks-catalog-*.jar
+          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split("/").at(-1)), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch");' "$release_one/manifest.json" "$release_one"
+          zipinfo -1 "$release_one"/grounds-content-pack-*.zip
+          zipinfo -1 "$release_one"/grounds-platform-pack-*.zip
+          zipinfo -1 "$release_one"/grounds-resourcepack-catalog-*.jar
           cmp "$release_one/manifest.json" "$release_two/manifest.json"
           diff --no-dereference -r "$release_one" "$release_two"

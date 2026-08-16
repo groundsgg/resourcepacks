@@ -41,24 +41,27 @@ jobs:
           cache-dependency-path: release-tools/package-lock.json
       - id: release
         name: Derive exact tag, commit, and version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
         run: |
-          tag='${{ github.ref_name }}'
+          tag="$RELEASE_TAG"
           version="${tag#v}"
           test -n "$version"
           test "$version" = "$(tr -d '\n' < version.txt)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "commit=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "commit=$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
       - name: Build the exact four artifacts
         run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.release.outputs.version }}' -PprovenanceCommit='${{ steps.release.outputs.commit }}' -PprovenanceTag='${{ steps.release.outputs.tag }}' -PreleaseOutput="$RUNNER_TEMP/release"
       - name: Locally verify the immutable release
         run: |
           release="$RUNNER_TEMP/release"
           test "$(find "$release" -maxdepth 1 -type f | wc -l)" -eq 4
-          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `${pack.id}-${pack.sha1}.zip`), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch"); if (manifest.version !== process.argv[3] || manifest.provenance.tag !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error("release manifest provenance mismatch");' "$release/manifest.json" "$release" '${{ steps.release.outputs.version }}' '${{ steps.release.outputs.tag }}' '${{ steps.release.outputs.commit }}'
-          zipinfo -1 "$release"/grounds-content-*.zip
-          zipinfo -1 "$release"/grounds-platform-*.zip
-          zipinfo -1 "$release"/grounds-resourcepacks-catalog-*.jar
+          node --input-type=module --eval 'import { readdir, readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(process.argv[1], "utf8")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split("/").at(-1)), "manifest.json"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error("release artifact set mismatch"); if (manifest.version !== process.argv[3] || manifest.publication.type !== "release" || manifest.publication.id !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error("release manifest provenance mismatch");' "$release/manifest.json" "$release" '${{ steps.release.outputs.version }}' '${{ steps.release.outputs.tag }}' '${{ steps.release.outputs.commit }}'
+          zipinfo -1 "$release"/grounds-content-pack-*.zip
+          zipinfo -1 "$release"/grounds-platform-pack-*.zip
+          zipinfo -1 "$release"/grounds-resourcepack-catalog-*.jar
       - name: Verify locked release tools
         working-directory: release-tools
         run: |
@@ -144,7 +147,7 @@ jobs:
           name: immutable-packset-release
           path: ${{ runner.temp }}/release
       - name: Verify public CDN bytes without production credentials
-        run: node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --base-url https://cdn.grounds.gg
+        run: node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --base-url https://cdn.grounds.gg
 
   release-assets:
     needs: [build, public-cdn]
@@ -167,6 +170,36 @@ jobs:
           name: immutable-packset-release
           path: ${{ runner.temp }}/release
       - name: Attach only byte-identical release assets
+        env:
+          EXPECTED_TAG: ${{ needs.build.outputs.tag }}
+          TRIGGER_TAG: ${{ github.ref_name }}
         run: |
-          test '${{ needs.build.outputs.tag }}' = '${{ github.ref_name }}'
+          test "$EXPECTED_TAG" = "$TRIGGER_TAG"
           node release-tools/src/release-assets-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --token '${{ secrets.GITHUB_TOKEN }}'
+
+  stable-channel:
+    needs: [build, release-assets]
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: immutable-packset-release
+          path: ${{ runner.temp }}/release
+      - name: Install locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
+      - name: Advance Stable channel last
+        run: node release-tools/src/r2-channel-advance.mjs --channel stable --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}' --sequence '${{ github.run_number }}'
