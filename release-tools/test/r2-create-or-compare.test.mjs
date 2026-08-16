@@ -124,10 +124,12 @@ test('R2 release publication rejects caller-mutated artifact contracts before an
   assert.equal(sends,0);await release.close();
 });
 
-test('R2 keeps the captured immutable keys when the public release mutates during publication',async()=>{
-  const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});const expectedKeys=release.artifacts.map(artifact=>artifact.key);const keys=[];let calls=0;
-  const client={async send(command){keys.push(command.input.Key);if(calls++===0){release.manifest.publication.id='v9.9.9';release.manifest.provenance.commit='f'.repeat(40);release.artifacts[1].key='resourcepacks/attacker';release.manifestArtifact.snapshot={bytes:Buffer.from('attacker')};}return {};}};
-  await assert.rejects(()=>r2ReleaseCreateOrCompare({release,endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',accessKey:'test',secretKey:'test',client}),/R2 upload failed|artifact contract mismatch/);
-  assert.ok(keys.every(key=>expectedKeys.includes(key)));
+test('R2 keeps the captured immutable keys when the public release mutates during publication',async t=>{
+  const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});const expectedKeys=release.artifacts.map(artifact=>artifact.key);const requests=[];let calls=0;
+  const http=await fakeHttp(async(request,response)=>{requests.push(request.url);assert.equal(request.method,'PUT');for await(const _chunk of request){}if(calls++===0){release.manifest.publication.id='v9.9.9';release.manifest.provenance.commit='f'.repeat(40);release.artifacts[1].key='resourcepacks/attacker';release.manifestArtifact.snapshot={bytes:Buffer.from('attacker')};}response.writeHead(200).end();});t.after(http.close);
+  assert.deepEqual(await r2ReleaseCreateOrCompare({release,endpoint:http.url,bucket:'packs',accessKey:'test',secretKey:'test'}),{created:4,identical:0});
+  const paths=requests.map(request=>new URL(request,http.url).pathname);
+  assert.deepEqual(paths,expectedKeys.map(key=>`/packs/${key}`));
+  assert.ok(paths.every(path=>!path.includes('attacker')));
   await release.close();
 });
