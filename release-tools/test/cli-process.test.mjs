@@ -22,8 +22,8 @@ function run(name, args, extraEnv = {}) {
   });
 }
 
-test('all five command files reject unknown arguments with a stable process contract', async () => {
-  for (const name of ['r2-create-or-compare', 'r2-channel-advance', 'verify-cdn', 'maven-create-or-compare', 'release-assets-create-or-compare']) {
+test('all six command files reject unknown arguments with a stable process contract', async () => {
+  for (const name of ['r2-create-or-compare', 'r2-channel-advance', 'verify-cdn', 'maven-create-or-compare', 'contract-maven-create-or-compare', 'release-assets-create-or-compare']) {
     const result = await run(name, ['--unknown', 'value']);
     assert.equal(result.code, 2, name);
     assert.equal(result.stdout, '', name);

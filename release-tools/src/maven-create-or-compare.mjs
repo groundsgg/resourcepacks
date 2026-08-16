@@ -13,6 +13,7 @@ import { withTimeout } from './timeout.mjs';
 
 export const MAVEN_REPOSITORY_URL='https://maven.pkg.github.com/groundsgg/resourcepacks/';
 const MAX_MAVEN_FILE_SIZE=1024*1024*1024;
+const MAVEN_VERSION=/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const PACKAGE_BODY_HOSTS = new Set([
   'pkg-containers.githubusercontent.com',
   'github-registry-files.githubusercontent.com',
@@ -54,10 +55,12 @@ async function validateStagingTree({root,components,expectedNames,identities}){
   return actualIdentities;
 }
 
-export async function collectMavenPublication({stagingDirectory,manifest}){
+export async function collectMavenPublication({stagingDirectory,manifest,coordinate=manifest?.catalog.coordinate,expectedMain=manifest?.catalog}){
   const root=resolve(stagingDirectory);await assertNoSymlinkComponents(root);
-  const[group,artifact,version]=manifest.catalog.coordinate.split(':');
-  if(group!=='gg.grounds'||artifact!=='resourcepacks-catalog'||version!==manifest.version)throw new Error('Maven coordinate does not match the manifest');
+  if(typeof coordinate!=='string')throw new Error('Maven coordinate is required');
+  const[group,artifact,version]=coordinate.split(':');
+  if(group!=='gg.grounds'||!['resourcepacks-catalog','resourcepacks-contract'].includes(artifact)||!MAVEN_VERSION.test(version)||coordinate!==`${group}:${artifact}:${version}`)throw new Error('Maven coordinate is invalid');
+  if(manifest&&(coordinate!==manifest.catalog.coordinate||version!==manifest.version))throw new Error('Maven coordinate does not match the manifest');
   const versionRoot=`${group.replaceAll('.','/')}/${artifact}/${version}`;
   const expectedNames=[`${artifact}-${version}.jar`,`${artifact}-${version}-sources.jar`,`${artifact}-${version}.pom`,`${artifact}-${version}.module`];
   const components=['gg','grounds',artifact,version];
@@ -69,7 +72,7 @@ export async function collectMavenPublication({stagingDirectory,manifest}){
   try{
     for(const file of found){await assertNoSymlinkComponents(dirname(file.file));const snapshot=await snapshotRegularFile(file.file,MAX_MAVEN_FILE_SIZE);snapshots.push(snapshot);file.snapshot=snapshot;file.size=snapshot.size;file.sha1=snapshot.sha1;file.sha256=snapshot.sha256;}
     const main=found.find(file=>file.path===`${versionRoot}/${artifact}-${version}.jar`);
-    if(main.size!==manifest.catalog.size||main.sha256!==manifest.catalog.sha256)throw new Error('Maven catalog JAR differs from the manifest');
+    if(expectedMain&&(main.size!==expectedMain.size||main.sha256!==expectedMain.sha256))throw new Error('Maven main JAR differs from its expected bytes');
     return{files:found,stagingContract:Object.freeze({root,components:Object.freeze(components),expectedNames:Object.freeze(expectedNames),identities:Object.freeze(identities.map(Object.freeze))}),close:async()=>{await Promise.allSettled(snapshots.map(snapshot=>snapshot.close()));}};
   }catch(error){await Promise.allSettled(snapshots.map(snapshot=>snapshot.close()));throw error;}
 }

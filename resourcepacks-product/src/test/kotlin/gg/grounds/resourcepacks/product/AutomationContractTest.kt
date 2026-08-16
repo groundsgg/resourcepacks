@@ -84,7 +84,7 @@ class AutomationContractTest {
         val sharedCheckoutPath = replaceOnce(ci, "path: run2/src", "path: run1/src")
         assertFails { assertCi(parseText(sharedCheckoutPath)) }
         val maskedDecision =
-            replaceOnce(release, "decision=$(node", "echo \"decision=$(node").let {
+            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 2).let {
                 replaceOnce(
                     it,
                     "          case \"\$decision\" in\n" +
@@ -109,6 +109,9 @@ class AutomationContractTest {
         assertFails { assertCi(parseText(ciWithoutResolutionToken)) }
         val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
         assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
+        val missingContractPublication =
+            removeStep(release, "Stage the exact Contract Maven publication")
+        assertFails { assertRelease(parseText(missingContractPublication)) }
         val releaseWithSecretInsteadOfBuiltInToken =
             replaceExactly(
                 release,
@@ -191,6 +194,19 @@ class AutomationContractTest {
             workflowSource("release.yml")
                 .substringAfter("id: maven-gate")
                 .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    @Test
+    fun `Contract Maven decision gate rejects failed empty and invalid output before its successor`() {
+        val gate =
+            workflowSource("release.yml")
+                .substringAfter("id: contract-maven-gate")
+                .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    private fun assertMavenDecisionGateRejects(gate: String) {
         listOf("fail", "", "garbage").forEach { result ->
             val directory = kotlin.io.path.createTempDirectory("maven-gate-")
             val bin = directory.resolve("bin").createDirectory()
@@ -682,10 +698,20 @@ class AutomationContractTest {
         val gate = steps.indexOfFirst { scalar(it, "id") == "maven-gate" }
         val publish =
             steps.indexOf(stepByName(steps, "Publish the unchanged Maven staging workspace"))
+        val contractStage =
+            steps.indexOf(stepByName(steps, "Stage the exact Contract Maven publication"))
+        val contractGate = steps.indexOfFirst { scalar(it, "id") == "contract-maven-gate" }
+        val contractPublish =
+            steps.indexOf(
+                stepByName(steps, "Publish the unchanged Contract Maven staging workspace")
+            )
         val r2 = steps.indexOf(stepByName(steps, "Create or compare immutable R2 ZIP objects"))
         assertEquals(gate - 1, stage)
         assertEquals(gate + 1, publish)
-        assertEquals(publish + 1, r2)
+        assertEquals(publish + 1, contractStage)
+        assertEquals(contractStage + 1, contractGate)
+        assertEquals(contractGate + 1, contractPublish)
+        assertEquals(contractPublish + 1, r2)
         assertEquals(
             "./gradlew :resourcepacks-catalog:stageExactMavenPublication " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
@@ -697,6 +723,21 @@ class AutomationContractTest {
             "./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
             scalar(steps[publish], "run"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-contract:stageExactMavenPublication " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contractStage], "run"),
+        )
+        assertEquals(contractMavenDecisionScript, scalar(steps[contractGate], "run"))
+        assertEquals(
+            "steps.contract-maven-gate.outputs.decision == 'publish'",
+            scalar(steps[contractPublish], "if"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-contract:publishMavenJavaPublicationToGitHubPackagesRepository " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contractPublish], "run"),
         )
         assertEquals(r2Command, scalar(steps[r2], "run"))
     }
@@ -1035,6 +1076,17 @@ class AutomationContractTest {
                 "case \"\$decision\" in",
                 "  publish|skip) ;;",
                 "  *) echo \"Maven decision is invalid\" >&2; exit 1 ;;",
+                "esac",
+                "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
+            )
+            .joinToString("\n")
+
+    private val contractMavenDecisionScript =
+        listOf(
+                "decision=\$(node release-tools/src/contract-maven-create-or-compare.mjs --staging-directory resourcepacks-contract/build/release-maven-staging --version '${'$'}{{ needs.build.outputs.version }}' --username '${'$'}{{ github.actor }}' --token '${'$'}{{ secrets.GITHUB_TOKEN }}')",
+                "case \"\$decision\" in",
+                "  publish|skip) ;;",
+                "  *) echo \"Contract Maven decision is invalid\" >&2; exit 1 ;;",
                 "esac",
                 "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
             )
