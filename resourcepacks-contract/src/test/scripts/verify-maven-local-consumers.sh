@@ -66,10 +66,14 @@ package consumer;
 
 import gg.grounds.resourcepacks.contract.ManifestDecodeResult;
 import gg.grounds.resourcepacks.contract.PackSetContractJson;
+import gg.grounds.resourcepacks.contract.ChannelDecodeResult;
 
 public final class JavaConsumer {
   public static ManifestDecodeResult decode(byte[] bytes) {
     return PackSetContractJson.INSTANCE.decodeManifest(bytes);
+  }
+  public static ChannelDecodeResult decodeChannel(byte[] bytes) {
+    return PackSetContractJson.INSTANCE.decodeChannel(bytes);
   }
 }
 EOF
@@ -78,8 +82,10 @@ package consumer
 
 import gg.grounds.resourcepacks.contract.ManifestDecodeResult
 import gg.grounds.resourcepacks.contract.PackSetContractJson
+import gg.grounds.resourcepacks.contract.ChannelDecodeResult
 
 fun decode(bytes: ByteArray): ManifestDecodeResult = PackSetContractJson.decodeManifest(bytes)
+fun decodeChannel(bytes: ByteArray): ChannelDecodeResult = PackSetContractJson.decodeChannel(bytes)
 EOF
 
 "$gradle_command" -p "$scratch" clean verifyContractComesFromMavenLocal

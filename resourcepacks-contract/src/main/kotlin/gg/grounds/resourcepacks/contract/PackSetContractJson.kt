@@ -15,6 +15,8 @@ import tools.jackson.core.json.JsonFactory
 
 /** Strict, canonical schema-v2 manifest decoder. JSON implementation types never escape it. */
 object PackSetContractJson {
+    fun decodeChannel(bytes: ByteArray): ChannelDecodeResult = CanonicalChannelJson.decode(bytes)
+
     fun decodeManifest(bytes: ByteArray): ManifestDecodeResult {
         if (bytes.size > ManifestParserLimits.MAX_DOCUMENT)
             return failure(
