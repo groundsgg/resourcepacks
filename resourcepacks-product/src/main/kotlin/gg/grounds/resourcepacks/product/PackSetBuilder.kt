@@ -7,6 +7,7 @@ import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemoryLayout
 import java.lang.foreign.ValueLayout
+import java.net.URI
 import java.nio.file.Path
 
 /**
@@ -178,14 +179,25 @@ internal object PackSetBuilder {
             )
             hooks.afterStageWrite()
             hooks.beforeManifestValidation(manifestFile)
-            validateManifest(manifestBytes, catalogFile, contentFile, platformFile)
+            val stagedManifestBytes =
+                stageDirectory.readRelativeRegularFileBytes(
+                    Path.of("manifest.json"),
+                    MAX_MANIFEST_BYTES,
+                )
+            validateManifest(
+                stagedManifestBytes,
+                ManifestArtifactBinding(catalogFile.fileName.toString(), heldCatalog.digests),
+                ManifestArtifactBinding(contentFile.fileName.toString(), contentSnapshot.digests),
+                ManifestArtifactBinding(platformFile.fileName.toString(), platformSnapshot.digests),
+            )
 
             val expectedFiles =
                 mapOf(
                     contentFile.fileName.toString() to contentSnapshot.digests,
                     platformFile.fileName.toString() to platformSnapshot.digests,
                     catalogFile.fileName.toString() to heldCatalog.digests,
-                    manifestFile.fileName.toString() to ArtifactDigests.fromBytes(manifestBytes),
+                    manifestFile.fileName.toString() to
+                        ArtifactDigests.fromBytes(stagedManifestBytes),
                 )
             hooks.beforePrePublishVerification(stageDirectory.path)
             val prepublish = stageDirectory.snapshot(expectedFiles)
@@ -194,9 +206,9 @@ internal object PackSetBuilder {
                     Path.of("manifest.json"),
                     MAX_MANIFEST_BYTES,
                 ),
-                stage.resolve(catalogFile.fileName),
-                stage.resolve(contentFile.fileName),
-                stage.resolve(platformFile.fileName),
+                manifestBinding(catalogFile.fileName.toString(), prepublish),
+                manifestBinding(contentFile.fileName.toString(), prepublish),
+                manifestBinding(platformFile.fileName.toString(), prepublish),
             )
             val validatedPrepublish = stageDirectory.snapshot(expectedFiles)
             if (!prepublish.sameDigestsAndIdentities(validatedPrepublish)) {
@@ -265,11 +277,47 @@ internal object PackSetBuilder {
         return jar
     }
 
-    private fun validateManifest(bytes: ByteArray, catalog: Path, content: Path, platform: Path) {
+    private fun validateManifest(
+        bytes: ByteArray,
+        catalog: ManifestArtifactBinding,
+        content: ManifestArtifactBinding,
+        platform: ManifestArtifactBinding,
+    ) {
         val validation = gg.grounds.resourcepacks.contract.PackSetContractJson.decodeManifest(bytes)
-        if (validation !is gg.grounds.resourcepacks.contract.ManifestDecodeResult.Success)
+        if (validation !is gg.grounds.resourcepacks.contract.ManifestDecodeResult.Success) {
             throw IOException("Generated manifest failed validation: $validation")
+        }
+        val manifest = validation.manifest
+        if (
+            manifest.catalog.file != catalog.fileName ||
+                manifest.catalog.sha256 != catalog.digests.sha256 ||
+                manifest.catalog.size != catalog.digests.size
+        ) {
+            throw IOException("Generated manifest catalog metadata does not match staged bytes.")
+        }
+        bindPackArtifact(manifest, "content", content)
+        bindPackArtifact(manifest, "platform", platform)
     }
+
+    private fun bindPackArtifact(
+        manifest: gg.grounds.resourcepacks.contract.PackSetManifest,
+        role: String,
+        expected: ManifestArtifactBinding,
+    ) {
+        val pack = manifest.packs.single { it.role == role }
+        val fileName = URI(pack.url).path.substringAfterLast('/')
+        if (
+            fileName != expected.fileName ||
+                pack.sha1 != expected.digests.sha1 ||
+                pack.sha256 != expected.digests.sha256 ||
+                pack.size != expected.digests.size
+        ) {
+            throw IOException("Generated manifest $role pack metadata does not match staged bytes.")
+        }
+    }
+
+    private fun manifestBinding(name: String, snapshot: DirectorySnapshot) =
+        ManifestArtifactBinding(name, snapshot.files.getValue(name).digests)
 
     private fun releaseArtifacts(
         publication: PublicationIdentity,
@@ -384,6 +432,8 @@ internal object PackSetBuilder {
 
     private const val MAX_MANIFEST_BYTES = 64L * 1024
 }
+
+private data class ManifestArtifactBinding(val fileName: String, val digests: ArtifactDigests)
 
 /** Build wiring locates the exact catalog artifact; the public CLI never accepts this path. */
 internal object CatalogJarProvider {

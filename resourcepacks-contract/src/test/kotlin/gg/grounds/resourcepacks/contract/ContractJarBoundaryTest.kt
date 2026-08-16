@@ -37,25 +37,30 @@ class ContractJarBoundaryTest {
 
     @Test
     fun `JAR gate catches a real extra payload mutation`() {
-        val mutated = kotlin.io.path.createTempFile("contract-jar-mutation", ".jar")
-        JarFile(contractJar().toFile()).use { original ->
-            java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(mutated)).use { output
-                ->
-                original.entries().asSequence().forEach { entry ->
-                    output.putNextEntry(java.util.zip.ZipEntry(entry.name))
-                    original.getInputStream(entry).copyTo(output)
+        val directory = kotlin.io.path.createTempDirectory("contract-jar-mutation-")
+        try {
+            val mutated = directory.resolve("mutated.jar")
+            JarFile(contractJar().toFile()).use { original ->
+                java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(mutated)).use {
+                    output ->
+                    original.entries().asSequence().forEach { entry ->
+                        output.putNextEntry(java.util.zip.ZipEntry(entry.name))
+                        original.getInputStream(entry).copyTo(output)
+                        output.closeEntry()
+                    }
+                    output.putNextEntry(java.util.zip.ZipEntry("tools/jackson/Injected.class"))
+                    output.write(byteArrayOf(0))
                     output.closeEntry()
                 }
-                output.putNextEntry(java.util.zip.ZipEntry("tools/jackson/Injected.class"))
-                output.write(byteArrayOf(0))
-                output.closeEntry()
             }
+            val entries =
+                JarFile(mutated.toFile()).use {
+                    it.entries().asSequence().map { entry -> entry.name }.toSet()
+                }
+            assertFalse(entries.all(::allowedEntry))
+        } finally {
+            directory.toFile().deleteRecursively()
         }
-        val entries =
-            JarFile(mutated.toFile()).use {
-                it.entries().asSequence().map { entry -> entry.name }.toSet()
-            }
-        assertFalse(entries.all(::allowedEntry))
     }
 
     private fun contractJar() = Path.of(System.getProperty("contract.jar"))

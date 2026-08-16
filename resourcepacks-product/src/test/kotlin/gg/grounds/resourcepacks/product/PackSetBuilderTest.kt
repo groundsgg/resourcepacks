@@ -24,6 +24,42 @@ import kotlin.test.assertTrue
 
 class PackSetBuilderTest {
     @Test
+    fun `canonical schema two manifest with mismatched staged catalog metadata fails closed`() {
+        val parent = Files.createTempDirectory("packset-manifest-catalog-binding-")
+        val output = parent.resolve("release")
+        try {
+            val failure =
+                assertFailsWith<IOException> {
+                    PackSetBuilder.build(
+                        ReleaseTestContext.inputs(output),
+                        catalogJar(),
+                        PackSetBuilderHooks(
+                            beforeManifestValidation = { manifest ->
+                                val canonical = Files.readString(manifest)
+                                Files.writeString(
+                                    manifest,
+                                    Regex("\\\"sha256\\\": \\\"[0-9a-f]{64}\\\"")
+                                        .replaceFirst(
+                                            canonical,
+                                            "\\\"sha256\\\": \\\"${"0".repeat(64)}\\\"",
+                                        ),
+                                )
+                            }
+                        ),
+                    )
+                }
+
+            assertEquals(
+                "Generated manifest catalog metadata does not match staged bytes.",
+                failure.message,
+            )
+            assertFalse(Files.exists(output, NOFOLLOW_LINKS))
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `isolated builder phase failures publish none and preserve catalog and artwork`() {
         val root = repositoryRoot()
         val catalog = catalogJar()
