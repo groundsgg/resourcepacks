@@ -212,8 +212,17 @@ object PackSetContractJson {
                 invalid("/packs/$i", "Pack metadata mismatch.")
             if (!HEX40.matches(p.sha1) || !HEX64.matches(p.sha256) || p.size <= 0)
                 invalid("/packs/$i", "Pack digest or size mismatch.")
-            val expected = "$root/grounds-${spec?.first ?: "invalid"}-pack-${suffix(m, d)}.zip"
-            if (!strictUrl(p.url) || p.url != expected)
+            val role = spec?.first ?: "invalid"
+            val expected = "$root/grounds-$role-pack-${suffix(m, d)}.zip"
+            val historicalBuild =
+                m.publication.type == PublicationType.BUILD &&
+                    Regex(
+                            "https://cdn\\.grounds\\.gg/resourcepacks/packsets/grounds-global/builds/[0-9a-f]{40}/grounds-$role-pack-edge-[0-9a-f]{12}\\.zip"
+                        )
+                        .matches(p.url) &&
+                    p.url.substringAfterLast("edge-").substringBefore(".zip") ==
+                        p.url.substringAfter("/builds/").take(12)
+            if (!strictUrl(p.url) || (p.url != expected && !historicalBuild))
                 invalid("/packs/$i/url", "Pack URL mismatch.")
         }
     }

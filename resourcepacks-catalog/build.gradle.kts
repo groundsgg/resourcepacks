@@ -22,6 +22,7 @@ val generatedCatalogSources = layout.buildDirectory.dir("generated/sources/catal
 
 val generateCatalogBuildInfo by
     tasks.registering(Copy::class) {
+        inputs.property("catalogVersion", provider { rootProject.version.toString() })
         from(rootProject.layout.projectDirectory.file("version.txt"))
         into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
         rename { "CatalogBuildInfo.kt" }

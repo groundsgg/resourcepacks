@@ -53,7 +53,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$RELEASE_COMMIT" >> "$GITHUB_OUTPUT"
       - name: Build the exact four artifacts
-        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.release.outputs.version }}' -PprovenanceCommit='${{ steps.release.outputs.commit }}' -PprovenanceTag='${{ steps.release.outputs.tag }}' -PreleaseOutput="$RUNNER_TEMP/release"
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.release.outputs.version }}' -PprovenanceCommit='${{ steps.release.outputs.commit }}' -PpublicationType=release -PpublicationId='${{ steps.release.outputs.tag }}' -PreleaseOutput="$RUNNER_TEMP/release"
       - name: Locally verify the immutable release
         run: |
           release="$RUNNER_TEMP/release"

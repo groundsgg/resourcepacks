@@ -62,6 +62,24 @@ class PackSetContractJsonTest {
     }
 
     @Test
+    fun `build packs may reference a canonical historical build root with matching role suffix`() {
+        val old = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        val historical =
+            buildManifest
+                .replace(
+                    "1969c1e6a3799e976de46eab019a16b2ee257ea7/grounds-content-pack-edge-1969c1e6a379",
+                    "$old/grounds-content-pack-edge-aaaaaaaaaaaa",
+                )
+                .replace(
+                    "1969c1e6a3799e976de46eab019a16b2ee257ea7/grounds-platform-pack-edge-1969c1e6a379",
+                    "$old/grounds-platform-pack-edge-aaaaaaaaaaaa",
+                )
+        assertIs<ManifestDecodeResult.Success>(
+            PackSetContractJson.decodeManifest(historical.toByteArray())
+        )
+    }
+
+    @Test
     fun `build publication cannot name release-root pack objects`() {
         val malformed =
             buildManifest.replace(
@@ -202,11 +220,7 @@ class PackSetContractJsonTest {
                         "\"id\": \"$commit\"",
                         "\"id\": \"${"a".repeat(40)}\"",
                     ),
-                    listOf(
-                        diagnostic("/packs/0/url", "Pack URL mismatch."),
-                        diagnostic("/packs/1/url", "Pack URL mismatch."),
-                        diagnostic("/publication", "Build publication mismatch."),
-                    ),
+                    listOf(diagnostic("/publication", "Build publication mismatch.")),
                 ),
                 Triple(
                     "publication commit mismatch",
@@ -216,8 +230,6 @@ class PackSetContractJsonTest {
                     ),
                     listOf(
                         diagnostic("/catalog/file", "Catalog filename mismatch."),
-                        diagnostic("/packs/0/url", "Pack URL mismatch."),
-                        diagnostic("/packs/1/url", "Pack URL mismatch."),
                         diagnostic("/publication", "Build publication mismatch."),
                         diagnostic("/version", "Build version commit mismatch."),
                     ),
@@ -237,6 +249,14 @@ class PackSetContractJsonTest {
                         diagnostic("/packs/0/url", "Pack URL mismatch."),
                         diagnostic("/packs/1/url", "Pack URL mismatch."),
                     ),
+                ),
+                Triple(
+                    "historical build filename must bind its own root commit",
+                    buildManifest.replace(
+                        "grounds-content-pack-edge-1969c1e6a379.zip",
+                        "grounds-content-pack-edge-aaaaaaaaaaaa.zip",
+                    ),
+                    listOf(diagnostic("/packs/0/url", "Pack URL mismatch.")),
                 ),
             )
         cases.forEach { (name, bytes, expected) -> assertDiagnostics(bytes, expected, name) }

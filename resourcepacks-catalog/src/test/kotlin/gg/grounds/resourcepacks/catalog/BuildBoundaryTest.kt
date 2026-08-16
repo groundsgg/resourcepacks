@@ -100,6 +100,65 @@ class BuildBoundaryTest {
         assertInvalidVersion(" 1.0.0\n")
     }
 
+    @Test
+    fun `the build accepts only an exact commit bound Edge version outside version txt`() {
+        val commit = "44c012405d70a0c819c220ec1efd9ab0caea2bd7"
+        val edgeVersion = "0.0.0-edge.999.g44c012405d70"
+
+        runGradle(
+            "help",
+            "-PpackSetVersion=$edgeVersion",
+            "-PpublicationType=build",
+            "-PpublicationId=$commit",
+            "-PprovenanceCommit=$commit",
+        )
+
+        listOf(
+                arrayOf("-PpackSetVersion=$edgeVersion"),
+                arrayOf(
+                    "-PpackSetVersion=0.0.0-edge.999.g000000000000",
+                    "-PpublicationType=build",
+                    "-PpublicationId=$commit",
+                    "-PprovenanceCommit=$commit",
+                ),
+                arrayOf(
+                    "-PpackSetVersion=$edgeVersion",
+                    "-PpublicationType=release",
+                    "-PpublicationId=$commit",
+                    "-PprovenanceCommit=$commit",
+                ),
+            )
+            .forEach { arguments ->
+                assertContains(
+                    runGradleAndFail("help", *arguments),
+                    "packSetVersion must equal version.txt or an exact build identity.",
+                )
+            }
+    }
+
+    @Test
+    fun `catalog generation tracks the exact selected release or Edge version`() {
+        val commit = "44c012405d70a0c819c220ec1efd9ab0caea2bd7"
+        val edgeVersion = "0.0.0-edge.999.g44c012405d70"
+        val generated =
+            rootDirectory.resolve(
+                "resourcepacks-catalog/build/generated/sources/catalog/kotlin/" +
+                    "gg/grounds/resourcepacks/catalog/CatalogBuildInfo.kt"
+            )
+
+        runGradle(":resourcepacks-catalog:generateCatalogBuildInfo")
+        assertContains(generated.readText(), rootDirectory.resolve("version.txt").readText().trim())
+
+        runGradle(
+            ":resourcepacks-catalog:generateCatalogBuildInfo",
+            "-PpackSetVersion=$edgeVersion",
+            "-PpublicationType=build",
+            "-PpublicationId=$commit",
+            "-PprovenanceCommit=$commit",
+        )
+        assertContains(generated.readText(), edgeVersion)
+    }
+
     private fun assertInvalidVersion(contents: String) {
         val fixtureDirectory = Files.createTempDirectory("resourcepacks-version-fixture")
 

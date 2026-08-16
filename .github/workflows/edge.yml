@@ -1,0 +1,165 @@
+name: Publish Edge PackSet build
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resourcepacks-edge-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
+    outputs:
+      version: ${{ steps.edge.outputs.version }}
+      commit: ${{ steps.edge.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: run1/src
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          path: run2/src
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: run1/src/release-tools/package-lock.json
+      - id: edge
+        name: Derive exact Edge identity
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          edge_version="0.0.0-edge.${GITHUB_RUN_NUMBER}.g${short_sha}"
+          echo "version=$edge_version" >> "$GITHUB_OUTPUT"
+          echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build clean deterministic checkout
+        working-directory: run1/src
+        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}'
+      - name: Build raw current-commit PackSet one
+        working-directory: run1/src
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}' -PreleaseOutput="$RUNNER_TEMP/raw-edge-one"
+      - name: Build raw current-commit PackSet two
+        working-directory: run2/src
+        run: ./gradlew --no-build-cache clean build :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}' -PreleaseOutput="$RUNNER_TEMP/raw-edge-two"
+      - name: Compare deterministic raw Edge PackSets
+        run: diff --no-dereference -r "$RUNNER_TEMP/raw-edge-one" "$RUNNER_TEMP/raw-edge-two"
+      - name: Run Node release-tool tests twice and audit dependencies
+        working-directory: run1/src/release-tools
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm test
+          npm audit --audit-level=high
+      - name: Upload raw Edge PackSet
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-edge-packset
+          path: ${{ runner.temp }}/raw-edge-one
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: Edge/Stage
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: raw-edge-packset
+          path: ${{ runner.temp }}/raw-edge
+      - name: Install locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
+      - name: Prepare Edge PackSet from validated prior channel
+        run: node release-tools/src/prepare-edge.mjs --manifest "$RUNNER_TEMP/raw-edge/manifest.json" --release-directory "$RUNNER_TEMP/raw-edge" --output-directory "$RUNNER_TEMP/prepared-edge" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
+      - name: Create or compare immutable Edge objects
+        run: node release-tools/src/r2-create-or-compare.mjs --manifest "$RUNNER_TEMP/prepared-edge/manifest.json" --release-directory "$RUNNER_TEMP/prepared-edge" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
+      - name: Upload prepared Edge PackSet
+        uses: actions/upload-artifact@v4
+        with:
+          name: prepared-edge-packset
+          path: ${{ runner.temp }}/prepared-edge
+          if-no-files-found: error
+          retention-days: 1
+
+  public-cdn:
+    needs: publish
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: prepared-edge-packset
+          path: ${{ runner.temp }}/prepared-edge
+      - name: Verify Edge CDN bytes
+        run: node release-tools/src/verify-cdn.mjs --manifest "$RUNNER_TEMP/prepared-edge/manifest.json" --release-directory "$RUNNER_TEMP/prepared-edge" --base-url https://cdn.grounds.gg
+
+  edge-channel:
+    needs: [build, public-cdn]
+    runs-on: ubuntu-24.04
+    environment: Edge/Stage
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: release-tools/package-lock.json
+      - uses: actions/download-artifact@v5
+        with:
+          name: prepared-edge-packset
+          path: ${{ runner.temp }}/prepared-edge
+      - name: Install locked release tools
+        working-directory: release-tools
+        run: npm ci --ignore-scripts
+      - name: Advance Edge channel last
+        run: node release-tools/src/r2-channel-advance.mjs --channel edge --manifest "$RUNNER_TEMP/prepared-edge/manifest.json" --release-directory "$RUNNER_TEMP/prepared-edge" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}' --sequence '${{ github.run_number }}'

@@ -79,11 +79,17 @@ function validatePack(pack, expected, layout) {
   if (pack.size > expected.maximumSize) fail(`pack ${expected.role} size exceeds product limit`);
   const file = `grounds-${expected.role}-pack-${layout.suffix}.zip`;
   const expectedUrl = `https://cdn.grounds.gg/${layout.root}/${file}`;
-  if (pack.url !== expectedUrl) fail(`pack ${expected.role} URL mismatch`);
+  let key;
+  if (pack.url === expectedUrl) key = `${layout.root}/${file}`;
+  else if (layout.type === 'build') {
+    const match = new RegExp(`^https://cdn\\.grounds\\.gg/resourcepacks/packsets/grounds-global/builds/([0-9a-f]{40})/grounds-${expected.role}-pack-edge-([0-9a-f]{12})\\.zip$`).exec(pack.url);
+    if (!match || match[2] !== match[1].slice(0, 12)) fail(`pack ${expected.role} URL mismatch`);
+    key = `resourcepacks/packsets/grounds-global/builds/${match[1]}/grounds-${expected.role}-pack-edge-${match[2]}.zip`;
+  } else fail(`pack ${expected.role} URL mismatch`);
   return {
     ...pack,
     file,
-    key: layout.root + `/${file}`,
+    key,
   };
 }
 
@@ -141,7 +147,7 @@ export async function readManifest(file) {
   return parseManifestBytes(bytes);
 }
 
-function parseManifestBytes(bytes) {
+export function parseManifestBytes(bytes) {
   let text;
   try { text = new TextDecoder('utf-8', {fatal:true}).decode(bytes); } catch { fail('manifest is not UTF-8'); }
   let manifest;

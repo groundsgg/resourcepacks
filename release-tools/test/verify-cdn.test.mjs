@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { fakeHttp } from './fake-http.mjs';
-import { createReleaseFixture } from './fixtures.mjs';
+import { canonicalJson, createReleaseFixture } from './fixtures.mjs';
 import { loadRelease } from '../src/manifest.mjs';
 import { verifyCdn } from '../src/verify-cdn.mjs';
 
@@ -24,6 +25,20 @@ test('verifyCdn derives the build URL set from the full commit root',async t=>{
   const http=await fakeHttp((request,response)=>{seen.push(request.url);const artifact=release.artifacts.find(item=>request.url===`/${item.key}`);response.writeHead(200,{'Content-Type':artifact.contentType,'Cache-Control':'public, immutable, max-age=31536000'}).end(value.files.get(artifact.name));});t.after(http.close);
   await verifyCdn(release,{baseUrl:http.url});
   assert.ok(seen.every(path=>path.includes(`/builds/${release.manifest.provenance.commit}/`)));
+});
+
+test('verifyCdn follows a manifest-bound historical build pack key',async t=>{
+  const current=await createReleaseFixture({type:'build',commit:'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'});
+  const historical=await createReleaseFixture({type:'build',commit:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'});
+  current.manifest.packs[1].url=historical.manifest.packs[1].url;
+  const manifestBytes=Buffer.from(canonicalJson(current.manifest));current.files.set('manifest.json',manifestBytes);
+  await writeFile(`${current.root}/manifest.json`,manifestBytes);
+  const release=await loadRelease({manifestFile:`${current.root}/manifest.json`,releaseDirectory:current.root});t.after(()=>release.close());
+  const expected=release.artifacts.map(artifact=>`/${artifact.key}`);const seen=[];
+  const http=await fakeHttp((request,response)=>{seen.push(request.url);const artifact=release.artifacts.find(item=>request.url===`/${item.key}`);assert.ok(artifact);response.writeHead(200,{'Content-Type':artifact.contentType,'Cache-Control':'public, immutable, max-age=31536000'}).end(current.files.get(artifact.name));});t.after(http.close);
+  assert.deepEqual(await verifyCdn(release,{baseUrl:http.url}),{verified:4});
+  assert.deepEqual(seen,expected);
+  assert.ok(seen.includes(`/resourcepacks/packsets/grounds-global/builds/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${historical.manifest.packs[1].url.split('/').at(-1)}`));
 });
 
 test('verifyCdn rejects metadata and byte mutations',async t=>{

@@ -42,10 +42,9 @@ async function fetchSameOrigin(url, fetchImpl, signal) {
 export async function verifyCdn(release, {baseUrl, fetchImpl = fetch,timeoutMs} = {}) {
   const base = new URL(baseUrl ?? 'https://cdn.grounds.gg');
   if (!['http:','https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.protocol === 'http:' && !['127.0.0.1','localhost'].includes(base.hostname)) throw new Error('CDN base URL is invalid or insecure');
-  const {artifacts,layout} = assertReleaseArtifactContract(release);
-  const canonicalRoot = `https://cdn.grounds.gg/${layout.root}/`;
+  const {artifacts} = assertReleaseArtifactContract(release);
   for (const artifact of artifacts) {
-    const canonical = new URL(artifact.name, canonicalRoot);
+    const canonical = new URL(`https://cdn.grounds.gg/${artifact.key}`);
     const requestUrl = new URL(canonical.pathname, `${base.origin}/`);
     await withTimeout(`CDN request timed out for ${canonical.pathname}`,async({signal,onTimeout})=>{
     const response = await fetchSameOrigin(requestUrl, fetchImpl,signal);

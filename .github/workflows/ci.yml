@@ -56,10 +56,10 @@ jobs:
           npm audit --audit-level=high
       - name: Build release candidate one
         working-directory: run1/src
-        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-one"
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PpublicationType=release -PpublicationId='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-one"
       - name: Build release candidate two
         working-directory: run2/src
-        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PprovenanceTag='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.version.outputs.value }}' -PprovenanceCommit='${{ github.sha }}' -PpublicationType=release -PpublicationId='v${{ steps.version.outputs.value }}' -PreleaseOutput="$RUNNER_TEMP/release-two"
       - name: Inspect exact archives and compare both release directories
         run: |
           release_one="$RUNNER_TEMP/release-one"

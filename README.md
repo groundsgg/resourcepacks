@@ -10,7 +10,8 @@ This repository composes the immutable Grounds PackSet: `grounds-content` follow
 ./gradlew :resourcepacks-product:buildPackSet \
   -PpackSetVersion="$(tr -d '\n' < version.txt)" \
   -PprovenanceCommit=<40-lowercase-git-sha> \
-  -PprovenanceTag="v$(tr -d '\n' < version.txt)" \
+  -PpublicationType=release \
+  -PpublicationId="v$(tr -d '\n' < version.txt)" \
   -PreleaseOutput=/absolute/absent/output-directory
 ```
 
@@ -51,6 +52,15 @@ verification, and exact GitHub Release assets all succeed, the production-protec
 conditionally advances it with that run's sequence. Re-running the same tag/run is unchanged;
 newer runs can advance it and stale runs fail closed. The public CDN check has no R2 or Cloudflare
 credentials.
+
+An exact push to `main` also creates an Edge build. Its version is
+`0.0.0-edge.<github.run_number>.g<first-12-commit-hex>` and its raw build is deterministic.
+The protected `Edge/Stage` environment alone receives R2 credentials. It validates the previous
+`channels/edge.json` pointer and its immutable manifest before reusing a content or platform URL;
+reuse requires exact SHA-1, SHA-256, and size equality. Otherwise the changed pack is published
+under the current commit root. Catalog and manifest always remain current-commit objects, CDN
+bytes are verified, then `channels/edge.json` is conditionally advanced with `github.run_number`.
+Missing prior Edge state starts without reuse; malformed or cross-PackSet prior state fails closed.
 
 CI and the release build/publish jobs require the repository's built-in `GITHUB_TOKEN` to have read access to the private `groundsgg` package dependencies. The workflows pass the masked token to Gradle only through `GITHUB_ACTOR` and `GITHUB_TOKEN`; public CDN and release-asset jobs receive no package-resolution token. Pull requests from forks are unsupported unless their token can read the same private organization packages.
 

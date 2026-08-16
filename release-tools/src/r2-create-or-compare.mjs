@@ -57,11 +57,11 @@ export async function createOrCompare({ endpoint, bucket, key, file, artifact, a
   } finally { await verified.close().catch(()=>{}); }
 }
 
-export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs}) {
+export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs, client}) {
   const {artifacts} = assertReleaseArtifactContract(release);
   let created = 0;
   for (const artifact of artifacts) {
-    const result = await createOrCompare({endpoint,bucket,key:artifact.key,artifact,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs});
+    const result = await createOrCompare({endpoint,bucket,key:artifact.key,artifact,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs,client});
     if (result.created) created += 1;
   }
   return {created,identical:artifacts.length-created};

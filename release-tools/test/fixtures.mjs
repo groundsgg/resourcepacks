@@ -21,15 +21,14 @@ export function canonicalJson(value) {
   return `${JSON.stringify(normalize(value), null, 2)}\n`;
 }
 
-export async function createReleaseFixture({ type = 'release' } = {}) {
+export async function createReleaseFixture({ type = 'release', commit = '0123456789abcdef0123456789abcdef01234567' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'resourcepacks-task8-release-'));
   const content = Buffer.from('content zip fixture');
   const platform = Buffer.from('platform zip fixture');
   const catalog = Buffer.from('catalog jar fixture');
   const contentSha1 = digest('sha1', content);
   const platformSha1 = digest('sha1', platform);
-  const commit = '0123456789abcdef0123456789abcdef01234567';
-  const version = type === 'release' ? '0.1.0' : '0.0.0-edge.42.g0123456789ab';
+  const version = type === 'release' ? '0.1.0' : `0.0.0-edge.42.g${commit.slice(0, 12)}`;
   const publication = type === 'release' ? { type: 'release', id: `v${version}` } : { type: 'build', id: commit };
   const objectRoot = type === 'release'
     ? `resourcepacks/packsets/grounds-global/releases/${publication.id}`

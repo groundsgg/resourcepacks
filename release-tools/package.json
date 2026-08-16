@@ -12,6 +12,7 @@
   },
   "bin": {
     "maven-create-or-compare": "src/maven-create-or-compare.mjs",
+    "prepare-edge": "src/prepare-edge.mjs",
     "r2-create-or-compare": "src/r2-create-or-compare.mjs",
     "r2-channel-advance": "src/r2-channel-advance.mjs",
     "release-assets-create-or-compare": "src/release-assets-create-or-compare.mjs",
