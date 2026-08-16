@@ -13,14 +13,17 @@ import { withTimeout } from './timeout.mjs';
 
 export const MAVEN_REPOSITORY_URL='https://maven.pkg.github.com/groundsgg/resourcepacks/';
 const MAX_MAVEN_FILE_SIZE=1024*1024*1024;
-const GITHUB_PACKAGE_STORAGE_HOST='pkg-containers.githubusercontent.com';
+const PACKAGE_BODY_HOSTS = new Set([
+  'pkg-containers.githubusercontent.com',
+  'github-registry-files.githubusercontent.com',
+]);
 
 function trustedPackageRedirect(response,official){
   if(!official||response.status<300||response.status>=400)return null;
   const location=response.headers.get('location');
   if(!location)return null;
   const target=new URL(location);
-  if(target.protocol!=='https:'||target.hostname!==GITHUB_PACKAGE_STORAGE_HOST||target.username||target.password||target.port)return null;
+  if(target.protocol!=='https:'||!PACKAGE_BODY_HOSTS.has(target.hostname)||target.username||target.password||target.port)return null;
   return target;
 }
 
