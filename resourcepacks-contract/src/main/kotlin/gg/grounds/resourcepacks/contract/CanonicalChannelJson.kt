@@ -91,19 +91,28 @@ object CanonicalChannelJson {
         val o = root.obj("", ROOT, d) ?: return null
         val target = o.objectValue("target", TARGET, "", d)
         val manifest = o.objectValue("manifest", MANIFEST, "", d)
-        return if (target != null && manifest != null)
-            Raw(
-                o.int("schemaVersion", "", d) ?: 0,
-                o.string("packSet", "", d) ?: "",
-                o.string("channel", "", d) ?: "",
-                o.long("sequence", "", d) ?: 0,
-                target.string("type", "/target", d) ?: "",
-                target.string("id", "/target", d) ?: "",
-                manifest.string("url", "/manifest", d) ?: "",
-                manifest.string("sha256", "/manifest", d) ?: "",
-                manifest.long("size", "/manifest", d) ?: 0,
-            )
-        else null
+        if (target == null || manifest == null) return null
+        val schemaVersion = o.int("schemaVersion", "", d)
+        val packSet = o.string("packSet", "", d)
+        val channel = o.string("channel", "", d)
+        val sequence = o.long("sequence", "", d)
+        val targetType = target.string("type", "/target", d)
+        val targetId = target.string("id", "/target", d)
+        val manifestUrl = manifest.string("url", "/manifest", d)
+        val manifestSha256 = manifest.string("sha256", "/manifest", d)
+        val manifestSize = manifest.long("size", "/manifest", d)
+        if (d.isNotEmpty()) return null
+        return Raw(
+            requireNotNull(schemaVersion),
+            requireNotNull(packSet),
+            requireNotNull(channel),
+            requireNotNull(sequence),
+            requireNotNull(targetType),
+            requireNotNull(targetId),
+            requireNotNull(manifestUrl),
+            requireNotNull(manifestSha256),
+            requireNotNull(manifestSize),
+        )
     }
 
     private fun validate(r: Raw, d: MutableList<ChannelDiagnostic>): ChannelDocument? {
@@ -200,8 +209,9 @@ object CanonicalChannelJson {
                     read(p, p.currentToken(), depth + 1, "$pointer/${values.size}")
                 J.Arr(values)
             }
-            JsonToken.VALUE_STRING -> J.Str(p.string)
-            JsonToken.VALUE_NUMBER_INT -> J.Num(p.string)
+            JsonToken.VALUE_STRING -> J.Str(p.stringChecked())
+            JsonToken.VALUE_NUMBER_INT -> J.Num(p.numberChecked())
+            JsonToken.VALUE_NUMBER_FLOAT -> J.Decimal(p.numberChecked())
             JsonToken.VALUE_TRUE -> J.Bool(true)
             JsonToken.VALUE_FALSE -> J.Bool(false)
             JsonToken.VALUE_NULL -> J.Null
@@ -224,6 +234,20 @@ object CanonicalChannelJson {
             .decode(ByteBuffer.wrap(bytes))
             .toString()
     }
+
+    private fun JsonParser.stringChecked(): String =
+        string.also {
+            require(it.length <= ManifestParserLimits.MAX_STRING) {
+                "String exceeds ${ManifestParserLimits.MAX_STRING} characters."
+            }
+        }
+
+    private fun JsonParser.numberChecked(): String =
+        string.also {
+            require(it.length <= ManifestParserLimits.MAX_NUMBER) {
+                "Number exceeds ${ManifestParserLimits.MAX_NUMBER} characters."
+            }
+        }
 
     private fun requireValidDocument(document: ChannelDocument) {
         require(document.schemaVersion == 2) { "schemaVersion must be 2." }
@@ -273,6 +297,8 @@ object CanonicalChannelJson {
         data class Str(val value: String) : J
 
         data class Num(val value: String) : J
+
+        data class Decimal(val value: String) : J
 
         data class Bool(val value: Boolean) : J
 

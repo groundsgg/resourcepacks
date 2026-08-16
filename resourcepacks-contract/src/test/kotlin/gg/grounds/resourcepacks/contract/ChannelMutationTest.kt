@@ -127,6 +127,64 @@ class ChannelMutationTest {
     }
 
     @Test
+    fun `decimal sequence and manifest size retain field specific wrong type diagnostics`() {
+        listOf(
+                stable.replace("\"sequence\": 7", "\"sequence\": 1.5") to "/sequence",
+                stable.replace("\"size\": 123", "\"size\": 1.5") to "/manifest/size",
+            )
+            .forEach { (mutated, pointer) ->
+                assertEquals(
+                    listOf(
+                        ChannelDiagnostic(
+                            pointer,
+                            ChannelDiagnosticCode.WRONG_TYPE,
+                            "Expected exact integer.",
+                        )
+                    ),
+                    decode(mutated).diagnostics,
+                )
+            }
+    }
+
+    @Test
+    fun `parser limits include value strings and numbers without expanding the accepted boundary`() {
+        val maximumString = "x".repeat(ManifestParserLimits.MAX_STRING)
+        val overlongString = "x".repeat(ManifestParserLimits.MAX_STRING + 1)
+        val maximumNumber = "1".repeat(ManifestParserLimits.MAX_NUMBER)
+        val overlongNumber = "1".repeat(ManifestParserLimits.MAX_NUMBER + 1)
+
+        assertEquals(
+            listOf(
+                ChannelDiagnostic("/padding", ChannelDiagnosticCode.UNKNOWN_FIELD, "Unknown field.")
+            ),
+            decode(
+                    stable.replace(
+                        "\"sequence\": 7",
+                        "\"padding\": \"$maximumString\",\n  \"sequence\": 7",
+                    )
+                )
+                .diagnostics,
+        )
+        assertEquals(
+            listOf(
+                ChannelDiagnostic(
+                    "/sequence",
+                    ChannelDiagnosticCode.WRONG_TYPE,
+                    "Expected exact integer.",
+                )
+            ),
+            decode(stable.replace("\"sequence\": 7", "\"sequence\": $maximumNumber")).diagnostics,
+        )
+        assertMalformed(
+            stable.replace(
+                "\"sequence\": 7",
+                "\"padding\": \"$overlongString\",\n  \"sequence\": 7",
+            )
+        )
+        assertMalformed(stable.replace("\"sequence\": 7", "\"sequence\": $overlongNumber"))
+    }
+
+    @Test
     fun `manifest URL authority and exact immutable location are strict`() {
         listOf(
                 "http://cdn.grounds.gg",
@@ -165,6 +223,12 @@ class ChannelMutationTest {
         assertIs<ChannelDecodeResult.Failure>(
             CanonicalChannelJson.decode(bytes.encodeToByteArray())
         )
+
+    private fun assertMalformed(bytes: String) {
+        val diagnostic = decode(bytes).diagnostics.single()
+        assertEquals("/", diagnostic.pointer)
+        assertEquals(ChannelDiagnosticCode.MALFORMED_JSON, diagnostic.code)
+    }
 
     private companion object {
         val stable = ChannelDocumentTest.stableFixture

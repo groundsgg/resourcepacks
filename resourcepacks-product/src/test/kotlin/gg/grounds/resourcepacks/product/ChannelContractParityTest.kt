@@ -46,4 +46,43 @@ class ChannelContractParityTest {
             },
         )
     }
+
+    @Test
+    fun `build object layout and contract channel fixture name the same manifest`() {
+        val commit = "1969c1e6a3799e976de46eab019a16b2ee257ea7"
+        val identity =
+            PublicationIdentity(
+                PublicationType.BUILD,
+                commit,
+                "0.0.0-edge.42.g1969c1e6a379",
+                commit,
+            )
+        val document =
+            ChannelDocument(
+                2,
+                PackSetObjectLayout.PACK_SET_ID,
+                PackSetChannel.EDGE,
+                8,
+                ChannelTarget(PublicationType.BUILD, identity.id),
+                ChannelManifestReference(
+                    PackSetObjectLayout.manifest(identity).publicUrl,
+                    "b".repeat(64),
+                    456,
+                ),
+            )
+
+        assertEquals(
+            "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/builds/$commit/manifest.json",
+            document.manifest.url,
+        )
+        assertEquals(
+            document.manifest.url,
+            CanonicalChannelJson.decode(CanonicalChannelJson.encode(document)).let {
+                (it as gg.grounds.resourcepacks.contract.ChannelDecodeResult.Success)
+                    .document
+                    .manifest
+                    .url
+            },
+        )
+    }
 }
