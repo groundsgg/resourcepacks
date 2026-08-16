@@ -17,13 +17,16 @@ class BuildBoundaryTest {
             .first { it.resolve("settings.gradle.kts").exists() }
 
     @Test
-    fun `the build exposes exactly the catalog and product projects`() {
+    fun `the build exposes exactly the catalog contract and product projects`() {
         val output = runGradle("projects")
 
         val projectNames =
             Regex("Project '(:[^']*)'").findAll(output).map { it.groupValues[1] }.toSet()
 
-        assertEquals(setOf(":resourcepacks-catalog", ":resourcepacks-product"), projectNames)
+        assertEquals(
+            setOf(":resourcepacks-catalog", ":resourcepacks-contract", ":resourcepacks-product"),
+            projectNames,
+        )
     }
 
     @Test
@@ -61,6 +64,8 @@ class BuildBoundaryTest {
             copyFixtureFile("version.txt", fixtureDirectory)
             copyFixtureFile("resourcepacks-catalog/build.gradle.kts", fixtureDirectory)
             copyFixtureFile("resourcepacks-catalog/gradle.lockfile", fixtureDirectory)
+            copyFixtureFile("resourcepacks-contract/build.gradle.kts", fixtureDirectory)
+            copyFixtureFile("resourcepacks-contract/gradle.lockfile", fixtureDirectory)
             copyFixtureFile("resourcepacks-product/build.gradle.kts", fixtureDirectory)
             copyFixtureFile("resourcepacks-product/gradle.lockfile", fixtureDirectory)
 
@@ -102,6 +107,7 @@ class BuildBoundaryTest {
             copyFixtureFile("settings.gradle.kts", fixtureDirectory)
             copyFixtureFile("build.gradle.kts", fixtureDirectory)
             Files.createDirectories(fixtureDirectory.resolve("resourcepacks-catalog"))
+            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-contract"))
             Files.createDirectories(fixtureDirectory.resolve("resourcepacks-product"))
             fixtureDirectory.resolve("version.txt").writeText(contents)
 

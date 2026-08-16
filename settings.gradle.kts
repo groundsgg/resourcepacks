@@ -12,4 +12,4 @@ pluginManagement {
 }
 
 rootProject.name = "resourcepacks"
-include("resourcepacks-catalog", "resourcepacks-product")
+include("resourcepacks-catalog", "resourcepacks-contract", "resourcepacks-product")
