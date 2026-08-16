@@ -62,6 +62,76 @@ class PackSetContractJsonTest {
     }
 
     @Test
+    fun `manifest value strings accept the limit and reject one additional character`() {
+        val maximum = "x".repeat(ManifestParserLimits.MAX_STRING)
+        val overlong = "x".repeat(ManifestParserLimits.MAX_STRING + 1)
+
+        assertDiagnostics(
+            releaseManifest.replace(
+                "\"schemaVersion\": 2",
+                "\"padding\": \"$maximum\",\n  \"schemaVersion\": 2",
+            ),
+            listOf(
+                ManifestDiagnostic(
+                    "/padding",
+                    ManifestDiagnosticCode.UNKNOWN_FIELD,
+                    "Unknown field.",
+                )
+            ),
+            "maximum value string",
+        )
+        assertDiagnostics(
+            releaseManifest.replace(
+                "\"schemaVersion\": 2",
+                "\"padding\": \"$overlong\",\n  \"schemaVersion\": 2",
+            ),
+            listOf(
+                ManifestDiagnostic(
+                    "/",
+                    ManifestDiagnosticCode.MALFORMED_JSON,
+                    "String exceeds ${ManifestParserLimits.MAX_STRING} characters.",
+                )
+            ),
+            "overlong value string",
+        )
+    }
+
+    @Test
+    fun `manifest integer tokens accept the limit and reject one additional character`() {
+        val maximum = "1".repeat(ManifestParserLimits.MAX_NUMBER)
+        val overlong = "1".repeat(ManifestParserLimits.MAX_NUMBER + 1)
+
+        assertDiagnostics(
+            releaseManifest.replace(
+                "\"schemaVersion\": 2",
+                "\"padding\": $maximum,\n  \"schemaVersion\": 2",
+            ),
+            listOf(
+                ManifestDiagnostic(
+                    "/padding",
+                    ManifestDiagnosticCode.UNKNOWN_FIELD,
+                    "Unknown field.",
+                )
+            ),
+            "maximum integer token",
+        )
+        assertDiagnostics(
+            releaseManifest.replace(
+                "\"schemaVersion\": 2",
+                "\"padding\": $overlong,\n  \"schemaVersion\": 2",
+            ),
+            listOf(
+                ManifestDiagnostic(
+                    "/",
+                    ManifestDiagnosticCode.MALFORMED_JSON,
+                    "Number exceeds ${ManifestParserLimits.MAX_NUMBER} characters.",
+                )
+            ),
+            "overlong integer token",
+        )
+    }
+
+    @Test
     fun `build packs may reference a canonical historical build root with matching role suffix`() {
         val old = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         val historical =

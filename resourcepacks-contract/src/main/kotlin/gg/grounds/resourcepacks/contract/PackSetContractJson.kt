@@ -303,14 +303,28 @@ object PackSetContractJson {
                     read(p, p.currentToken(), depth + 1, "$pointer/${values.size}")
                 J.Arr(values)
             }
-            JsonToken.VALUE_STRING -> J.Str(p.string)
-            JsonToken.VALUE_NUMBER_INT -> J.Num(p.string)
+            JsonToken.VALUE_STRING -> J.Str(p.stringChecked())
+            JsonToken.VALUE_NUMBER_INT -> J.Num(p.numberChecked())
             JsonToken.VALUE_TRUE -> J.Bool(true)
             JsonToken.VALUE_FALSE -> J.Bool(false)
             JsonToken.VALUE_NULL -> J.Null
             else -> error("Unsupported JSON token.")
         }
     }
+
+    private fun JsonParser.stringChecked(): String =
+        string.also {
+            require(it.length <= ManifestParserLimits.MAX_STRING) {
+                "String exceeds ${ManifestParserLimits.MAX_STRING} characters."
+            }
+        }
+
+    private fun JsonParser.numberChecked(): String =
+        string.also {
+            require(it.length <= ManifestParserLimits.MAX_NUMBER) {
+                "Number exceeds ${ManifestParserLimits.MAX_NUMBER} characters."
+            }
+        }
 
     private fun utf8(bytes: ByteArray): String {
         require(
