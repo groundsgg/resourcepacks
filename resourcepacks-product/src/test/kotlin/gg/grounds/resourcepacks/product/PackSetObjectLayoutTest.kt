@@ -92,6 +92,26 @@ class PackSetObjectLayoutTest {
     }
 
     @Test
+    fun `release locations retain valid SemVer build metadata`() {
+        val release =
+            PublicationIdentity(PublicationType.RELEASE, "v0.1.2+build.7", "0.1.2+build.7", commit)
+
+        assertEquals(
+            "grounds-content-pack-v0.1.2+build.7.zip",
+            PackSetObjectLayout.content(release, contentSha1).fileName,
+        )
+        assertEquals(
+            "grounds-platform-pack-v0.1.2+build.7.zip",
+            PackSetObjectLayout.platform(release, platformSha1).fileName,
+        )
+        assertEquals(
+            "grounds-resourcepack-catalog-v0.1.2+build.7.jar",
+            PackSetObjectLayout.catalog(release).fileName,
+        )
+        assertEquals("manifest.json", PackSetObjectLayout.manifest(release).fileName)
+    }
+
+    @Test
     fun `layout rejects hostile publication identity and digest inputs`() {
         val valid = PublicationIdentity(PublicationType.RELEASE, "v0.1.2", "0.1.2", commit)
         listOf(

@@ -27,7 +27,7 @@ object PackSetObjectLayout {
         fileName: String,
     ): ArtifactLocation {
         require(packSetId == PACK_SET_ID) { "Unsupported PackSet ID." }
-        require(fileName.matches(Regex("[A-Za-z0-9.-]+"))) { "Artifact filename is unsafe." }
+        require(fileName.matches(Regex("[A-Za-z0-9.+-]+"))) { "Artifact filename is unsafe." }
         validateIdentity(identity)
         val objectKey =
             "resourcepacks/packsets/$packSetId/${publicationDirectory(identity)}/$fileName"
