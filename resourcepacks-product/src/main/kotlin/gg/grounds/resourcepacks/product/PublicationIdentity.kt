@@ -1,9 +1,6 @@
 package gg.grounds.resourcepacks.product
 
-enum class PublicationType {
-    RELEASE,
-    BUILD,
-}
+typealias PublicationType = gg.grounds.resourcepacks.contract.PublicationType
 
 data class PublicationIdentity(
     val type: PublicationType,

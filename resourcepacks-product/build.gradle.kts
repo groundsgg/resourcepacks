@@ -86,6 +86,7 @@ val buildPackSet by
 
 dependencies {
     implementation(project(":resourcepacks-catalog"))
+    implementation(project(":resourcepacks-contract"))
     implementation("gg.grounds:resource-pack-builder:0.1.0")
     implementation("tools.jackson.core:jackson-databind:3.1.5")
 

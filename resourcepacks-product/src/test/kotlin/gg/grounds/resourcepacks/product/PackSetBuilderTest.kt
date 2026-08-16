@@ -195,7 +195,7 @@ class PackSetBuilderTest {
             assertTrue(artifacts.platform.file.fileName.toString().startsWith("grounds-platform-"))
             assertTrue(
                 artifacts.catalog.file.fileName.toString() ==
-                    "grounds-resourcepacks-catalog-${ReleaseTestContext.version}.jar"
+                    "grounds-resourcepack-catalog-v${ReleaseTestContext.version}.jar"
             )
             listOf(artifacts.content, artifacts.platform, artifacts.catalog, artifacts.manifest)
                 .forEach { artifact ->
