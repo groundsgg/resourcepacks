@@ -20,7 +20,8 @@ build_release() {
     :resourcepacks-product:buildPackSet \
     -PpackSetVersion="$version" \
     -PprovenanceCommit="$commit" \
-    -PprovenanceTag="v$version" \
+    -PpublicationType=release \
+    -PpublicationId="v$version" \
     -PreleaseOutput="$scratch/output-$clone_name"
 }
 

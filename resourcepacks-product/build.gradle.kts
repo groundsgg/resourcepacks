@@ -65,7 +65,13 @@ val buildPackSet by
         mainClass.set(application.mainClass)
         jvmArgs("--enable-native-access=ALL-UNNAMED")
         val required =
-            listOf("packSetVersion", "provenanceCommit", "provenanceTag", "releaseOutput")
+            listOf(
+                "packSetVersion",
+                "provenanceCommit",
+                "publicationType",
+                "publicationId",
+                "releaseOutput",
+            )
         doFirst {
             val values = required.associateWith { providers.gradleProperty(it).orNull }
             check(values.values.none { it.isNullOrEmpty() }) {
@@ -76,8 +82,10 @@ val buildPackSet by
                 values.getValue("packSetVersion")!!,
                 "--commit",
                 values.getValue("provenanceCommit")!!,
-                "--tag",
-                values.getValue("provenanceTag")!!,
+                "--publication-type",
+                values.getValue("publicationType")!!,
+                "--publication-id",
+                values.getValue("publicationId")!!,
                 "--output",
                 values.getValue("releaseOutput")!!,
             )
@@ -86,6 +94,7 @@ val buildPackSet by
 
 dependencies {
     implementation(project(":resourcepacks-catalog"))
+    implementation(project(":resourcepacks-contract"))
     implementation("gg.grounds:resource-pack-builder:0.1.0")
     implementation("tools.jackson.core:jackson-databind:3.1.5")
 

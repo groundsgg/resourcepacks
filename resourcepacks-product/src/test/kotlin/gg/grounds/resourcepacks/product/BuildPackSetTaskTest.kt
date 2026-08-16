@@ -10,15 +10,21 @@ import kotlin.test.assertTrue
 
 class BuildPackSetTaskTest {
     @Test
-    fun `buildPackSet forwards only the four explicit release properties`() {
+    fun `buildPackSet forwards only explicit publication identity properties`() {
         val root =
             generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
                 .first { it.resolve("settings.gradle.kts").exists() }
         val build = root.resolve("resourcepacks-product/build.gradle.kts").toFile().readText()
         assertContains(build, "buildPackSet")
-        listOf("packSetVersion", "provenanceCommit", "provenanceTag", "releaseOutput").forEach {
-            assertContains(build, it)
-        }
+        listOf(
+                "packSetVersion",
+                "provenanceCommit",
+                "publicationType",
+                "publicationId",
+                "releaseOutput",
+            )
+            .forEach { assertContains(build, it) }
+        assertFalse("--tag" in build)
         assertTrue("git " !in build.lowercase())
     }
 
@@ -47,7 +53,8 @@ class BuildPackSetTaskTest {
 
         assertContains(script, "version.txt")
         assertContains(script, "-PpackSetVersion=\"\$version\"")
-        assertContains(script, "-PprovenanceTag=\"v\$version\"")
+        assertContains(script, "-PpublicationType=release")
+        assertContains(script, "-PpublicationId=\"v\$version\"")
         assertFalse("0.0.0" in script)
     }
 }

@@ -1,5 +1,6 @@
 package gg.grounds.resourcepacks.product
 
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.system.exitProcess
 
@@ -18,7 +19,16 @@ internal object ReleaseCli {
         var index = 0
         while (index < args.size) {
             val flag = args[index]
-            require(flag in setOf("--version", "--commit", "--tag", "--output")) {
+            require(
+                flag in
+                    setOf(
+                        "--publication-type",
+                        "--publication-id",
+                        "--version",
+                        "--commit",
+                        "--output",
+                    )
+            ) {
                 "Unknown argument: $flag"
             }
             require(index + 1 < args.size) { "Missing value for $flag" }
@@ -27,14 +37,30 @@ internal object ReleaseCli {
             require(values.put(flag, value) == null) { "Duplicate argument: $flag" }
             index += 2
         }
-        require(values.keys == setOf("--version", "--commit", "--tag", "--output")) {
+        require(
+            values.keys ==
+                setOf("--publication-type", "--publication-id", "--version", "--commit", "--output")
+        ) {
             "Missing required release arguments."
         }
-        return ReleaseInputs(
-            values.getValue("--version"),
-            values.getValue("--commit"),
-            values.getValue("--tag"),
-            Path.of(values.getValue("--output")),
-        )
+        val type =
+            when (values.getValue("--publication-type")) {
+                "release" -> PublicationType.RELEASE
+                "build" -> PublicationType.BUILD
+                else -> throw IllegalArgumentException("Publication type must be release or build.")
+            }
+        val output = Path.of(values.getValue("--output"))
+        require(output.isAbsolute && output == output.normalize() && !Files.exists(output)) {
+            "Output must be an absent absolute normalized directory."
+        }
+        val publication =
+            PublicationIdentity(
+                type,
+                values.getValue("--publication-id"),
+                values.getValue("--version"),
+                values.getValue("--commit"),
+            )
+        PackSetObjectLayout.manifest(publication)
+        return ReleaseInputs(publication, output)
     }
 }

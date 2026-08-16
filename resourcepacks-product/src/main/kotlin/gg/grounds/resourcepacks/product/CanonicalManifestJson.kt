@@ -9,6 +9,57 @@ internal object CanonicalManifestJson {
     fun write(manifest: PackSetManifest): ByteArray =
         value(root(manifest), 0).plus('\n').toByteArray(StandardCharsets.UTF_8)
 
+    fun write(manifest: gg.grounds.resourcepacks.contract.PackSetManifest): ByteArray =
+        value(
+                obj(
+                    "schemaVersion" to manifest.schemaVersion,
+                    "packSet" to manifest.packSet,
+                    "publication" to
+                        obj(
+                            "type" to manifest.publication.type.name.lowercase(),
+                            "id" to manifest.publication.id,
+                        ),
+                    "version" to manifest.version,
+                    "minecraft" to
+                        obj(
+                            "version" to manifest.minecraft.version,
+                            "resourcePackFormat" to manifest.minecraft.resourcePackFormat,
+                        ),
+                    "catalog" to
+                        obj(
+                            "id" to manifest.catalog.id,
+                            "version" to manifest.catalog.version,
+                            "coordinate" to manifest.catalog.coordinate,
+                            "file" to manifest.catalog.file,
+                            "sha256" to manifest.catalog.sha256,
+                            "size" to manifest.catalog.size,
+                        ),
+                    "packs" to
+                        manifest.packs.map { pack ->
+                            obj(
+                                "order" to pack.order,
+                                "role" to pack.role,
+                                "id" to pack.id,
+                                "uuid" to pack.uuid.toString(),
+                                "required" to pack.required,
+                                "url" to pack.url,
+                                "sha1" to pack.sha1,
+                                "sha256" to pack.sha256,
+                                "size" to pack.size,
+                                "resourcePackFormat" to pack.resourcePackFormat,
+                            )
+                        },
+                    "provenance" to
+                        obj(
+                            "repository" to manifest.provenance.repository,
+                            "commit" to manifest.provenance.commit,
+                        ),
+                ),
+                0,
+            )
+            .plus('\n')
+            .toByteArray(StandardCharsets.UTF_8)
+
     private fun root(m: PackSetManifest) =
         obj(
             "schemaVersion" to m.schemaVersion,

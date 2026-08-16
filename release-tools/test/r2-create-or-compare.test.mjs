@@ -10,6 +10,9 @@ import { S3ServiceException } from '@aws-sdk/client-s3';
 
 import { fakeHttp } from './fake-http.mjs';
 import { createOrCompare } from '../src/r2-create-or-compare.mjs';
+import { r2ReleaseCreateOrCompare } from '../src/r2-create-or-compare.mjs';
+import { createReleaseFixture } from './fixtures.mjs';
+import { loadRelease } from '../src/manifest.mjs';
 
 const expected=bytes=>({size:bytes.length,sha1:createHash('sha1').update(bytes).digest('hex'),sha256:createHash('sha256').update(bytes).digest('hex')});
 
@@ -99,4 +102,34 @@ test('createOrCompare times out a stalled R2 comparison body',async()=>{
   const operation=createOrCompare({endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',key:'x',file,accessKey:'test',secretKey:'test',expected:expected(body),client,timeoutMs:20});
   assert.equal(await Promise.race([assert.rejects(()=>operation,/R2 request timed out/).then(()=> 'timeout'),new Promise(resolve=>setTimeout(()=>resolve('hung'),200))]),'timeout');
   assert.equal(stalled.destroyed,true);
+});
+
+test('R2 release publication rejects caller-mutated artifact contracts before any request',async()=>{
+  for(const mutate of [
+    value=>{value.artifacts[0].key='resourcepacks/attacker';},
+    value=>{value.artifacts[0].name='other.zip';},
+    value=>{value.artifacts[0].role='catalog';},
+    value=>{value.artifacts[0].contentType='text/plain';},
+    value=>{value.artifacts[0].path='/tmp/attacker';},
+    value=>{value.artifacts=[value.artifacts[0],value.artifacts[0],...value.artifacts.slice(2)];},
+    value=>{value.artifacts.reverse();},
+  ]){
+    const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});mutate(release);let sends=0;
+    await assert.rejects(()=>r2ReleaseCreateOrCompare({release,endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',accessKey:'test',secretKey:'test',client:{async send(){sends+=1;}}}),/release artifact contract mismatch/);
+    assert.equal(sends,0);
+    await release.close();
+  }
+  const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});let sends=0;
+  await assert.rejects(()=>r2ReleaseCreateOrCompare({release:{...release},endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',accessKey:'test',secretKey:'test',client:{async send(){sends+=1;}}}),/release artifact contract mismatch/);
+  assert.equal(sends,0);await release.close();
+});
+
+test('R2 keeps the captured immutable keys when the public release mutates during publication',async t=>{
+  const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});const expectedKeys=release.artifacts.map(artifact=>artifact.key);const requests=[];let calls=0;
+  const http=await fakeHttp(async(request,response)=>{requests.push(request.url);assert.equal(request.method,'PUT');for await(const _chunk of request){}if(calls++===0){release.manifest.publication.id='v9.9.9';release.manifest.provenance.commit='f'.repeat(40);release.artifacts[1].key='resourcepacks/attacker';release.manifestArtifact.snapshot={bytes:Buffer.from('attacker')};}response.writeHead(200).end();});t.after(http.close);
+  assert.deepEqual(await r2ReleaseCreateOrCompare({release,endpoint:http.url,bucket:'packs',accessKey:'test',secretKey:'test'}),{created:4,identical:0});
+  const paths=requests.map(request=>new URL(request,http.url).pathname);
+  assert.deepEqual(paths,expectedKeys.map(key=>`/packs/${key}`));
+  assert.ok(paths.every(path=>!path.includes('attacker')));
+  await release.close();
 });

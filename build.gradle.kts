@@ -23,8 +23,25 @@ require(semanticVersion.matches(versionFromFile) && versionFileContents == "$ver
     "version.txt must contain an exact ASCII SemVer value"
 }
 val explicitPackSetVersion = providers.gradleProperty("packSetVersion").orNull
-require(explicitPackSetVersion == null || explicitPackSetVersion == versionFromFile) {
-    "packSetVersion must equal version.txt."
+val publicationType = providers.gradleProperty("publicationType").orNull
+val publicationId = providers.gradleProperty("publicationId").orNull
+val provenanceCommit = providers.gradleProperty("provenanceCommit").orNull
+val exactEdgeBuildVersion =
+    explicitPackSetVersion?.let {
+        Regex("0\\.0\\.0-edge\\.[1-9][0-9]*\\.g([0-9a-f]{12})").matchEntire(it)
+    }
+val exactBuildIdentity =
+    publicationType == "build" &&
+        publicationId != null &&
+        publicationId.matches(Regex("[0-9a-f]{40}")) &&
+        publicationId == provenanceCommit &&
+        exactEdgeBuildVersion?.groupValues?.get(1) == publicationId.take(12)
+require(
+    explicitPackSetVersion == null ||
+        explicitPackSetVersion == versionFromFile ||
+        exactBuildIdentity
+) {
+    "packSetVersion must equal version.txt or an exact build identity."
 }
 version = explicitPackSetVersion ?: versionFromFile
 

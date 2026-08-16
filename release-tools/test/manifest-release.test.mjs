@@ -3,7 +3,7 @@ import { symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadRelease, openVerifiedArtifact } from '../src/manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from '../src/manifest.mjs';
 import { canonicalJson, createReleaseFixture } from './fixtures.mjs';
 
 test('loadRelease binds the canonical manifest to exactly four measured regular files', async () => {
@@ -14,19 +14,32 @@ test('loadRelease binds the canonical manifest to exactly four measured regular 
   });
 
   assert.deepEqual(release.artifacts.map(artifact => artifact.name), [...fixture.files.keys()].sort());
-  assert.deepEqual(release.packs.map(pack => pack.key), [
-    `resourcepacks/content/${fixture.manifest.packs[0].sha1}.zip`,
-    `resourcepacks/platform/${fixture.manifest.packs[1].sha1}.zip`,
-  ]);
+  assert.deepEqual(release.artifacts.map(artifact => artifact.key), [
+    ...fixture.manifest.packs.map(pack => new URL(pack.url).pathname.slice(1)),
+    `resourcepacks/packsets/grounds-global/releases/v${fixture.manifest.version}/${fixture.manifest.catalog.file}`,
+    `resourcepacks/packsets/grounds-global/releases/v${fixture.manifest.version}/manifest.json`,
+  ].sort());
+  await release.close();
+});
+
+test('loadRelease binds the schema-v2 build files to their full-commit immutable root', async () => {
+  const fixture = await createReleaseFixture({type:'build'});
+  const release = await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});
+  assert.equal(release.manifest.publication.type,'build');
+  assert.deepEqual(release.artifacts.map(artifact=>artifact.key),[
+    ...fixture.manifest.packs.map(pack=>new URL(pack.url).pathname.slice(1)),
+    `resourcepacks/packsets/grounds-global/builds/${fixture.manifest.provenance.commit}/${fixture.manifest.catalog.file}`,
+    `resourcepacks/packsets/grounds-global/builds/${fixture.manifest.provenance.commit}/manifest.json`,
+  ].sort());
   await release.close();
 });
 
 test('loadRelease rejects noncanonical, unknown, duplicate, and semantically drifted manifest data', async () => {
   const cases = [
-    text => text.replace(/^\{/, '{\n  "schemaVersion": 1,'),
-    text => text.replace('"schemaVersion": 1', '"extra": true,\n  "schemaVersion": 1'),
+    text => text.replace('"schemaVersion": 2', '"schemaVersion": 1'),
+    text => text.replace('"schemaVersion": 2', '"extra": true,\n  "schemaVersion": 2'),
     text => text.replace('"order": 0', '"order": 1'),
-    text => text.replace('resourcepacks/content/', 'resourcepacks/platform/'),
+    text => text.replace('grounds-content-pack-v0.1.0.zip', 'grounds-platform-pack-v0.1.0.zip'),
     text => text.replace('"coordinate": "gg.grounds:resourcepacks-catalog:0.1.0"', '"coordinate": "gg.grounds:other:0.1.0"'),
   ];
   for (const mutate of cases) {
@@ -43,12 +56,12 @@ test('loadRelease rejects extra, missing, symlinked, and digest-drifted release 
   await assert.rejects(() => loadRelease({manifestFile:join(extra.root,'manifest.json'),releaseDirectory:extra.root}), /exactly four/i);
 
   const changed = await createReleaseFixture();
-  const contentName = `grounds-content-${changed.manifest.packs[0].sha1}.zip`;
+  const contentName = new URL(changed.manifest.packs[0].url).pathname.split('/').at(-1);
   await writeFile(join(changed.root, contentName), 'changed');
   await assert.rejects(() => loadRelease({manifestFile:join(changed.root,'manifest.json'),releaseDirectory:changed.root}), /digest|size/i);
 
   const linked = await createReleaseFixture();
-  const platformName = `grounds-platform-${linked.manifest.packs[1].sha1}.zip`;
+  const platformName = new URL(linked.manifest.packs[1].url).pathname.split('/').at(-1);
   const target = `${linked.root}-outside.zip`;
   await writeFile(target, linked.files.get(platformName));
   await writeFile(join(linked.root, platformName), 'temporary');
@@ -76,7 +89,7 @@ test('loadRelease binds manifest parsing, digest, and later upload reads to one 
     const fixture=await createReleaseFixture();const manifestPath=join(fixture.root,'manifest.json');const original=fixture.files.get('manifest.json');
     const release=await loadRelease({manifestFile:manifestPath,releaseDirectory:fixture.root});
     if(replacement==='replace'){const {rename}=await import('node:fs/promises');const next=`${manifestPath}.next`;await writeFile(next,'attacker replacement');await rename(next,manifestPath);}else await writeFile(manifestPath,'attacker in-place');
-    const verified=await openVerifiedArtifact(release.manifestArtifact);const chunks=[];for await(const chunk of verified.stream())chunks.push(Buffer.from(chunk));await verified.close();
+    const verified=await openVerifiedArtifact(assertReleaseArtifactContract(release).artifacts.find(artifact=>artifact.role==='manifest'));const chunks=[];for await(const chunk of verified.stream())chunks.push(Buffer.from(chunk));await verified.close();
     assert.deepEqual(Buffer.concat(chunks),original,replacement);
     await release.close();
   }

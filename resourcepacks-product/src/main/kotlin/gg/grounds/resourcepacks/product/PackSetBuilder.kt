@@ -7,6 +7,7 @@ import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemoryLayout
 import java.lang.foreign.ValueLayout
+import java.net.URI
 import java.nio.file.Path
 
 /**
@@ -115,8 +116,14 @@ internal object PackSetBuilder {
                 }
             requireComposerDigest(content, contentSnapshot)
             requireComposerDigest(platform, platformSnapshot)
-            val contentFile = stage.resolve("grounds-content-${content.digests.sha1}.zip")
-            val platformFile = stage.resolve("grounds-platform-${platform.digests.sha1}.zip")
+            val contentFile =
+                stage.resolve(
+                    PackSetObjectLayout.content(inputs.publication, content.digests.sha1).fileName
+                )
+            val platformFile =
+                stage.resolve(
+                    PackSetObjectLayout.platform(inputs.publication, platform.digests.sha1).fileName
+                )
             scratch.openRelativeRegularFile(contentScratch).use { source ->
                 stageDirectory.copyRegularFile(
                     contentFile.fileName,
@@ -134,7 +141,8 @@ internal object PackSetBuilder {
                 )
             }
 
-            val catalogFile = stage.resolve("grounds-resourcepacks-catalog-${inputs.version}.jar")
+            val catalogFile =
+                stage.resolve(PackSetObjectLayout.catalog(inputs.publication).fileName)
             val catalogPath = validateCatalogPath(inputs, catalogJar)
             catalogSource = HeldSourceFile.capture(catalogPath, expectedCatalog.size)
             val heldCatalog = requireNotNull(catalogSource)
@@ -163,7 +171,7 @@ internal object PackSetBuilder {
                     platformSnapshot.digests,
                 )
             val manifestFile = stage.resolve("manifest.json")
-            val manifestBytes = PackSetManifestJson.encode(manifest)
+            val manifestBytes = CanonicalManifestJson.write(manifest)
             stageDirectory.writeRegularFile(
                 manifestFile.fileName,
                 manifestBytes,
@@ -171,14 +179,25 @@ internal object PackSetBuilder {
             )
             hooks.afterStageWrite()
             hooks.beforeManifestValidation(manifestFile)
-            validateManifest(manifestBytes, catalogFile, contentFile, platformFile)
+            val stagedManifestBytes =
+                stageDirectory.readRelativeRegularFileBytes(
+                    Path.of("manifest.json"),
+                    MAX_MANIFEST_BYTES,
+                )
+            validateManifest(
+                stagedManifestBytes,
+                ManifestArtifactBinding(catalogFile.fileName.toString(), heldCatalog.digests),
+                ManifestArtifactBinding(contentFile.fileName.toString(), contentSnapshot.digests),
+                ManifestArtifactBinding(platformFile.fileName.toString(), platformSnapshot.digests),
+            )
 
             val expectedFiles =
                 mapOf(
                     contentFile.fileName.toString() to contentSnapshot.digests,
                     platformFile.fileName.toString() to platformSnapshot.digests,
                     catalogFile.fileName.toString() to heldCatalog.digests,
-                    manifestFile.fileName.toString() to ArtifactDigests.fromBytes(manifestBytes),
+                    manifestFile.fileName.toString() to
+                        ArtifactDigests.fromBytes(stagedManifestBytes),
                 )
             hooks.beforePrePublishVerification(stageDirectory.path)
             val prepublish = stageDirectory.snapshot(expectedFiles)
@@ -187,9 +206,9 @@ internal object PackSetBuilder {
                     Path.of("manifest.json"),
                     MAX_MANIFEST_BYTES,
                 ),
-                stage.resolve(catalogFile.fileName),
-                stage.resolve(contentFile.fileName),
-                stage.resolve(platformFile.fileName),
+                manifestBinding(catalogFile.fileName.toString(), prepublish),
+                manifestBinding(contentFile.fileName.toString(), prepublish),
+                manifestBinding(platformFile.fileName.toString(), prepublish),
             )
             val validatedPrepublish = stageDirectory.snapshot(expectedFiles)
             if (!prepublish.sameDigestsAndIdentities(validatedPrepublish)) {
@@ -198,6 +217,7 @@ internal object PackSetBuilder {
 
             val artifacts =
                 releaseArtifacts(
+                    inputs.publication,
                     output,
                     contentFile,
                     platformFile,
@@ -235,7 +255,7 @@ internal object PackSetBuilder {
         require(Regex("[0-9a-f]{40}").matches(inputs.provenanceCommit)) {
             "Commit must be lowercase 40-hex."
         }
-        require(inputs.provenanceTag == "v${inputs.version}") { "Tag must equal v<version>." }
+        PackSetObjectLayout.manifest(inputs.publication)
     }
 
     private fun validateDestination(raw: Path): Path {
@@ -257,21 +277,50 @@ internal object PackSetBuilder {
         return jar
     }
 
-    private fun validateManifest(bytes: ByteArray, catalog: Path, content: Path, platform: Path) {
-        val validation =
-            PackSetManifestJson.decodeAndValidate(
-                bytes,
-                ManifestArtifacts(
-                    catalog,
-                    mapOf(PackRole.CONTENT to content, PackRole.PLATFORM to platform),
-                ),
-            )
-        if (!validation.isValid) {
-            throw IOException("Generated manifest failed validation: ${validation.problems}")
+    private fun validateManifest(
+        bytes: ByteArray,
+        catalog: ManifestArtifactBinding,
+        content: ManifestArtifactBinding,
+        platform: ManifestArtifactBinding,
+    ) {
+        val validation = gg.grounds.resourcepacks.contract.PackSetContractJson.decodeManifest(bytes)
+        if (validation !is gg.grounds.resourcepacks.contract.ManifestDecodeResult.Success) {
+            throw IOException("Generated manifest failed validation: $validation")
+        }
+        val manifest = validation.manifest
+        if (
+            manifest.catalog.file != catalog.fileName ||
+                manifest.catalog.sha256 != catalog.digests.sha256 ||
+                manifest.catalog.size != catalog.digests.size
+        ) {
+            throw IOException("Generated manifest catalog metadata does not match staged bytes.")
+        }
+        bindPackArtifact(manifest, "content", content)
+        bindPackArtifact(manifest, "platform", platform)
+    }
+
+    private fun bindPackArtifact(
+        manifest: gg.grounds.resourcepacks.contract.PackSetManifest,
+        role: String,
+        expected: ManifestArtifactBinding,
+    ) {
+        val pack = manifest.packs.single { it.role == role }
+        val fileName = URI(pack.url).path.substringAfterLast('/')
+        if (
+            fileName != expected.fileName ||
+                pack.sha1 != expected.digests.sha1 ||
+                pack.sha256 != expected.digests.sha256 ||
+                pack.size != expected.digests.size
+        ) {
+            throw IOException("Generated manifest $role pack metadata does not match staged bytes.")
         }
     }
 
+    private fun manifestBinding(name: String, snapshot: DirectorySnapshot) =
+        ManifestArtifactBinding(name, snapshot.files.getValue(name).digests)
+
     private fun releaseArtifacts(
+        publication: PublicationIdentity,
         output: Path,
         contentFile: Path,
         platformFile: Path,
@@ -283,6 +332,7 @@ internal object PackSetBuilder {
             return ReleaseArtifact(output.resolve(name), digest.sha1, digest.sha256, digest.size)
         }
         return ReleaseArtifacts(
+            publication,
             artifact(contentFile.fileName.toString()),
             artifact(platformFile.fileName.toString()),
             artifact(catalogFile.fileName.toString()),
@@ -298,29 +348,44 @@ internal object PackSetBuilder {
         contentDigest: ArtifactDigests,
         platformFile: Path,
         platformDigest: ArtifactDigests,
-    ): PackSetManifest {
-        fun pack(order: Int, role: PackRole, file: Path, digest: ArtifactDigests): PackManifest {
+    ): gg.grounds.resourcepacks.contract.PackSetManifest {
+        fun pack(
+            order: Int,
+            role: PackRole,
+            file: Path,
+            digest: ArtifactDigests,
+        ): gg.grounds.resourcepacks.contract.ManifestPack {
             val id = if (role == PackRole.CONTENT) "grounds-content" else "grounds-platform"
             val uuid =
                 if (role == PackRole.CONTENT) PackSetConstants.contentUuid
                 else PackSetConstants.platformUuid
-            return PackManifest(
+            val location =
+                if (role == PackRole.CONTENT)
+                    PackSetObjectLayout.content(inputs.publication, digest.sha1)
+                else PackSetObjectLayout.platform(inputs.publication, digest.sha1)
+            return gg.grounds.resourcepacks.contract.ManifestPack(
                 order,
                 role.name.lowercase(),
                 id,
                 uuid,
                 true,
-                "https://cdn.grounds.gg/resourcepacks/${role.name.lowercase()}/${digest.sha1}.zip",
+                location.publicUrl,
                 digest.sha1,
                 digest.sha256,
                 digest.size,
                 PackSetConstants.FORMAT,
             )
         }
-        return PackSetManifest(
+        return gg.grounds.resourcepacks.contract.PackSetManifest(
+            2,
+            PackSetObjectLayout.PACK_SET_ID,
+            gg.grounds.resourcepacks.contract.ManifestPublication(
+                inputs.publication.type,
+                inputs.publication.id,
+            ),
             inputs.version,
-            MinecraftManifest("26.2", PackSetConstants.FORMAT),
-            CatalogManifest(
+            gg.grounds.resourcepacks.contract.ManifestMinecraft("26.2", PackSetConstants.FORMAT),
+            gg.grounds.resourcepacks.contract.ManifestCatalog(
                 "grounds:resourcepacks",
                 inputs.version,
                 "gg.grounds:resourcepacks-catalog:${inputs.version}",
@@ -332,10 +397,9 @@ internal object PackSetBuilder {
                 pack(0, PackRole.CONTENT, contentFile, contentDigest),
                 pack(1, PackRole.PLATFORM, platformFile, platformDigest),
             ),
-            ProvenanceManifest(
+            gg.grounds.resourcepacks.contract.ManifestProvenance(
                 "groundsgg/resourcepacks",
                 inputs.provenanceCommit,
-                inputs.provenanceTag,
             ),
         )
     }
@@ -368,6 +432,8 @@ internal object PackSetBuilder {
 
     private const val MAX_MANIFEST_BYTES = 64L * 1024
 }
+
+private data class ManifestArtifactBinding(val fileName: String, val digests: ArtifactDigests)
 
 /** Build wiring locates the exact catalog artifact; the public CLI never accepts this path. */
 internal object CatalogJarProvider {

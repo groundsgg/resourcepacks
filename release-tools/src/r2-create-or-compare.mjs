@@ -6,17 +6,17 @@ import { GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { sameStreamBytes } from './digests.mjs';
 import { runCli, strictArgs } from './cli.mjs';
-import { loadRelease, openVerifiedArtifact } from './manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from './manifest.mjs';
 import { DEFAULT_NETWORK_TIMEOUT_MS, OperationTimeoutError, withTimeout } from './timeout.mjs';
 
 export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
 /** Creates an R2 object exactly once, accepting only a byte-identical existing object. */
-export async function createOrCompare({ endpoint, bucket, key, file, accessKey, secretKey, expected, client, timeoutMs }) {
+export async function createOrCompare({ endpoint, bucket, key, file, artifact, accessKey, secretKey, expected, contentType = 'application/zip', client, timeoutMs }) {
   if (!accessKey || !secretKey) throw new Error('R2 credentials are required');
   const endpointUrl = new URL(endpoint);
   if (!['https:','http:'].includes(endpointUrl.protocol) || endpointUrl.username || endpointUrl.password || endpointUrl.protocol === 'http:' && !['127.0.0.1','localhost'].includes(endpointUrl.hostname)) throw new Error('R2 endpoint is invalid or insecure');
-  const verified = await openVerifiedArtifact({path:file,sha1:expected?.sha1,sha256:expected?.sha256,size:expected?.size});
+  const verified = await openVerifiedArtifact(artifact ?? {path:file,sha1:expected?.sha1,sha256:expected?.sha256,size:expected?.size});
   const quietLogger = {debug(){},info(){},warn(){},error(){}};
   const s3 = client ?? new S3Client({
     endpoint:endpointUrl.href,
@@ -37,7 +37,7 @@ export async function createOrCompare({ endpoint, bucket, key, file, accessKey, 
     try {
       put = await withTimeout(`R2 request timed out during upload for ${key}`,async({signal,onTimeout})=>{
         const body=verified.stream();onTimeout(()=>body.destroy());
-        return s3.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:body,ContentLength:verified.size,IfNoneMatch:'*',ContentType:'application/zip',CacheControl:IMMUTABLE_CACHE_CONTROL}),{abortSignal:signal});
+        return s3.send(new PutObjectCommand({Bucket:bucket,Key:key,Body:body,ContentLength:verified.size,IfNoneMatch:'*',ContentType:contentType,CacheControl:IMMUTABLE_CACHE_CONTROL}),{abortSignal:signal});
       },timeoutMs);
     } catch (error) {
       if(error instanceof OperationTimeoutError)throw error;
@@ -49,7 +49,7 @@ export async function createOrCompare({ endpoint, bucket, key, file, accessKey, 
       try{existing=await s3.send(new GetObjectCommand({Bucket:bucket,Key:key}),{abortSignal:signal});}
       catch(error){if(signal.aborted)throw error;throw new Error('R2 comparison download failed without exposing credentials');}
       if(!existing.Body)throw new Error('R2 comparison download did not return a body');
-      if(existing.ContentType!=='application/zip'||existing.CacheControl!==IMMUTABLE_CACHE_CONTROL)throw new Error('R2 existing object metadata differs; refusing overwrite');
+      if(existing.ContentType!==contentType||existing.CacheControl!==IMMUTABLE_CACHE_CONTROL)throw new Error('R2 existing object metadata differs; refusing overwrite');
       const local=verified.stream();const remote=Readable.from(existing.Body);onTimeout(()=>{local.destroy();remote.destroy();existing.Body.destroy?.();});
       if(!await sameStreamBytes(local,remote,verified.size))throw new Error('R2 existing object differs; refusing overwrite');
     },timeoutMs);
@@ -57,13 +57,14 @@ export async function createOrCompare({ endpoint, bucket, key, file, accessKey, 
   } finally { await verified.close().catch(()=>{}); }
 }
 
-export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs}) {
+export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs, client}) {
+  const {artifacts} = assertReleaseArtifactContract(release);
   let created = 0;
-  for (const pack of release.packs) {
-    const result = await createOrCompare({endpoint,bucket,key:pack.key,file:pack.artifact.path,accessKey,secretKey,expected:pack,timeoutMs});
+  for (const artifact of artifacts) {
+    const result = await createOrCompare({endpoint,bucket,key:artifact.key,artifact,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs,client});
     if (result.created) created += 1;
   }
-  return {created,identical:release.packs.length-created};
+  return {created,identical:artifacts.length-created};
 }
 
 async function main() {

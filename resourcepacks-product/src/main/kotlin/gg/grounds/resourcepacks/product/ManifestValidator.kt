@@ -661,6 +661,17 @@ internal object PackSetManifestJson {
     private const val MAX_VERSION = 256
 }
 
+/**
+ * Verification-only reader for immutable schema-v1 publications. Product generation never calls
+ * this reader: new releases are schema-v2 contract manifests and cannot become channel targets.
+ */
+internal object LegacyManifestReader {
+    fun decodeAndValidate(
+        bytes: ByteArray,
+        artifacts: ManifestArtifacts,
+    ): ManifestValidationResult = PackSetManifestJson.decodeAndValidate(bytes, artifacts)
+}
+
 /** Internal parser contract seam used to prove exact hostile-input boundaries. */
 internal object ManifestParserLimits {
     const val MAX_DEPTH = 64

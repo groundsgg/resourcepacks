@@ -27,6 +27,7 @@ class AutomationContractTest {
     fun `automation and repository contracts are fully bound`() {
         assertCi(parseWorkflow("ci.yml"))
         assertRelease(parseWorkflow("release.yml"))
+        assertEdge(parseWorkflow("edge.yml"))
         assertReleasePlease(parseWorkflow("release-please.yml"))
         assertReleaseConfiguration(
             parseDocument(root.resolve("release-please-config.json").readText()),
@@ -42,12 +43,48 @@ class AutomationContractTest {
     fun `controlled mutations reject every reviewed weak binding`() {
         val ci = workflowSource("ci.yml")
         val release = workflowSource("release.yml")
+        val edge = workflowSource("edge.yml")
+
+        listOf(
+                removeStep(edge, "Build raw current-commit PackSet two"),
+                replaceFirstOf(edge, "name: prepared-edge-packset", "name: wrong-prepared-edge", 3),
+                replaceOnce(
+                    edge,
+                    "--base-url https://cdn.grounds.gg",
+                    "--base-url https://attacker.example",
+                ),
+                replaceOnce(edge, "--channel edge", "--channel stable"),
+                replaceOnce(edge, "--sequence '${'$'}{{ github.run_number }}'", "--sequence '1'"),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n    if: always()\n    needs: [build, public-cdn]\n",
+                ),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n",
+                ),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n    needs: [build]\n",
+                ),
+                replaceFirstOf(edge, "environment: Edge/Stage", "environment: production", 2),
+                replaceFirstOf(
+                    edge,
+                    "      contents: read\n    steps:\n      - uses: actions/checkout@v7",
+                    "      contents: write\n    steps:\n      - uses: actions/checkout@v7",
+                    3,
+                ),
+            )
+            .forEach { assertFails { assertEdge(parseText(it)) } }
 
         // Retain the three previously reviewed mutations.
         val sharedCheckoutPath = replaceOnce(ci, "path: run2/src", "path: run1/src")
         assertFails { assertCi(parseText(sharedCheckoutPath)) }
         val maskedDecision =
-            replaceOnce(release, "decision=$(node", "echo \"decision=$(node").let {
+            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 2).let {
                 replaceOnce(
                     it,
                     "          case \"\$decision\" in\n" +
@@ -72,6 +109,9 @@ class AutomationContractTest {
         assertFails { assertCi(parseText(ciWithoutResolutionToken)) }
         val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
         assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
+        val missingContractPublication =
+            removeStep(release, "Stage the exact Contract Maven publication")
+        assertFails { assertRelease(parseText(missingContractPublication)) }
         val releaseWithSecretInsteadOfBuiltInToken =
             replaceExactly(
                 release,
@@ -96,32 +136,44 @@ class AutomationContractTest {
                     release,
                     "          name: immutable-packset-release",
                     "          name: mutable-packset-release",
-                    4,
+                    5,
                 )
                 .let {
                     replaceFirstOf(
                         it,
                         "          path: \${{ runner.temp }}/release",
                         "          path: \${{ runner.temp }}/other-release",
-                        4,
+                        5,
                     )
                 }
         assertFails { assertRelease(parseText(changedArtifactBinding)) }
         val removedLocalVerification = removeStep(release, "Locally verify the immutable release")
         assertFails { assertRelease(parseText(removedLocalVerification)) }
         val changedJava = replaceExactly(release, "java-version: '25'", "java-version: '21'", 2)
-        val changedNode = replaceExactly(release, "node-version: '24'", "node-version: '22'", 4)
+        val changedNode = replaceExactly(release, "node-version: '24'", "node-version: '22'", 5)
         assertFails { assertRelease(parseText(changedJava)) }
         assertFails { assertRelease(parseText(changedNode)) }
         val removedGitHubCommand = removeStep(release, "Attach only byte-identical release assets")
         assertFails { assertRelease(parseText(removedGitHubCommand)) }
-        val changedR2Binding =
-            replaceOnce(
+        val changedImmutableR2Binding =
+            replaceFirstOf(
                 release,
                 "--bucket '\${{ secrets.R2_BUCKET }}'",
                 "--container '\${{ secrets.R2_OTHER_BUCKET }}'",
+                2,
             )
-        assertFails { assertRelease(parseText(changedR2Binding)) }
+        val changedStableR2Binding =
+            replaceLastOf(
+                release,
+                "--bucket '\${{ secrets.R2_BUCKET }}'",
+                "--container '\${{ secrets.R2_OTHER_BUCKET }}'",
+                2,
+            )
+        assertFails { assertRelease(parseText(changedImmutableR2Binding)) }
+        assertFails { assertRelease(parseText(changedStableR2Binding)) }
+        val unsafeRefInterpolation =
+            replaceOnce(release, "tag=\"\$RELEASE_TAG\"", "tag='${'$'}{{ github.ref_name }}'")
+        assertFails { assertRelease(parseText(unsafeRefInterpolation)) }
 
         val config = root.resolve("release-please-config.json").readText()
         val changedReleaseConfig = replaceExactly(config, "\"version.txt\"", "\"VERSION\"", 2)
@@ -142,6 +194,19 @@ class AutomationContractTest {
             workflowSource("release.yml")
                 .substringAfter("id: maven-gate")
                 .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    @Test
+    fun `Contract Maven decision gate rejects failed empty and invalid output before its successor`() {
+        val gate =
+            workflowSource("release.yml")
+                .substringAfter("id: contract-maven-gate")
+                .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    private fun assertMavenDecisionGateRejects(gate: String) {
         listOf("fail", "", "garbage").forEach { result ->
             val directory = kotlin.io.path.createTempDirectory("maven-gate-")
             val bin = directory.resolve("bin").createDirectory()
@@ -252,13 +317,13 @@ class AutomationContractTest {
         assertEquals(
             "./gradlew --no-build-cache :resourcepacks-product:buildPackSet " +
                 "-PpackSetVersion='$versionOutput' -PprovenanceCommit='$githubSha' " +
-                "-PprovenanceTag='v$versionOutput' -PreleaseOutput=\"\$RUNNER_TEMP/release-one\"",
+                "-PpublicationType=release -PpublicationId='v$versionOutput' -PreleaseOutput=\"\$RUNNER_TEMP/release-one\"",
             run(stepByName(steps, "Build release candidate one"), "run1/src"),
         )
         assertEquals(
             "./gradlew --no-build-cache :resourcepacks-product:buildPackSet " +
                 "-PpackSetVersion='$versionOutput' -PprovenanceCommit='$githubSha' " +
-                "-PprovenanceTag='v$versionOutput' -PreleaseOutput=\"\$RUNNER_TEMP/release-two\"",
+                "-PpublicationType=release -PpublicationId='v$versionOutput' -PreleaseOutput=\"\$RUNNER_TEMP/release-two\"",
             run(stepByName(steps, "Build release candidate two"), "run2/src"),
         )
         assertEquals(
@@ -286,7 +351,10 @@ class AutomationContractTest {
         )
 
         val jobs = mapping(release, "jobs")
-        assertEquals(setOf("build", "publish", "public-cdn", "release-assets"), jobs.keys)
+        assertEquals(
+            setOf("build", "publish", "public-cdn", "release-assets", "stable-channel"),
+            jobs.keys,
+        )
         jobs.forEach { (name, raw) ->
             assertEquals("ubuntu-24.04", scalar(mapping(raw), "runs-on"), "$name runner")
         }
@@ -294,12 +362,14 @@ class AutomationContractTest {
         assertEquals("build", mapping(jobs, "publish")["needs"])
         assertEquals("publish", mapping(jobs, "public-cdn")["needs"])
         assertEquals(listOf("build", "public-cdn"), mapping(jobs, "release-assets")["needs"])
+        assertEquals(listOf("build", "release-assets"), mapping(jobs, "stable-channel")["needs"])
         assertEquals(
             mapOf(
                 "build" to mapOf("contents" to "read", "packages" to "read"),
                 "publish" to mapOf("contents" to "read", "packages" to "write"),
                 "public-cdn" to mapOf("contents" to "read"),
                 "release-assets" to mapOf("contents" to "write"),
+                "stable-channel" to mapOf("contents" to "read"),
             ),
             jobs.mapValues { mapping(mapping(it.value), "permissions") },
         )
@@ -313,7 +383,10 @@ class AutomationContractTest {
         )
         jobs.forEach { (name, raw) ->
             val job = mapping(raw)
-            assertEquals(if (name == "publish") "production" else null, job["environment"])
+            assertEquals(
+                if (name == "publish" || name == "stable-channel") "production" else null,
+                job["environment"],
+            )
             assertEquals(
                 if (name == "build" || name == "publish") packageResolutionEnvironment else null,
                 job["env"],
@@ -364,18 +437,229 @@ class AutomationContractTest {
         assertReleasePublish(allSteps.getValue("publish"))
         assertPublicCdn(mapping(jobs, "public-cdn"), allSteps.getValue("public-cdn"))
         assertReleaseAssets(allSteps.getValue("release-assets"))
-        allSteps.values.forEach(::assertNoDestructiveCommands)
+        assertAdvanceStable(allSteps.getValue("stable-channel"))
+        allSteps.values.forEach { steps ->
+            assertNoDestructiveCommands(steps)
+            steps.forEach stepLoop@{ step ->
+                val script = step["run"] as? String ?: return@stepLoop
+                assertFalse(
+                    script.contains("${'$'}{{ github.ref_name }}"),
+                    "attacker-controlled ref_name must enter scripts only through step env",
+                )
+            }
+        }
+    }
+
+    private fun assertEdge(edge: Map<String, Any?>) {
+        assertEquals("Publish Edge PackSet build", scalar(edge, "name"))
+        assertEquals(mapOf("branches" to listOf("main")), mapping(mapping(edge, "on"), "push"))
+        assertEquals(setOf("push"), mapping(edge, "on").keys)
+        assertEquals(mapOf("contents" to "read"), mapping(edge, "permissions"))
+        assertEquals(
+            mapOf("group" to "resourcepacks-edge-main", "cancel-in-progress" to false),
+            mapping(edge, "concurrency"),
+        )
+        val jobs = mapping(edge, "jobs")
+        assertEquals(setOf("build", "publish", "public-cdn", "edge-channel"), jobs.keys)
+        assertEquals(null, mapping(jobs, "build")["needs"])
+        assertEquals("build", mapping(jobs, "publish")["needs"])
+        assertEquals("publish", mapping(jobs, "public-cdn")["needs"])
+        assertEquals(listOf("build", "public-cdn"), mapping(jobs, "edge-channel")["needs"])
+        assertEquals(
+            null,
+            mapping(jobs, "edge-channel")["if"],
+            "edge-channel must use GitHub's default success-only needs gate",
+        )
+        jobs.forEach { (name, raw) ->
+            val job = mapping(raw)
+            assertEquals("ubuntu-24.04", scalar(job, "runs-on"), name)
+            assertEquals(
+                if (name == "publish" || name == "edge-channel") "Edge/Stage" else null,
+                job["environment"],
+                name,
+            )
+            assertEquals(
+                if (name == "build") mapOf("contents" to "read", "packages" to "read")
+                else mapOf("contents" to "read"),
+                mapping(job, "permissions"),
+                name,
+            )
+        }
+        val steps = jobs.mapValues { steps(mapping(it.value)) }
+        steps.forEach { (name, jobSteps) ->
+            val checkouts = actionSteps(jobSteps, "actions/checkout@v7")
+            if (name == "build") {
+                assertEquals(
+                    setOf(
+                        mapOf(
+                            "ref" to githubSha,
+                            "fetch-depth" to 1,
+                            "persist-credentials" to false,
+                            "path" to "run1/src",
+                        ),
+                        mapOf(
+                            "ref" to githubSha,
+                            "fetch-depth" to 1,
+                            "persist-credentials" to false,
+                            "path" to "run2/src",
+                        ),
+                    ),
+                    checkouts.map { mapping(it, "with") }.toSet(),
+                )
+            } else
+                assertEquals(
+                    mapOf("ref" to githubSha, "fetch-depth" to 1, "persist-credentials" to false),
+                    mapping(checkouts.single(), "with"),
+                    name,
+                )
+            assertEquals(
+                mapOf(
+                    "node-version" to "24",
+                    "cache" to "npm",
+                    "cache-dependency-path" to
+                        if (name == "build") "run1/src/release-tools/package-lock.json"
+                        else "release-tools/package-lock.json",
+                ),
+                mapping(actionSteps(jobSteps, "actions/setup-node@v5").single(), "with"),
+                name,
+            )
+            assertNoDestructiveCommands(jobSteps)
+        }
+        assertEquals(
+            mapOf("distribution" to "temurin", "java-version" to "25"),
+            mapping(actionSteps(steps.getValue("build"), "actions/setup-java@v5").single(), "with"),
+        )
+        val identity = stepByName(steps.getValue("build"), "Derive exact Edge identity")
+        assertEquals("edge", scalar(identity, "id"))
+        assertEquals(
+            "short_sha=\"\${GITHUB_SHA:0:12}\"\nedge_version=\"0.0.0-edge.\${GITHUB_RUN_NUMBER}.g\${short_sha}\"\necho \"version=\$edge_version\" >> \"\$GITHUB_OUTPUT\"\necho \"commit=\$GITHUB_SHA\" >> \"\$GITHUB_OUTPUT\"",
+            scalar(identity, "run"),
+        )
+        assertEquals(
+            "npm ci --ignore-scripts\nnpm test\nnpm test\nnpm audit --audit-level=high",
+            run(
+                stepByName(
+                    steps.getValue("build"),
+                    "Run Node release-tool tests twice and audit dependencies",
+                ),
+                "run1/src/release-tools",
+            ),
+        )
+        assertEquals(
+            "./gradlew --no-build-cache clean build " +
+                "-PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' " +
+                "-PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' " +
+                "-PpublicationType=build " +
+                "-PpublicationId='${'$'}{{ steps.edge.outputs.commit }}'",
+            run(
+                stepByName(steps.getValue("build"), "Build clean deterministic checkout"),
+                "run1/src",
+            ),
+        )
+        assertEquals(
+            "./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-one\"",
+            run(
+                stepByName(steps.getValue("build"), "Build raw current-commit PackSet one"),
+                "run1/src",
+            ),
+        )
+        assertEquals(
+            "./gradlew --no-build-cache clean build :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-two\"",
+            run(
+                stepByName(steps.getValue("build"), "Build raw current-commit PackSet two"),
+                "run2/src",
+            ),
+        )
+        assertEquals(
+            "diff --no-dereference -r \"\$RUNNER_TEMP/raw-edge-one\" \"\$RUNNER_TEMP/raw-edge-two\"",
+            scalar(
+                stepByName(steps.getValue("build"), "Compare deterministic raw Edge PackSets"),
+                "run",
+            ),
+        )
+        assertEquals(
+            mapOf(
+                "name" to "raw-edge-packset",
+                "path" to "${'$'}{{ runner.temp }}/raw-edge-one",
+                "if-no-files-found" to "error",
+                "retention-days" to 1,
+            ),
+            mapping(stepByName(steps.getValue("build"), "Upload raw Edge PackSet"), "with"),
+        )
+        assertEquals(
+            "node release-tools/src/prepare-edge.mjs --manifest \"\$RUNNER_TEMP/raw-edge/manifest.json\" --release-directory \"\$RUNNER_TEMP/raw-edge\" --output-directory \"\$RUNNER_TEMP/prepared-edge\" --bucket '${'$'}{{ secrets.R2_BUCKET }}' --endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' --access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}'",
+            scalar(
+                stepByName(
+                    steps.getValue("publish"),
+                    "Prepare Edge PackSet from validated prior channel",
+                ),
+                "run",
+            ),
+        )
+        assertEquals(
+            "node release-tools/src/r2-create-or-compare.mjs --manifest \"\$RUNNER_TEMP/prepared-edge/manifest.json\" --release-directory \"\$RUNNER_TEMP/prepared-edge\" --bucket '${'$'}{{ secrets.R2_BUCKET }}' --endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' --access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}'",
+            scalar(
+                stepByName(steps.getValue("publish"), "Create or compare immutable Edge objects"),
+                "run",
+            ),
+        )
+        assertEquals(
+            mapOf(
+                "name" to "prepared-edge-packset",
+                "path" to "${'$'}{{ runner.temp }}/prepared-edge",
+                "if-no-files-found" to "error",
+                "retention-days" to 1,
+            ),
+            mapping(stepByName(steps.getValue("publish"), "Upload prepared Edge PackSet"), "with"),
+        )
+        assertEquals(
+            mapOf(
+                "name" to "prepared-edge-packset",
+                "path" to "${'$'}{{ runner.temp }}/prepared-edge",
+            ),
+            mapping(
+                actionSteps(steps.getValue("public-cdn"), "actions/download-artifact@v5").single(),
+                "with",
+            ),
+        )
+        assertEquals(
+            "node release-tools/src/verify-cdn.mjs --manifest \"\$RUNNER_TEMP/prepared-edge/manifest.json\" --release-directory \"\$RUNNER_TEMP/prepared-edge\" --base-url https://cdn.grounds.gg",
+            scalar(stepByName(steps.getValue("public-cdn"), "Verify Edge CDN bytes"), "run"),
+        )
+        val advance = stepByName(steps.getValue("edge-channel"), "Advance Edge channel last")
+        assertEquals(
+            "node release-tools/src/r2-channel-advance.mjs --channel edge --manifest \"\$RUNNER_TEMP/prepared-edge/manifest.json\" --release-directory \"\$RUNNER_TEMP/prepared-edge\" --bucket '${'$'}{{ secrets.R2_BUCKET }}' --endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' --access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}' --sequence '${'$'}{{ github.run_number }}'",
+            scalar(advance, "run"),
+        )
+        assertEquals(
+            mapOf(
+                "name" to "prepared-edge-packset",
+                "path" to "${'$'}{{ runner.temp }}/prepared-edge",
+            ),
+            mapping(
+                actionSteps(steps.getValue("edge-channel"), "actions/download-artifact@v5")
+                    .single(),
+                "with",
+            ),
+        )
+        listOf("maven", "release-assets", "stable", "github release").forEach { forbidden ->
+            assertFalse(edge.toString().lowercase().contains(forbidden), forbidden)
+        }
     }
 
     private fun assertReleaseBuild(steps: List<Map<String, Any?>>) {
         val derive = stepByName(steps, "Derive exact tag, commit, and version")
         assertEquals("release", scalar(derive, "id"))
+        assertEquals(
+            mapOf("RELEASE_TAG" to "${'$'}{{ github.ref_name }}", "RELEASE_COMMIT" to githubSha),
+            mapping(derive, "env"),
+        )
         assertEquals(releaseDerivationScript, scalar(derive, "run"))
         assertEquals(
             "./gradlew --no-build-cache :resourcepacks-product:buildPackSet " +
                 "-PpackSetVersion='${'$'}{{ steps.release.outputs.version }}' " +
                 "-PprovenanceCommit='${'$'}{{ steps.release.outputs.commit }}' " +
-                "-PprovenanceTag='${'$'}{{ steps.release.outputs.tag }}' " +
+                "-PpublicationType=release -PpublicationId='${'$'}{{ steps.release.outputs.tag }}' " +
                 "-PreleaseOutput=\"\$RUNNER_TEMP/release\"",
             scalar(stepByName(steps, "Build the exact four artifacts"), "run"),
         )
@@ -414,10 +698,20 @@ class AutomationContractTest {
         val gate = steps.indexOfFirst { scalar(it, "id") == "maven-gate" }
         val publish =
             steps.indexOf(stepByName(steps, "Publish the unchanged Maven staging workspace"))
+        val contractStage =
+            steps.indexOf(stepByName(steps, "Stage the exact Contract Maven publication"))
+        val contractGate = steps.indexOfFirst { scalar(it, "id") == "contract-maven-gate" }
+        val contractPublish =
+            steps.indexOf(
+                stepByName(steps, "Publish the unchanged Contract Maven staging workspace")
+            )
         val r2 = steps.indexOf(stepByName(steps, "Create or compare immutable R2 ZIP objects"))
         assertEquals(gate - 1, stage)
         assertEquals(gate + 1, publish)
-        assertEquals(publish + 1, r2)
+        assertEquals(publish + 1, contractStage)
+        assertEquals(contractStage + 1, contractGate)
+        assertEquals(contractGate + 1, contractPublish)
+        assertEquals(contractPublish + 1, r2)
         assertEquals(
             "./gradlew :resourcepacks-catalog:stageExactMavenPublication " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
@@ -429,6 +723,21 @@ class AutomationContractTest {
             "./gradlew :resourcepacks-catalog:publishMavenJavaPublicationToGitHubPackagesRepository " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
             scalar(steps[publish], "run"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-contract:stageExactMavenPublication " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contractStage], "run"),
+        )
+        assertEquals(contractMavenDecisionScript, scalar(steps[contractGate], "run"))
+        assertEquals(
+            "steps.contract-maven-gate.outputs.decision == 'publish'",
+            scalar(steps[contractPublish], "if"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-contract:publishMavenJavaPublicationToGitHubPackagesRepository " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contractPublish], "run"),
         )
         assertEquals(r2Command, scalar(steps[r2], "run"))
     }
@@ -445,6 +754,7 @@ class AutomationContractTest {
         assertEquals(
             "node release-tools/src/verify-cdn.mjs " +
                 "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
+                "--release-directory \"\$RUNNER_TEMP/release\" " +
                 "--base-url https://cdn.grounds.gg",
             scalar(
                 stepByName(steps, "Verify public CDN bytes without production credentials"),
@@ -455,13 +765,41 @@ class AutomationContractTest {
 
     private fun assertReleaseAssets(steps: List<Map<String, Any?>>) {
         assertDownloadBindings(steps)
+        val attach = stepByName(steps, "Attach only byte-identical release assets")
         assertEquals(
-            "test '${'$'}{{ needs.build.outputs.tag }}' = '${'$'}{{ github.ref_name }}'\n" +
+            mapOf(
+                "EXPECTED_TAG" to "${'$'}{{ needs.build.outputs.tag }}",
+                "TRIGGER_TAG" to "${'$'}{{ github.ref_name }}",
+            ),
+            mapping(attach, "env"),
+        )
+        assertEquals(
+            "test \"\$EXPECTED_TAG\" = \"\$TRIGGER_TAG\"\n" +
                 "node release-tools/src/release-assets-create-or-compare.mjs " +
                 "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
                 "--release-directory \"\$RUNNER_TEMP/release\" " +
                 "--token '${'$'}{{ secrets.GITHUB_TOKEN }}'",
-            scalar(stepByName(steps, "Attach only byte-identical release assets"), "run"),
+            scalar(attach, "run"),
+        )
+    }
+
+    private fun assertAdvanceStable(steps: List<Map<String, Any?>>) {
+        assertDownloadBindings(steps)
+        assertEquals(
+            "npm ci --ignore-scripts",
+            run(stepByName(steps, "Install locked release tools"), "release-tools"),
+        )
+        assertEquals(
+            "node release-tools/src/r2-channel-advance.mjs " +
+                "--channel stable " +
+                "--manifest \"\$RUNNER_TEMP/release/manifest.json\" " +
+                "--release-directory \"\$RUNNER_TEMP/release\" " +
+                "--bucket '${'$'}{{ secrets.R2_BUCKET }}' " +
+                "--endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' " +
+                "--access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' " +
+                "--secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}' " +
+                "--sequence '${'$'}{{ github.run_number }}'",
+            scalar(stepByName(steps, "Advance Stable channel last"), "run"),
         )
     }
 
@@ -523,10 +861,10 @@ class AutomationContractTest {
                 "## Local build",
                 "-PpackSetVersion=\"\$(tr -d '\\n' < version.txt)\"",
                 "-PprovenanceCommit=<40-lowercase-git-sha>",
-                "-PprovenanceTag=\"v\$(tr -d '\\n' < version.txt)\"",
-                "grounds-content-<sha1>.zip",
-                "grounds-platform-<sha1>.zip",
-                "grounds-resourcepacks-catalog-<version>.jar",
+                "-PpublicationType=release",
+                "-PpublicationId=\"v\$(tr -d '\\n' < version.txt)\"",
+                "grounds-*-pack-v<version>.zip",
+                "grounds-resourcepack-catalog-v<version>.jar",
                 "manifest.json",
                 "gg.grounds:resourcepacks-catalog:<packSetVersion>",
                 "GroundsGuiIds",
@@ -535,8 +873,9 @@ class AutomationContractTest {
                 "R2_ENDPOINT",
                 "R2_ACCESS_KEY_ID",
                 "R2_SECRET_ACCESS_KEY",
-                "https://cdn.grounds.gg/resourcepacks/content/<sha1>.zip",
-                "https://cdn.grounds.gg/resourcepacks/platform/<sha1>.zip",
+                "resourcepacks/packsets/grounds-global/releases/v<version>/",
+                "channels/stable.json",
+                "channels/edge.json",
                 "## Out of scope",
                 "does not activate a PackSet in Config Service",
             )
@@ -671,6 +1010,18 @@ class AutomationContractTest {
         return source.replaceFirst(old, replacement)
     }
 
+    private fun replaceLastOf(
+        source: String,
+        old: String,
+        replacement: String,
+        expectedCount: Int,
+    ): String {
+        assertEquals(expectedCount, Regex(Regex.escape(old)).findAll(source).count())
+        val index = source.lastIndexOf(old)
+        assertTrue(index >= 0, "missing mutation anchor $old")
+        return source.replaceRange(index, index + old.length, replacement)
+    }
+
     private fun removeStep(source: String, name: String): String {
         val marker = "      - name: $name\n"
         val start = source.indexOf(marker)
@@ -687,10 +1038,10 @@ class AutomationContractTest {
                 "release_one=\"\$RUNNER_TEMP/release-one\"",
                 "release_two=\"\$RUNNER_TEMP/release-two\"",
                 "test \"\$(find \"\$release_one\" -maxdepth 1 -type f | wc -l)\" -eq 4",
-                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `\${pack.id}-\${pack.sha1}.zip`), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\");' \"\$release_one/manifest.json\" \"\$release_one\"",
-                "zipinfo -1 \"\$release_one\"/grounds-content-*.zip",
-                "zipinfo -1 \"\$release_one\"/grounds-platform-*.zip",
-                "zipinfo -1 \"\$release_one\"/grounds-resourcepacks-catalog-*.jar",
+                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split(\"/\").at(-1)), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\");' \"\$release_one/manifest.json\" \"\$release_one\"",
+                "zipinfo -1 \"\$release_one\"/grounds-content-pack-*.zip",
+                "zipinfo -1 \"\$release_one\"/grounds-platform-pack-*.zip",
+                "zipinfo -1 \"\$release_one\"/grounds-resourcepack-catalog-*.jar",
                 "cmp \"\$release_one/manifest.json\" \"\$release_two/manifest.json\"",
                 "diff --no-dereference -r \"\$release_one\" \"\$release_two\"",
             )
@@ -698,13 +1049,13 @@ class AutomationContractTest {
 
     private val releaseDerivationScript =
         listOf(
-                "tag='${'$'}{{ github.ref_name }}'",
+                "tag=\"\$RELEASE_TAG\"",
                 "version=\"\${tag#v}\"",
                 "test -n \"\$version\"",
                 "test \"\$version\" = \"\$(tr -d '\\n' < version.txt)\"",
                 "echo \"tag=\$tag\" >> \"\$GITHUB_OUTPUT\"",
                 "echo \"version=\$version\" >> \"\$GITHUB_OUTPUT\"",
-                "echo \"commit=${'$'}{{ github.sha }}\" >> \"\$GITHUB_OUTPUT\"",
+                "echo \"commit=\$RELEASE_COMMIT\" >> \"\$GITHUB_OUTPUT\"",
             )
             .joinToString("\n")
 
@@ -712,10 +1063,10 @@ class AutomationContractTest {
         listOf(
                 "release=\"\$RUNNER_TEMP/release\"",
                 "test \"\$(find \"\$release\" -maxdepth 1 -type f | wc -l)\" -eq 4",
-                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => `\${pack.id}-\${pack.sha1}.zip`), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\"); if (manifest.version !== process.argv[3] || manifest.provenance.tag !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error(\"release manifest provenance mismatch\");' \"\$release/manifest.json\" \"\$release\" '${'$'}{{ steps.release.outputs.version }}' '${'$'}{{ steps.release.outputs.tag }}' '${'$'}{{ steps.release.outputs.commit }}'",
-                "zipinfo -1 \"\$release\"/grounds-content-*.zip",
-                "zipinfo -1 \"\$release\"/grounds-platform-*.zip",
-                "zipinfo -1 \"\$release\"/grounds-resourcepacks-catalog-*.jar",
+                "node --input-type=module --eval 'import { readdir, readFile } from \"node:fs/promises\"; const manifest = JSON.parse(await readFile(process.argv[1], \"utf8\")); const expected = [manifest.catalog.file, ...manifest.packs.map(pack => new URL(pack.url).pathname.split(\"/\").at(-1)), \"manifest.json\"].sort(); const actual = (await readdir(process.argv[2])).sort(); if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(\"release artifact set mismatch\"); if (manifest.version !== process.argv[3] || manifest.publication.type !== \"release\" || manifest.publication.id !== process.argv[4] || manifest.provenance.commit !== process.argv[5]) throw new Error(\"release manifest provenance mismatch\");' \"\$release/manifest.json\" \"\$release\" '${'$'}{{ steps.release.outputs.version }}' '${'$'}{{ steps.release.outputs.tag }}' '${'$'}{{ steps.release.outputs.commit }}'",
+                "zipinfo -1 \"\$release\"/grounds-content-pack-*.zip",
+                "zipinfo -1 \"\$release\"/grounds-platform-pack-*.zip",
+                "zipinfo -1 \"\$release\"/grounds-resourcepack-catalog-*.jar",
             )
             .joinToString("\n")
 
@@ -725,6 +1076,17 @@ class AutomationContractTest {
                 "case \"\$decision\" in",
                 "  publish|skip) ;;",
                 "  *) echo \"Maven decision is invalid\" >&2; exit 1 ;;",
+                "esac",
+                "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
+            )
+            .joinToString("\n")
+
+    private val contractMavenDecisionScript =
+        listOf(
+                "decision=\$(node release-tools/src/contract-maven-create-or-compare.mjs --staging-directory resourcepacks-contract/build/release-maven-staging --version '${'$'}{{ needs.build.outputs.version }}' --username '${'$'}{{ github.actor }}' --token '${'$'}{{ secrets.GITHUB_TOKEN }}')",
+                "case \"\$decision\" in",
+                "  publish|skip) ;;",
+                "  *) echo \"Contract Maven decision is invalid\" >&2; exit 1 ;;",
                 "esac",
                 "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
             )

@@ -21,24 +21,31 @@ export function canonicalJson(value) {
   return `${JSON.stringify(normalize(value), null, 2)}\n`;
 }
 
-export async function createReleaseFixture() {
+export async function createReleaseFixture({ type = 'release', commit = '0123456789abcdef0123456789abcdef01234567' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'resourcepacks-task8-release-'));
   const content = Buffer.from('content zip fixture');
   const platform = Buffer.from('platform zip fixture');
   const catalog = Buffer.from('catalog jar fixture');
   const contentSha1 = digest('sha1', content);
   const platformSha1 = digest('sha1', platform);
+  const version = type === 'release' ? '0.1.0' : `0.0.0-edge.42.g${commit.slice(0, 12)}`;
+  const publication = type === 'release' ? { type: 'release', id: `v${version}` } : { type: 'build', id: commit };
+  const objectRoot = type === 'release'
+    ? `resourcepacks/packsets/grounds-global/releases/${publication.id}`
+    : `resourcepacks/packsets/grounds-global/builds/${commit}`;
+  const suffix = type === 'release' ? publication.id : `edge-${commit.slice(0, 12)}`;
+  const names = { content: `grounds-content-pack-${suffix}.zip`, platform: `grounds-platform-pack-${suffix}.zip`, catalog: `grounds-resourcepack-catalog-${suffix}.jar` };
   const manifest = {
     catalog: {
-      coordinate: 'gg.grounds:resourcepacks-catalog:0.1.0',
-      file: 'grounds-resourcepacks-catalog-0.1.0.jar',
+      coordinate: `gg.grounds:resourcepacks-catalog:${version}`,
+      file: names.catalog,
       id: 'grounds:resourcepacks',
       sha256: digest('sha256', catalog),
       size: catalog.length,
-      version: '0.1.0',
+      version,
     },
-    id: 'grounds:global',
     minecraft: { resourcePackFormat: 88, version: '26.2' },
+    packSet: 'grounds-global',
     packs: [
       {
         id: 'grounds-content',
@@ -49,7 +56,7 @@ export async function createReleaseFixture() {
         sha1: contentSha1,
         sha256: digest('sha256', content),
         size: content.length,
-        url: `https://cdn.grounds.gg/resourcepacks/content/${contentSha1}.zip`,
+        url: `https://cdn.grounds.gg/${objectRoot}/${names.content}`,
         uuid: '44591d5b-71f5-5c2a-a5b2-d3ee7be47e53',
       },
       {
@@ -61,22 +68,22 @@ export async function createReleaseFixture() {
         sha1: platformSha1,
         sha256: digest('sha256', platform),
         size: platform.length,
-        url: `https://cdn.grounds.gg/resourcepacks/platform/${platformSha1}.zip`,
+        url: `https://cdn.grounds.gg/${objectRoot}/${names.platform}`,
         uuid: '8da7cffe-bb04-55e0-9868-7789ce5de362',
       },
     ],
     provenance: {
-      commit: '0123456789abcdef0123456789abcdef01234567',
+      commit,
       repository: 'groundsgg/resourcepacks',
-      tag: 'v0.1.0',
     },
-    schemaVersion: 1,
-    version: '0.1.0',
+    publication,
+    schemaVersion: 2,
+    version,
   };
   const files = new Map([
-    [`grounds-content-${contentSha1}.zip`, content],
-    [`grounds-platform-${platformSha1}.zip`, platform],
-    ['grounds-resourcepacks-catalog-0.1.0.jar', catalog],
+    [names.content, content],
+    [names.platform, platform],
+    [names.catalog, catalog],
   ]);
   for (const [name, bytes] of files) await writeFile(join(root, name), bytes);
   const manifestBytes = canonicalJson(manifest);

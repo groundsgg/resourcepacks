@@ -1,0 +1,48 @@
+{
+  "catalog": {
+    "coordinate": "gg.grounds:resourcepacks-catalog:0.1.1",
+    "file": "grounds-resourcepacks-catalog-0.1.1.jar",
+    "id": "grounds:resourcepacks",
+    "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+    "size": 3,
+    "version": "0.1.1"
+  },
+  "id": "grounds:global",
+  "minecraft": {
+    "resourcePackFormat": 88,
+    "version": "26.2"
+  },
+  "packs": [
+    {
+      "id": "grounds-content",
+      "order": 0,
+      "required": true,
+      "resourcePackFormat": 88,
+      "role": "content",
+      "sha1": "13a936c521299ecb9702d0b63e6458171f926bba",
+      "sha256": "c6d44cf418f610e3fe9e1d9294ff43def81c6cdcad6cbb1820cff48d3aa4355d",
+      "size": 4,
+      "url": "https://cdn.grounds.gg/resourcepacks/content/13a936c521299ecb9702d0b63e6458171f926bba.zip",
+      "uuid": "44591d5b-71f5-5c2a-a5b2-d3ee7be47e53"
+    },
+    {
+      "id": "grounds-platform",
+      "order": 1,
+      "required": true,
+      "resourcePackFormat": 88,
+      "role": "platform",
+      "sha1": "175cf2b94164a8a07fdf8d00cf144404c763199e",
+      "sha256": "bd420fe3805369a34abadcc6b32fd58d81c8ef3befe97c9a67532efef7d7b1c8",
+      "size": 5,
+      "url": "https://cdn.grounds.gg/resourcepacks/platform/175cf2b94164a8a07fdf8d00cf144404c763199e.zip",
+      "uuid": "8da7cffe-bb04-55e0-9868-7789ce5de362"
+    }
+  ],
+  "provenance": {
+    "commit": "1969c1e6a3799e976de46eab019a16b2ee257ea7",
+    "repository": "groundsgg/resourcepacks",
+    "tag": "v0.1.1"
+  },
+  "schemaVersion": 1,
+  "version": "0.1.1"
+}
