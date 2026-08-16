@@ -11,6 +11,7 @@ internal data class ReleaseArtifact(
 
 /** Immutable description of the four files atomically published by [PackSetBuilder]. */
 internal class ReleaseArtifacts(
+    val publication: PublicationIdentity,
     val content: ReleaseArtifact,
     val platform: ReleaseArtifact,
     val catalog: ReleaseArtifact,

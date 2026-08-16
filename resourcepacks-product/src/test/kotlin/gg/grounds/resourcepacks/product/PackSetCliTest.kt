@@ -36,12 +36,14 @@ class PackSetCliTest {
             val result =
                 runCli(
                     listOf(
+                        "--publication-type",
+                        "release",
+                        "--publication-id",
+                        "v${ReleaseTestContext.version}",
                         "--version",
                         ReleaseTestContext.version,
                         "--commit",
                         "b".repeat(40),
-                        "--tag",
-                        "v${ReleaseTestContext.version}",
                         "--output",
                         output.toString(),
                     )

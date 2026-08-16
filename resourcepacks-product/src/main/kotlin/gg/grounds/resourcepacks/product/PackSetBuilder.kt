@@ -198,6 +198,7 @@ internal object PackSetBuilder {
 
             val artifacts =
                 releaseArtifacts(
+                    inputs.publication,
                     output,
                     contentFile,
                     platformFile,
@@ -235,7 +236,7 @@ internal object PackSetBuilder {
         require(Regex("[0-9a-f]{40}").matches(inputs.provenanceCommit)) {
             "Commit must be lowercase 40-hex."
         }
-        require(inputs.provenanceTag == "v${inputs.version}") { "Tag must equal v<version>." }
+        PackSetObjectLayout.manifest(inputs.publication)
     }
 
     private fun validateDestination(raw: Path): Path {
@@ -272,6 +273,7 @@ internal object PackSetBuilder {
     }
 
     private fun releaseArtifacts(
+        publication: PublicationIdentity,
         output: Path,
         contentFile: Path,
         platformFile: Path,
@@ -283,6 +285,7 @@ internal object PackSetBuilder {
             return ReleaseArtifact(output.resolve(name), digest.sha1, digest.sha256, digest.size)
         }
         return ReleaseArtifacts(
+            publication,
             artifact(contentFile.fileName.toString()),
             artifact(platformFile.fileName.toString()),
             artifact(catalogFile.fileName.toString()),
