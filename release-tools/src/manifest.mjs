@@ -16,6 +16,7 @@ const MAX_MANIFEST_SIZE = 1024 * 1024;
 const CONTENT_SIZE_LIMIT = 128 * 1024 * 1024;
 const PLATFORM_SIZE_LIMIT = 16 * 1024 * 1024;
 const CATALOG_SIZE_LIMIT = 1024 * 1024 * 1024;
+const LOADED_RELEASES = new WeakSet();
 
 function fail(detail) {
   throw new Error(`manifest validation failed: ${detail}`);
@@ -94,6 +95,24 @@ export function validateManifest(manifest) {
     validatePack(manifest.packs[1], {order:1,role:'platform',uuid:PLATFORM_UUID,maximumSize:PLATFORM_SIZE_LIMIT}, layout),
   ];
   return { manifest, packs, catalogFile, layout };
+}
+
+export function assertReleaseArtifactContract(release) {
+  if (!release || typeof release !== 'object' || !LOADED_RELEASES.has(release)) throw new Error('release artifact contract mismatch');
+  const parsed = validateManifest(release.manifest);
+  if (release.layout?.root !== parsed.layout.root || release.layout?.type !== parsed.layout.type || !Array.isArray(release.artifacts) || release.artifacts.length !== 4) throw new Error('release artifact contract mismatch');
+  const manifestBytes = Buffer.from(canonicalManifestText(release.manifest));
+  const expected = [
+    ...parsed.packs.map(pack => ({name:pack.file,role:pack.role,key:pack.key,contentType:'application/zip',size:pack.size,sha1:pack.sha1,sha256:pack.sha256})),
+    {name:parsed.catalogFile,role:'catalog',key:`${parsed.layout.root}/${parsed.catalogFile}`,contentType:'application/java-archive',size:release.manifest.catalog.size,sha256:release.manifest.catalog.sha256},
+    {name:'manifest.json',role:'manifest',key:`${parsed.layout.root}/manifest.json`,contentType:'application/json',size:manifestBytes.length,sha1:createHash('sha1').update(manifestBytes).digest('hex'),sha256:createHash('sha256').update(manifestBytes).digest('hex')},
+  ];
+  for (let index=0; index<expected.length; index+=1) {
+    const artifact=release.artifacts[index];const contract=expected[index];
+    if (!artifact || artifact.name!==contract.name || artifact.role!==contract.role || artifact.key!==contract.key || artifact.contentType!==contract.contentType || artifact.size!==contract.size || artifact.sha256!==contract.sha256 || (contract.sha1 !== undefined && artifact.sha1!==contract.sha1) || !HEX40.test(artifact.sha1) || resolve(artifact.path??'')!==join(release.directory,contract.name)) throw new Error('release artifact contract mismatch');
+    if (contract.role==='manifest' && (!artifact.snapshot || !Buffer.isBuffer(artifact.snapshot.bytes) || !artifact.snapshot.bytes.equals(manifestBytes))) throw new Error('release artifact contract mismatch');
+  }
+  return release.artifacts;
 }
 
 async function readNoFollow(path) {
@@ -242,7 +261,7 @@ async function finishLoadRelease(directory,parsed,manifestSnapshot) {
     artifacts.push({name,path,role:contract.role,key:contract.key ?? parsed.packs.find(pack=>pack.file===name)?.key,contentType:contract.contentType ?? 'application/zip',size:actual.size,sha1:actual.sha1,sha256:actual.sha256,snapshot:name==='manifest.json'?manifestSnapshot:undefined});
   }
   const byName = new Map(artifacts.map(artifact => [artifact.name, artifact]));
-  return {
+  const release = {
     ...parsed,
     directory,
     artifacts,
@@ -252,4 +271,6 @@ async function finishLoadRelease(directory,parsed,manifestSnapshot) {
     layout: parsed.layout,
     close:()=>manifestSnapshot.close(),
   };
+  LOADED_RELEASES.add(release);
+  return release;
 }

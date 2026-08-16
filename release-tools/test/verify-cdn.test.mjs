@@ -40,3 +40,24 @@ test('verifyCdn times out pending headers and a stalled response body',async()=>
   await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>new Response(new ReadableStream({start(){}}),{status:200,headers:{'Content-Type':'application/zip','Cache-Control':'public, immutable, max-age=31536000'}}),timeoutMs:20}),/CDN request timed out/);
   await release.close();
 });
+
+test('verifyCdn rejects caller-mutated artifact contracts before fetching',async()=>{
+  const {release}=await fixture();release.artifacts[0].key='resourcepacks/attacker';let calls=0;
+  await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>{calls+=1;return new Response();}}),/release artifact contract mismatch/);
+  assert.equal(calls,0);await release.close();
+});
+
+test('verifyCdn preserves hostile response rejection paths',async()=>{
+  const {release}=await fixture();const artifact=release.artifacts[0];const response=overrides=>new Response(overrides.body??Buffer.alloc(artifact.size),{status:overrides.status??200,headers:{'Content-Type':artifact.contentType,'Cache-Control':'public, immutable, max-age=31536000',...overrides.headers}});
+  for(const headers of [
+    {'Cache-Control':'public, immutable, max-age=31536000, public'},
+    {'Cache-Control':'public, immutable, max-age=31536000, no-store'},
+    {'Content-Length':String(artifact.size+1)},
+  ]) await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>response({headers})}),/Cache-Control|Content-Length mismatch/);
+  await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>response({body:Buffer.concat([Buffer.alloc(artifact.size),Buffer.from('x')])})}),/safe limit/);
+  await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>response({body:Buffer.alloc(1)})}),/bytes mismatch/);
+  for(const redirect of [new Response('',{status:302}),new Response('',{status:302,headers:{Location:'https://attacker.example/x'}})]) await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>redirect}),/redirect missing|another host/);
+  await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>new Response('',{status:302,headers:{Location:'/again'}})}),/redirect limit/);
+  await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>{throw new Error('offline');}}),/request failed/);
+  await release.close();
+});

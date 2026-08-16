@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { runCli, strictArgs } from './cli.mjs';
 import { sameStreamBytes } from './digests.mjs';
-import { loadRelease, openVerifiedArtifact } from './manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from './manifest.mjs';
 import { withTimeout } from './timeout.mjs';
 
 const JSON_LIMIT = 1024 * 1024;
@@ -22,7 +22,8 @@ async function boundedJson(response, operation,onTimeout=()=>{}) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new Error(`${operation} returned invalid JSON`); }
 }
 
-export async function releaseAssetsCreateOrCompare({ assets, existingAssets, upload, fetchImpl = fetch, downloadHeaders = {},timeoutMs }) {
+export async function releaseAssetsCreateOrCompare({ release, existingAssets, upload, fetchImpl = fetch, downloadHeaders = {},timeoutMs }) {
+  const assets = assertReleaseArtifactContract(release);
   const names = assets.map(asset=>asset.name);
   if (assets.length !== 4 || new Set(names).size !== 4) throw new Error('GitHub Release requires exactly four expected assets');
   const expected = new Set(names);
@@ -63,6 +64,7 @@ function apiHeaders(token, accept = 'application/vnd.github+json') {
 }
 
 export async function githubReleaseCreateOrCompare({release, apiBaseUrl = 'https://api.github.com', token, fetchImpl = fetch, allowLocalhostForTests = false,timeoutMs}) {
+  assertReleaseArtifactContract(release);
   if (release.manifest.publication?.type !== 'release') throw new Error('GitHub Release assets require a release publication');
   const base = new URL(`${apiBaseUrl.replace(/\/$/,'')}/`);
   if (!['http:','https:'].includes(base.protocol) || base.username || base.password || base.protocol === 'http:' && !['127.0.0.1','localhost'].includes(base.hostname)) throw new Error('GitHub API base URL is invalid or insecure');
@@ -94,7 +96,7 @@ export async function githubReleaseCreateOrCompare({release, apiBaseUrl = 'https
     } catch(error) {if(signal.aborted)throw error;throw new Error(`GitHub asset upload failed for ${asset.name}`); }
     if (result.status !== 201) throw new Error(`GitHub asset upload returned HTTP ${result.status} for ${asset.name}`);
   },timeoutMs);
-  return releaseAssetsCreateOrCompare({assets:release.artifacts,existingAssets,upload,fetchImpl,downloadHeaders:apiHeaders(token,'application/octet-stream'),timeoutMs});
+  return releaseAssetsCreateOrCompare({release,existingAssets,upload,fetchImpl,downloadHeaders:apiHeaders(token,'application/octet-stream'),timeoutMs});
 }
 
 async function main() {

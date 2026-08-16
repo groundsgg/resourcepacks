@@ -6,7 +6,7 @@ import { GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { sameStreamBytes } from './digests.mjs';
 import { runCli, strictArgs } from './cli.mjs';
-import { loadRelease, openVerifiedArtifact } from './manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from './manifest.mjs';
 import { DEFAULT_NETWORK_TIMEOUT_MS, OperationTimeoutError, withTimeout } from './timeout.mjs';
 
 export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
@@ -58,12 +58,13 @@ export async function createOrCompare({ endpoint, bucket, key, file, accessKey, 
 }
 
 export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs}) {
+  const artifacts = assertReleaseArtifactContract(release);
   let created = 0;
-  for (const artifact of release.artifacts) {
+  for (const artifact of artifacts) {
     const result = await createOrCompare({endpoint,bucket,key:artifact.key,file:artifact.path,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs});
     if (result.created) created += 1;
   }
-  return {created,identical:release.artifacts.length-created};
+  return {created,identical:artifacts.length-created};
 }
 
 async function main() {

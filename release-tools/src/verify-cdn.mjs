@@ -4,7 +4,7 @@ import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { digestStream } from './digests.mjs';
 import { runCli, strictArgs } from './cli.mjs';
-import { loadRelease } from './manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease } from './manifest.mjs';
 import { withTimeout } from './timeout.mjs';
 
 const REQUIRED_CACHE_DIRECTIVES = new Map([['public', true], ['immutable', true], ['max-age', '31536000']]);
@@ -42,9 +42,9 @@ async function fetchSameOrigin(url, fetchImpl, signal) {
 export async function verifyCdn(release, {baseUrl, fetchImpl = fetch,timeoutMs} = {}) {
   const base = new URL(baseUrl ?? 'https://cdn.grounds.gg');
   if (!['http:','https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.protocol === 'http:' && !['127.0.0.1','localhost'].includes(base.hostname)) throw new Error('CDN base URL is invalid or insecure');
-  if (!release?.manifest || !Array.isArray(release.artifacts) || release.artifacts.length !== 4) throw new Error('CDN verification requires exactly four bound release artifacts');
+  const artifacts = assertReleaseArtifactContract(release);
   const canonicalRoot = `https://cdn.grounds.gg/${release.layout.root}/`;
-  for (const artifact of release.artifacts) {
+  for (const artifact of artifacts) {
     const canonical = new URL(artifact.name, canonicalRoot);
     const requestUrl = new URL(canonical.pathname, `${base.origin}/`);
     await withTimeout(`CDN request timed out for ${canonical.pathname}`,async({signal,onTimeout})=>{
@@ -65,7 +65,7 @@ export async function verifyCdn(release, {baseUrl, fetchImpl = fetch,timeoutMs} 
     }
     },timeoutMs);
   }
-  return {verified:release.artifacts.length};
+  return {verified:artifacts.length};
 }
 
 async function main() {
