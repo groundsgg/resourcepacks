@@ -46,6 +46,32 @@ test('advanceChannel creates an absent Stable pointer with the exact conditional
   } finally { await release.close(); }
 });
 
+test('advanceChannel refuses an absent-pointer create race without reporting channel advancement', async () => {
+  const fixture = await createReleaseFixture();
+  const release = await loadRelease({manifestFile:`${fixture.root}/manifest.json`,releaseDirectory:fixture.root});
+  const sent = [];
+  const s3Client = { async send(command) {
+    sent.push(command.input);
+    if (command.constructor.name === 'GetObjectCommand' && command.input.Key.endsWith('/manifest.json')) {
+      return {Body:fixture.files.get('manifest.json'),ContentType:'application/json',CacheControl:'public, max-age=31536000, immutable'};
+    }
+    if (command.constructor.name === 'GetObjectCommand') {
+      const error = new Error('missing'); error.name = 'NoSuchKey'; error.$metadata = {httpStatusCode:404}; throw error;
+    }
+    const error = new Error('concurrent create'); error.$metadata = {httpStatusCode:412}; throw error;
+  }};
+  try {
+    await assert.rejects(
+      () => advanceChannel({channel:'stable',release,bucket:'packs',endpoint:'https://example.r2.cloudflarestorage.com',accessKey:'a',secretKey:'s',sequence:7,s3Client}),
+      /channel create raced; refusing overwrite/,
+    );
+    assert.equal(sent.length, 3);
+    assert.equal(sent[2].Key, 'resourcepacks/packsets/grounds-global/channels/stable.json');
+    assert.equal(sent[2].IfNoneMatch, '*');
+    assert.equal(sent[2].IfMatch, undefined);
+  } finally { await release.close(); }
+});
+
 test('advanceChannel skips an identical retry and conditionally updates a newer pointer', async () => {
   const fixture = await createReleaseFixture();
   const release = await loadRelease({manifestFile:`${fixture.root}/manifest.json`,releaseDirectory:fixture.root});

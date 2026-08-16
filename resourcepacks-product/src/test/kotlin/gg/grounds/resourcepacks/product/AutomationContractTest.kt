@@ -55,6 +55,21 @@ class AutomationContractTest {
                 ),
                 replaceOnce(edge, "--channel edge", "--channel stable"),
                 replaceOnce(edge, "--sequence '${'$'}{{ github.run_number }}'", "--sequence '1'"),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n    if: always()\n    needs: [build, public-cdn]\n",
+                ),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n",
+                ),
+                replaceOnce(
+                    edge,
+                    "  edge-channel:\n    needs: [build, public-cdn]\n",
+                    "  edge-channel:\n    needs: [build]\n",
+                ),
                 replaceFirstOf(edge, "environment: Edge/Stage", "environment: production", 2),
                 replaceFirstOf(
                     edge,
@@ -434,6 +449,11 @@ class AutomationContractTest {
         assertEquals("build", mapping(jobs, "publish")["needs"])
         assertEquals("publish", mapping(jobs, "public-cdn")["needs"])
         assertEquals(listOf("build", "public-cdn"), mapping(jobs, "edge-channel")["needs"])
+        assertEquals(
+            null,
+            mapping(jobs, "edge-channel")["if"],
+            "edge-channel must use GitHub's default success-only needs gate",
+        )
         jobs.forEach { (name, raw) ->
             val job = mapping(raw)
             assertEquals("ubuntu-24.04", scalar(job, "runs-on"), name)
