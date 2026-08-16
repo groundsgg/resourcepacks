@@ -22,13 +22,36 @@ function run(name, args, extraEnv = {}) {
   });
 }
 
-test('all four command files reject unknown arguments with a stable process contract', async () => {
-  for (const name of ['r2-create-or-compare', 'verify-cdn', 'maven-create-or-compare', 'release-assets-create-or-compare']) {
+test('all five command files reject unknown arguments with a stable process contract', async () => {
+  for (const name of ['r2-create-or-compare', 'r2-channel-advance', 'verify-cdn', 'maven-create-or-compare', 'release-assets-create-or-compare']) {
     const result = await run(name, ['--unknown', 'value']);
     assert.equal(result.code, 2, name);
     assert.equal(result.stdout, '', name);
     assert.equal(result.stderr, 'error: invalid command arguments\n', name);
   }
+});
+
+test('channel CLI rejects duplicate, empty, missing, invalid channel, and invalid sequence as usage errors', async () => {
+  const base=['--channel','stable','--manifest','x','--release-directory','x','--bucket','packs','--endpoint','https://example.test','--access-key','a','--secret-key','s','--sequence','7'];
+  for(const [args,stderr] of [
+    [[...base,'--channel','stable'],'error: invalid command arguments\n'],
+    [base.map(value=>value==='stable'?'':value),'error: invalid command arguments\n'],
+    [base.slice(0,-2),'error: missing required command arguments\n'],
+    [base.map(value=>value==='stable'?'other':value),'error: invalid command arguments\n'],
+    [base.map(value=>value==='7'?'0':value),'error: invalid command arguments\n'],
+  ]) { const result=await run('r2-channel-advance',args);assert.equal(result.code,2);assert.equal(result.stdout,'');assert.equal(result.stderr,stderr); }
+});
+
+test('channel CLI creates Stable and updates Edge with exact workflow stdout', async t => {
+  const stable=await createReleaseFixture();const edge=await createReleaseFixture({type:'build'});let edgeReads=0;
+  const http=await fakeHttp(async(request,response)=>{const key=decodeURIComponent(new URL(request.url,'http://localhost').pathname).replace(/^\/packs\//,'');const fixture=key.includes('/builds/')?edge:stable;if(request.method==='GET'&&key.endsWith('/manifest.json'))return response.writeHead(200,{'Content-Type':'application/json','Cache-Control':'public, max-age=31536000, immutable'}).end(fixture.files.get('manifest.json'));if(request.method==='GET'&&key.endsWith('/channels/stable.json'))return response.writeHead(404,{'Content-Type':'application/xml'}).end('<Error><Code>NoSuchKey</Code></Error>');if(request.method==='GET'&&key.endsWith('/channels/edge.json')){edgeReads+=1;return response.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'public, max-age=30, must-revalidate','ETag':'"0123456789abcdef0123456789abcdef"'}).end('{\n  "channel": "edge",\n  "manifest": {\n    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",\n    "size": 1,\n    "url": "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/builds/0123456789abcdef0123456789abcdef01234567/manifest.json"\n  },\n  "packSet": "grounds-global",\n  "schemaVersion": 2,\n  "sequence": 1,\n  "target": {\n    "id": "0123456789abcdef0123456789abcdef01234567",\n    "type": "build"\n  }\n}\n');}if(request.method==='PUT'&&/\/channels\/(stable|edge)\.json$/.test(key)){for await(const _ of request){}return response.writeHead(200).end();}for await(const _ of request){}response.writeHead(500).end();});t.after(http.close);
+  const invoke=(fixture,channel,sequence)=>run('r2-channel-advance',['--channel',channel,'--manifest',join(fixture.root,'manifest.json'),'--release-directory',fixture.root,'--bucket','packs','--endpoint',http.url,'--access-key','ACCESS_MARKER','--secret-key','SECRET_MARKER','--sequence',String(sequence)]);
+  const created=await invoke(stable,'stable',7);assert.equal(created.code,0,created.stderr);assert.equal(created.stdout,'created channel=stable sequence=7\n');const updated=await invoke(edge,'edge',2);assert.equal(updated.code,0,updated.stderr);assert.equal(updated.stdout,'updated channel=edge sequence=2\n');assert.equal(edgeReads,1);assert.doesNotMatch(`${created.stderr}${updated.stderr}`,/ACCESS_MARKER|SECRET_MARKER/);
+});
+
+test('channel CLI operation failure exits one and never exposes R2 credentials', async () => {
+  const fixture=await createReleaseFixture();const result=await run('r2-channel-advance',['--channel','stable','--manifest',join(fixture.root,'manifest.json'),'--release-directory',fixture.root,'--bucket','packs','--endpoint','http://127.0.0.1:1','--access-key','ACCESS_MARKER','--secret-key','SECRET_MARKER','--sequence','7']);
+  assert.equal(result.code,1);assert.equal(result.stdout,'');assert.match(result.stderr,/^error: R2 channel advancement failed/);assert.doesNotMatch(result.stderr,/ACCESS_MARKER|SECRET_MARKER/);
 });
 
 test('r2 CLI derives exactly four readable immutable object keys from the bound release', async t => {

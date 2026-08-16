@@ -4,6 +4,7 @@ import { lstat, open, readdir, realpath, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { TextDecoder } from 'node:util';
+import { Readable } from 'node:stream';
 
 import { digestStream } from './digests.mjs';
 
@@ -178,7 +179,7 @@ export async function openVerifiedArtifact(artifact) {
   const snapshot=privateSnapshot ?? SNAPSHOT_RECORDS.get(artifact?.snapshot);
   if(snapshot){
     if(snapshot.size!==artifact.size||snapshot.sha1!==artifact.sha1||snapshot.sha256!==artifact.sha256)throw new Error('artifact snapshot contract mismatch');
-    return {size:snapshot.size,stream:()=>snapshot.handle.createReadStream({start:0,autoClose:false}),close:async()=>{}};
+    return {size:snapshot.size,stream:()=>snapshot.bytes ? Readable.from(snapshot.bytes) : snapshot.handle.createReadStream({start:0,autoClose:false}),close:async()=>{}};
   }
   const path = artifact.path ?? artifact.file;
   return snapshotPath(path,artifact,artifact.size);
