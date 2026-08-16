@@ -31,7 +31,7 @@ test('all four command files reject unknown arguments with a stable process cont
   }
 });
 
-test('r2 CLI derives exactly two immutable object keys from the bound release', async t => {
+test('r2 CLI derives exactly four readable immutable object keys from the bound release', async t => {
   const fixture = await createReleaseFixture();
   const requests = [];
   const http = await fakeHttp(async (request, response) => {
@@ -45,27 +45,32 @@ test('r2 CLI derives exactly two immutable object keys from the bound release', 
     '--bucket', 'packs', '--endpoint', http.url, '--access-key', 'ACCESS_MARKER', '--secret-key', 'SECRET_MARKER',
   ]);
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(result.stdout, 'created=2 identical=0\n');
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests.map(request => new URL(request.url,http.url).pathname).sort(), fixture.manifest.packs.map(pack => `/packs/resourcepacks/${pack.role}/${pack.sha1}.zip`).sort());
+  assert.equal(result.stdout, 'created=4 identical=0\n');
+  assert.equal(requests.length, 4);
+  assert.deepEqual(requests.map(request => new URL(request.url,http.url).pathname).sort(), [
+    ...fixture.manifest.packs.map(pack => `/packs${new URL(pack.url).pathname}`),
+    `/packs/resourcepacks/packsets/grounds-global/releases/v0.1.0/${fixture.manifest.catalog.file}`,
+    '/packs/resourcepacks/packsets/grounds-global/releases/v0.1.0/manifest.json',
+  ].sort());
   assert.ok(requests.every(request => request.method === 'PUT' && request.headers['if-none-match'] === '*'));
   assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ACCESS_MARKER|SECRET_MARKER/);
 });
 
-test('CDN CLI uses only the supplied base URL and verifies exactly both manifest packs', async t => {
+test('CDN CLI uses only the supplied base URL and verifies exactly four manifest artifacts', async t => {
   const fixture = await createReleaseFixture();
   const seen = [];
   const http = await fakeHttp((request, response) => {
     seen.push(request.url);
-    const pack = fixture.manifest.packs.find(candidate => request.url === `/resourcepacks/${candidate.role}/${candidate.sha1}.zip`);
-    const bytes = fixture.files.get(`grounds-${pack.role}-${pack.sha1}.zip`);
-    response.writeHead(200, {'Content-Type':'application/zip','Cache-Control':'immutable, max-age=31536000, public'}).end(bytes);
+    const pack = fixture.manifest.packs.find(candidate => request.url === new URL(candidate.url).pathname);
+    const name = pack ? new URL(pack.url).pathname.split('/').at(-1) : request.url.split('/').at(-1);
+    const bytes = fixture.files.get(name);
+    response.writeHead(200, {'Content-Type':name.endsWith('.zip')?'application/zip':name.endsWith('.jar')?'application/java-archive':'application/json','Cache-Control':'immutable, max-age=31536000, public'}).end(bytes);
   });
   t.after(http.close);
-  const result = await run('verify-cdn', ['--manifest',join(fixture.root,'manifest.json'),'--base-url',http.url]);
+  const result = await run('verify-cdn', ['--manifest',join(fixture.root,'manifest.json'),'--release-directory',fixture.root,'--base-url',http.url]);
   assert.equal(result.code, 0, result.stderr);
-  assert.equal(result.stdout, 'verified=2\n');
-  assert.equal(seen.length, 2);
+  assert.equal(result.stdout, 'verified=4\n');
+  assert.equal(seen.length, 4);
 });
 
 test('Maven CLI gates the exact manifest coordinate and prints a workflow-safe decision', async t => {
@@ -73,7 +78,7 @@ test('Maven CLI gates the exact manifest coordinate and prints a workflow-safe d
   const versionDirectory = join(fixture.root, 'maven', 'gg', 'grounds', 'resourcepacks-catalog', '0.1.0');
   await mkdir(versionDirectory, {recursive:true});
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.pom'), '<project/>');
-  await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.jar'), fixture.files.get('grounds-resourcepacks-catalog-0.1.0.jar'));
+  await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.jar'), fixture.files.get(fixture.manifest.catalog.file));
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0-sources.jar'), 'sources');
   await writeFile(join(versionDirectory, 'resourcepacks-catalog-0.1.0.module'), '{}');
   const log=`${fixture.root}-maven.log`;const preload=fileURLToPath(new URL('./maven-fetch-preload.mjs',import.meta.url));

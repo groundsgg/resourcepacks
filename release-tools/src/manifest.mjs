@@ -44,41 +44,56 @@ export function canonicalManifestText(value) {
   return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
 }
 
-function validatePack(pack, expected, version) {
+function publicationLayout(manifest) {
+  exactKeys(manifest.publication, ['id','type'], '/publication');
+  if (!['release','build'].includes(manifest.publication.type)) fail('publication type mismatch');
+  if (!HEX40.test(manifest.provenance.commit)) fail('provenance mismatch');
+  const {type,id} = manifest.publication;
+  if (type === 'release' && id !== `v${manifest.version}`) fail('release publication mismatch');
+  if (type === 'build' && (id !== manifest.provenance.commit || !new RegExp(`^0\\.0\\.0-edge\\.[1-9][0-9]*\\.g${id.slice(0,12)}$`).test(manifest.version))) fail('build publication mismatch');
+  const root = type === 'release'
+    ? `resourcepacks/packsets/grounds-global/releases/${id}`
+    : `resourcepacks/packsets/grounds-global/builds/${manifest.provenance.commit}`;
+  const suffix = type === 'release' ? id : `edge-${manifest.provenance.commit.slice(0, 12)}`;
+  return {type,id,root,suffix};
+}
+
+function validatePack(pack, expected, layout) {
   exactKeys(pack, ['id','order','required','resourcePackFormat','role','sha1','sha256','size','url','uuid'], `/packs/${expected.order}`);
   if (pack.order !== expected.order || pack.role !== expected.role || pack.id !== `grounds-${expected.role}` || pack.uuid !== expected.uuid) fail(`pack ${expected.role} identity mismatch`);
   if (pack.required !== true || pack.resourcePackFormat !== 88) fail(`pack ${expected.role} policy mismatch`);
   if (!HEX40.test(pack.sha1) || !HEX64.test(pack.sha256)) fail(`pack ${expected.role} digest mismatch`);
   positiveInteger(pack.size, `/packs/${expected.order}/size`);
   if (pack.size > expected.maximumSize) fail(`pack ${expected.role} size exceeds product limit`);
-  const expectedUrl = `https://cdn.grounds.gg/resourcepacks/${expected.role}/${pack.sha1}.zip`;
+  const file = `grounds-${expected.role}-pack-${layout.suffix}.zip`;
+  const expectedUrl = `https://cdn.grounds.gg/${layout.root}/${file}`;
   if (pack.url !== expectedUrl) fail(`pack ${expected.role} URL mismatch`);
   return {
     ...pack,
-    file: `grounds-${expected.role}-${pack.sha1}.zip`,
-    key: `resourcepacks/${expected.role}/${pack.sha1}.zip`,
-    version,
+    file,
+    key: layout.root + `/${file}`,
   };
 }
 
 export function validateManifest(manifest) {
-  exactKeys(manifest, ['catalog','id','minecraft','packs','provenance','schemaVersion','version'], '/');
-  if (manifest.schemaVersion !== 1 || manifest.id !== 'grounds:global' || typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) fail('root identity mismatch');
+  exactKeys(manifest, ['catalog','minecraft','packSet','packs','provenance','publication','schemaVersion','version'], '/');
+  if (manifest.schemaVersion !== 2 || manifest.packSet !== 'grounds-global' || typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) fail('root identity mismatch');
   exactKeys(manifest.minecraft, ['resourcePackFormat','version'], '/minecraft');
   if (manifest.minecraft.version !== '26.2' || manifest.minecraft.resourcePackFormat !== 88) fail('Minecraft target mismatch');
   exactKeys(manifest.catalog, ['coordinate','file','id','sha256','size','version'], '/catalog');
-  const catalogFile = `grounds-resourcepacks-catalog-${manifest.version}.jar`;
+  exactKeys(manifest.provenance, ['commit','repository'], '/provenance');
+  if (manifest.provenance.repository !== 'groundsgg/resourcepacks') fail('provenance mismatch');
+  const layout = publicationLayout(manifest);
+  const catalogFile = `grounds-resourcepack-catalog-${layout.suffix}.jar`;
   if (manifest.catalog.id !== 'grounds:resourcepacks' || manifest.catalog.version !== manifest.version || manifest.catalog.coordinate !== `gg.grounds:resourcepacks-catalog:${manifest.version}` || manifest.catalog.file !== catalogFile || !HEX64.test(manifest.catalog.sha256)) fail('catalog identity mismatch');
   positiveInteger(manifest.catalog.size, '/catalog/size');
   if (manifest.catalog.size > CATALOG_SIZE_LIMIT) fail('catalog size exceeds product limit');
   if (!Array.isArray(manifest.packs) || manifest.packs.length !== 2) fail('packs must contain exactly content and platform');
   const packs = [
-    validatePack(manifest.packs[0], {order:0,role:'content',uuid:CONTENT_UUID,maximumSize:CONTENT_SIZE_LIMIT}, manifest.version),
-    validatePack(manifest.packs[1], {order:1,role:'platform',uuid:PLATFORM_UUID,maximumSize:PLATFORM_SIZE_LIMIT}, manifest.version),
+    validatePack(manifest.packs[0], {order:0,role:'content',uuid:CONTENT_UUID,maximumSize:CONTENT_SIZE_LIMIT}, layout),
+    validatePack(manifest.packs[1], {order:1,role:'platform',uuid:PLATFORM_UUID,maximumSize:PLATFORM_SIZE_LIMIT}, layout),
   ];
-  exactKeys(manifest.provenance, ['commit','repository','tag'], '/provenance');
-  if (manifest.provenance.repository !== 'groundsgg/resourcepacks' || manifest.provenance.tag !== `v${manifest.version}` || !HEX40.test(manifest.provenance.commit)) fail('provenance mismatch');
-  return { manifest, packs, catalogFile };
+  return { manifest, packs, catalogFile, layout };
 }
 
 async function readNoFollow(path) {
@@ -207,8 +222,8 @@ async function finishLoadRelease(directory,parsed,manifestSnapshot) {
   const expected = new Map([
     [parsed.packs[0].file, {sha1:parsed.packs[0].sha1,sha256:parsed.packs[0].sha256,size:parsed.packs[0].size,role:'content'}],
     [parsed.packs[1].file, {sha1:parsed.packs[1].sha1,sha256:parsed.packs[1].sha256,size:parsed.packs[1].size,role:'platform'}],
-    [parsed.catalogFile, {sha256:parsed.manifest.catalog.sha256,size:parsed.manifest.catalog.size,role:'catalog'}],
-    ['manifest.json', {role:'manifest'}],
+    [parsed.catalogFile, {sha256:parsed.manifest.catalog.sha256,size:parsed.manifest.catalog.size,role:'catalog',key:`${parsed.layout.root}/${parsed.catalogFile}`,contentType:'application/java-archive'}],
+    ['manifest.json', {role:'manifest',key:`${parsed.layout.root}/manifest.json`,contentType:'application/json'}],
   ]);
   const entries = await readdir(directory, {withFileTypes:true});
   const names = entries.map(entry => entry.name).sort();
@@ -224,7 +239,7 @@ async function finishLoadRelease(directory,parsed,manifestSnapshot) {
     if (contract.size !== undefined && actual.size !== contract.size) throw new Error(`release artifact size mismatch: ${name}`);
     if (contract.sha1 !== undefined && actual.sha1 !== contract.sha1) throw new Error(`release artifact digest mismatch: ${name}`);
     if (contract.sha256 !== undefined && actual.sha256 !== contract.sha256) throw new Error(`release artifact digest mismatch: ${name}`);
-    artifacts.push({name,path,role:contract.role,size:actual.size,sha1:actual.sha1,sha256:actual.sha256,snapshot:name==='manifest.json'?manifestSnapshot:undefined});
+    artifacts.push({name,path,role:contract.role,key:contract.key ?? parsed.packs.find(pack=>pack.file===name)?.key,contentType:contract.contentType ?? 'application/zip',size:actual.size,sha1:actual.sha1,sha256:actual.sha256,snapshot:name==='manifest.json'?manifestSnapshot:undefined});
   }
   const byName = new Map(artifacts.map(artifact => [artifact.name, artifact]));
   return {
@@ -234,6 +249,7 @@ async function finishLoadRelease(directory,parsed,manifestSnapshot) {
     packs: parsed.packs.map(pack => ({...pack, artifact:byName.get(pack.file)})),
     catalog: byName.get(parsed.catalogFile),
     manifestArtifact: byName.get('manifest.json'),
+    layout: parsed.layout,
     close:()=>manifestSnapshot.close(),
   };
 }

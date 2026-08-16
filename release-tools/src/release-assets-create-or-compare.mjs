@@ -63,13 +63,14 @@ function apiHeaders(token, accept = 'application/vnd.github+json') {
 }
 
 export async function githubReleaseCreateOrCompare({release, apiBaseUrl = 'https://api.github.com', token, fetchImpl = fetch, allowLocalhostForTests = false,timeoutMs}) {
+  if (release.manifest.publication?.type !== 'release') throw new Error('GitHub Release assets require a release publication');
   const base = new URL(`${apiBaseUrl.replace(/\/$/,'')}/`);
   if (!['http:','https:'].includes(base.protocol) || base.username || base.password || base.protocol === 'http:' && !['127.0.0.1','localhost'].includes(base.hostname)) throw new Error('GitHub API base URL is invalid or insecure');
   const official = base.href === 'https://api.github.com/';
   const testLocalhost = allowLocalhostForTests && ['127.0.0.1','localhost'].includes(base.hostname);
   if (!official && !testLocalhost) throw new Error('GitHub API base URL is not trusted');
   const repository = release.manifest.provenance.repository;
-  const tag = release.manifest.provenance.tag;
+  const tag = release.manifest.publication.id;
   const remoteRelease=await withTimeout('GitHub request timed out during release lookup',async({signal,onTimeout})=>{let response;try { response = await fetchImpl(new URL(`repos/${repository}/releases/tags/${encodeURIComponent(tag)}`,base),{headers:apiHeaders(token),redirect:'manual',signal}); } catch(error) {if(signal.aborted)throw error;throw new Error('GitHub release lookup failed'); }return boundedJson(response,'GitHub release lookup',onTimeout);},timeoutMs);
   if (!Number.isSafeInteger(remoteRelease.id) || remoteRelease.id <= 0 || typeof remoteRelease.upload_url !== 'string') throw new Error('GitHub release response is invalid');
   const listing=await withTimeout('GitHub request timed out during asset listing',async({signal,onTimeout})=>{let response;try { response = await fetchImpl(new URL(`repos/${repository}/releases/${remoteRelease.id}/assets?per_page=100`,base),{headers:apiHeaders(token),redirect:'manual',signal}); } catch(error) {if(signal.aborted)throw error;throw new Error('GitHub asset listing failed'); }if(response.headers.get('link')?.includes('rel="next"'))throw new Error('GitHub Release contains more than one page of assets');return boundedJson(response,'GitHub asset listing',onTimeout);},timeoutMs);
