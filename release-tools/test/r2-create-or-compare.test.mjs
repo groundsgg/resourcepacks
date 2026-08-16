@@ -123,3 +123,11 @@ test('R2 release publication rejects caller-mutated artifact contracts before an
   await assert.rejects(()=>r2ReleaseCreateOrCompare({release:{...release},endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',accessKey:'test',secretKey:'test',client:{async send(){sends+=1;}}}),/release artifact contract mismatch/);
   assert.equal(sends,0);await release.close();
 });
+
+test('R2 keeps the captured immutable keys when the public release mutates during publication',async()=>{
+  const fixture=await createReleaseFixture();const release=await loadRelease({manifestFile:join(fixture.root,'manifest.json'),releaseDirectory:fixture.root});const expectedKeys=release.artifacts.map(artifact=>artifact.key);const keys=[];let calls=0;
+  const client={async send(command){keys.push(command.input.Key);if(calls++===0){release.manifest.publication.id='v9.9.9';release.manifest.provenance.commit='f'.repeat(40);release.artifacts[1].key='resourcepacks/attacker';release.manifestArtifact.snapshot={bytes:Buffer.from('attacker')};}return {};}};
+  await assert.rejects(()=>r2ReleaseCreateOrCompare({release,endpoint:'https://example.r2.cloudflarestorage.com',bucket:'packs',accessKey:'test',secretKey:'test',client}),/R2 upload failed|artifact contract mismatch/);
+  assert.ok(keys.every(key=>expectedKeys.includes(key)));
+  await release.close();
+});

@@ -3,7 +3,7 @@ import { symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadRelease, openVerifiedArtifact } from '../src/manifest.mjs';
+import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from '../src/manifest.mjs';
 import { canonicalJson, createReleaseFixture } from './fixtures.mjs';
 
 test('loadRelease binds the canonical manifest to exactly four measured regular files', async () => {
@@ -89,7 +89,7 @@ test('loadRelease binds manifest parsing, digest, and later upload reads to one 
     const fixture=await createReleaseFixture();const manifestPath=join(fixture.root,'manifest.json');const original=fixture.files.get('manifest.json');
     const release=await loadRelease({manifestFile:manifestPath,releaseDirectory:fixture.root});
     if(replacement==='replace'){const {rename}=await import('node:fs/promises');const next=`${manifestPath}.next`;await writeFile(next,'attacker replacement');await rename(next,manifestPath);}else await writeFile(manifestPath,'attacker in-place');
-    const verified=await openVerifiedArtifact(release.manifestArtifact);const chunks=[];for await(const chunk of verified.stream())chunks.push(Buffer.from(chunk));await verified.close();
+    const verified=await openVerifiedArtifact(assertReleaseArtifactContract(release).artifacts.find(artifact=>artifact.role==='manifest'));const chunks=[];for await(const chunk of verified.stream())chunks.push(Buffer.from(chunk));await verified.close();
     assert.deepEqual(Buffer.concat(chunks),original,replacement);
     await release.close();
   }

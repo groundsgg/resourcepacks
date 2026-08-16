@@ -52,6 +52,8 @@ test('verifyCdn preserves hostile response rejection paths',async()=>{
   for(const headers of [
     {'Cache-Control':'public, immutable, max-age=31536000, public'},
     {'Cache-Control':'public, immutable, max-age=31536000, no-store'},
+    {'Cache-Control':'public, immutable, max-age=31536000, private'},
+    {'Cache-Control':'public, immutable, max-age=31536000, s-maxage=0'},
     {'Content-Length':String(artifact.size+1)},
   ]) await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>response({headers})}),/Cache-Control|Content-Length mismatch/);
   await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>response({body:Buffer.concat([Buffer.alloc(artifact.size),Buffer.from('x')])})}),/safe limit/);
@@ -60,4 +62,10 @@ test('verifyCdn preserves hostile response rejection paths',async()=>{
   await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>new Response('',{status:302,headers:{Location:'/again'}})}),/redirect limit/);
   await assert.rejects(()=>verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async()=>{throw new Error('offline');}}),/request failed/);
   await release.close();
+});
+
+test('verifyCdn keeps captured URLs when the public release mutates during the first fetch',async()=>{
+  const {value,release}=await fixture();const expected=release.artifacts.map(artifact=>`/${artifact.key}`);const responses=new Map(release.artifacts.map(artifact=>[`/${artifact.key}`,{bytes:value.files.get(artifact.name),contentType:artifact.contentType}]));const seen=[];let calls=0;
+  await verifyCdn(release,{baseUrl:'https://cdn.grounds.gg',fetchImpl:async url=>{const path=new URL(url).pathname;seen.push(path);const artifact=responses.get(path);if(calls++===0){release.layout.root='resourcepacks/attacker';release.artifacts[1].name='attacker.zip';release.manifest.publication.id='v9.9.9';}return new Response(artifact.bytes,{status:200,headers:{'Content-Type':artifact.contentType,'Cache-Control':'public, immutable, max-age=31536000'}});}});
+  assert.deepEqual(seen,expected);await release.close();
 });

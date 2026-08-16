@@ -12,11 +12,11 @@ import { DEFAULT_NETWORK_TIMEOUT_MS, OperationTimeoutError, withTimeout } from '
 export const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
 /** Creates an R2 object exactly once, accepting only a byte-identical existing object. */
-export async function createOrCompare({ endpoint, bucket, key, file, accessKey, secretKey, expected, contentType = 'application/zip', client, timeoutMs }) {
+export async function createOrCompare({ endpoint, bucket, key, file, artifact, accessKey, secretKey, expected, contentType = 'application/zip', client, timeoutMs }) {
   if (!accessKey || !secretKey) throw new Error('R2 credentials are required');
   const endpointUrl = new URL(endpoint);
   if (!['https:','http:'].includes(endpointUrl.protocol) || endpointUrl.username || endpointUrl.password || endpointUrl.protocol === 'http:' && !['127.0.0.1','localhost'].includes(endpointUrl.hostname)) throw new Error('R2 endpoint is invalid or insecure');
-  const verified = await openVerifiedArtifact({path:file,sha1:expected?.sha1,sha256:expected?.sha256,size:expected?.size});
+  const verified = await openVerifiedArtifact(artifact ?? {path:file,sha1:expected?.sha1,sha256:expected?.sha256,size:expected?.size});
   const quietLogger = {debug(){},info(){},warn(){},error(){}};
   const s3 = client ?? new S3Client({
     endpoint:endpointUrl.href,
@@ -58,10 +58,10 @@ export async function createOrCompare({ endpoint, bucket, key, file, accessKey, 
 }
 
 export async function r2ReleaseCreateOrCompare({release, endpoint, bucket, accessKey, secretKey, timeoutMs}) {
-  const artifacts = assertReleaseArtifactContract(release);
+  const {artifacts} = assertReleaseArtifactContract(release);
   let created = 0;
   for (const artifact of artifacts) {
-    const result = await createOrCompare({endpoint,bucket,key:artifact.key,file:artifact.path,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs});
+    const result = await createOrCompare({endpoint,bucket,key:artifact.key,artifact,accessKey,secretKey,expected:artifact,contentType:artifact.contentType,timeoutMs});
     if (result.created) created += 1;
   }
   return {created,identical:artifacts.length-created};
