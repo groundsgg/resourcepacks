@@ -1,7 +1,6 @@
 package gg.grounds.resourcepacks.contract
 
 import java.io.StringReader
-import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
@@ -14,11 +13,14 @@ import tools.jackson.core.json.JsonFactory
 
 object CanonicalChannelJson {
     fun encode(document: ChannelDocument): ByteArray {
-        requireValidDocument(document)
+        requireValidDocument(document, PackSetValidationPolicy.groundsDefault())
         return json(root(document), 0).plus('\n').toByteArray(StandardCharsets.UTF_8)
     }
 
-    fun decode(bytes: ByteArray): ChannelDecodeResult {
+    fun decode(bytes: ByteArray): ChannelDecodeResult =
+        decode(bytes, PackSetValidationPolicy.groundsDefault())
+
+    internal fun decode(bytes: ByteArray, policy: PackSetValidationPolicy): ChannelDecodeResult {
         if (bytes.size > ManifestParserLimits.MAX_DOCUMENT)
             return fail(
                 "/",
@@ -52,8 +54,8 @@ object CanonicalChannelJson {
                 )
             }
         val diagnostics = mutableListOf<ChannelDiagnostic>()
-        val doc = readDocument(root, diagnostics)?.let { validate(it, diagnostics) }
-        if (doc != null && diagnostics.isEmpty() && !bytes.contentEquals(encode(doc)))
+        val doc = readDocument(root, diagnostics)?.let { validate(it, diagnostics, policy) }
+        if (doc != null && diagnostics.isEmpty() && !bytes.contentEquals(encode(doc, policy)))
             diagnostics +=
                 ChannelDiagnostic(
                     "/",
@@ -115,12 +117,16 @@ object CanonicalChannelJson {
         )
     }
 
-    private fun validate(r: Raw, d: MutableList<ChannelDiagnostic>): ChannelDocument? {
+    private fun validate(
+        r: Raw,
+        d: MutableList<ChannelDiagnostic>,
+        policy: PackSetValidationPolicy,
+    ): ChannelDocument? {
         fun invalid(p: String, m: String) {
             d += ChannelDiagnostic(p, ChannelDiagnosticCode.INVALID_VALUE, m)
         }
         if (r.version != 2) invalid("/schemaVersion", "schemaVersion must be 2.")
-        if (r.packSet != "grounds-global") invalid("/packSet", "PackSet mismatch.")
+        if (r.packSet != policy.packSet) invalid("/packSet", "PackSet mismatch.")
         val channel =
             when (r.channel) {
                 "stable" -> PackSetChannel.STABLE
@@ -148,7 +154,7 @@ object CanonicalChannelJson {
             invalid("/target/type", "Stable channels require release targets.")
         if (channel == PackSetChannel.EDGE && type != PublicationType.BUILD)
             invalid("/target/type", "Edge channels require build targets.")
-        if (!isStrictUrl(r.url)) invalid("/manifest/url", "Manifest URL is unsafe.")
+        if (!policy.isSafeArtifactUri(r.url)) invalid("/manifest/url", "Manifest URL is unsafe.")
         if (!HEX64.matches(r.sha256))
             invalid("/manifest/sha256", "Manifest SHA-256 must be lowercase 64-hex.")
         if (r.size !in 1..ManifestParserLimits.MAX_DOCUMENT.toLong())
@@ -158,7 +164,7 @@ object CanonicalChannelJson {
                 (type != PublicationType.RELEASE || isReleaseId(r.targetId)) &&
                 (type != PublicationType.BUILD || HEX40.matches(r.targetId))
         ) {
-            if (r.url != manifestUrl(type, r.targetId))
+            if (r.url != policy.manifestUri(ChannelTarget(type, r.targetId)).toString())
                 invalid("/manifest/url", "Manifest URL mismatch.")
         }
         return if (d.isEmpty() && channel != null && type != null)
@@ -249,9 +255,14 @@ object CanonicalChannelJson {
             }
         }
 
-    private fun requireValidDocument(document: ChannelDocument) {
+    private fun encode(document: ChannelDocument, policy: PackSetValidationPolicy): ByteArray {
+        requireValidDocument(document, policy)
+        return json(root(document), 0).plus('\n').toByteArray(StandardCharsets.UTF_8)
+    }
+
+    private fun requireValidDocument(document: ChannelDocument, policy: PackSetValidationPolicy) {
         require(document.schemaVersion == 2) { "schemaVersion must be 2." }
-        require(document.packSet == "grounds-global") { "PackSet mismatch." }
+        require(document.packSet == policy.packSet) { "PackSet mismatch." }
         require(document.sequence > 0) { "Sequence must be positive." }
         require(
             (document.channel == PackSetChannel.STABLE) ==
@@ -259,35 +270,13 @@ object CanonicalChannelJson {
         ) {
             "Channel target type mismatch."
         }
-        require(document.manifest.url == manifestUrl(document.target.type, document.target.id)) {
+        require(document.manifest.url == policy.manifestUri(document.target).toString()) {
             "Manifest URL mismatch."
         }
     }
 
-    private fun manifestUrl(type: PublicationType, id: String): String =
-        "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/" +
-            when (type) {
-                PublicationType.RELEASE -> "releases/$id/manifest.json"
-                PublicationType.BUILD -> "builds/$id/manifest.json"
-            }
-
     private fun isReleaseId(value: String): Boolean =
         value.startsWith("v") && SEMVER.matches(value.drop(1))
-
-    private fun isStrictUrl(value: String): Boolean =
-        runCatching {
-                URI(value).let {
-                    it.scheme == "https" &&
-                        it.host == "cdn.grounds.gg" &&
-                        it.userInfo == null &&
-                        it.port == -1 &&
-                        it.query == null &&
-                        it.fragment == null &&
-                        !it.rawPath.contains("%") &&
-                        !it.path.contains("..")
-                }
-            }
-            .getOrDefault(false)
 
     private sealed interface J {
         data class Obj(val fields: Map<String, J>) : J

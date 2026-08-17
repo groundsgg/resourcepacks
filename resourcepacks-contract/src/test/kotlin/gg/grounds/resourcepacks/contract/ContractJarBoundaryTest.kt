@@ -127,6 +127,7 @@ class ContractJarBoundaryTest {
             "gg.grounds.resourcepacks.contract.PackSetContractJson",
             "gg.grounds.resourcepacks.contract.PackSetChannel",
             "gg.grounds.resourcepacks.contract.PackSetManifest",
+            "gg.grounds.resourcepacks.contract.PackSetValidationPolicy",
             "gg.grounds.resourcepacks.contract.PublicationType",
         )
 

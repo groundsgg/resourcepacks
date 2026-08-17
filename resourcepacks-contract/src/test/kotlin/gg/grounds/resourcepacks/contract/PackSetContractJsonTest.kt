@@ -1,10 +1,44 @@
 package gg.grounds.resourcepacks.contract
 
+import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class PackSetContractJsonTest {
+    @Test
+    fun `policy decodes canonical custom manifests without weakening the default source`() {
+        val policy = PackSetValidationPolicy(URI("https://assets.example.test"), "custom")
+        val custom =
+            releaseManifest
+                .replace("grounds-global", "custom")
+                .replace("https://cdn.grounds.gg", "https://assets.example.test")
+                .toByteArray()
+
+        assertIs<ManifestDecodeResult.Success>(PackSetContractJson.decodeManifest(custom, policy))
+        assertIs<ManifestDecodeResult.Failure>(
+            PackSetContractJson.decodeManifest(
+                releaseManifest.replace("grounds-global", "custom").toByteArray()
+            )
+        )
+        assertIs<ManifestDecodeResult.Failure>(
+            PackSetContractJson.decodeManifest(
+                releaseManifest
+                    .replace("https://cdn.grounds.gg", "https://assets.example.test")
+                    .toByteArray()
+            )
+        )
+        assertIs<ManifestDecodeResult.Failure>(
+            PackSetContractJson.decodeManifest(
+                custom
+                    .decodeToString()
+                    .replace("/releases/v0.1.2/", "/releases/v0.1.2/../")
+                    .toByteArray(),
+                policy,
+            )
+        )
+    }
+
     @Test
     fun `decodes the exact canonical schema two release manifest`() {
         val result = PackSetContractJson.decodeManifest(releaseManifest.toByteArray())
