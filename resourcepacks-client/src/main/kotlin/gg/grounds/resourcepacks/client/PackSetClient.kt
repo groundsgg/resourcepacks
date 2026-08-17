@@ -1,5 +1,6 @@
 package gg.grounds.resourcepacks.client
 
+import java.util.ArrayDeque
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.Executors
@@ -45,19 +46,14 @@ class PackSetClient(
     private var inFlight: CompletableFuture<RefreshResult>? = null
     private var periodicTask: ScheduledFuture<*>? = null
     private var retryTask: ScheduledFuture<*>? = null
+    private val events = ArrayDeque<PackSetClientState>()
+    private var dispatchingEvents = false
 
     fun start() {
         val immediate: CompletionStage<RefreshResult>
         synchronized(lifecycle) {
             if (closed || started) return
             started = true
-            periodicTask =
-                scheduler.scheduleWithFixedDelay(
-                    { refreshNow() },
-                    config.refreshInterval.toMillis(),
-                    config.refreshInterval.toMillis(),
-                    java.util.concurrent.TimeUnit.MILLISECONDS,
-                )
             immediate = beginRefreshLocked()
         }
         // Keep the immediate request alive; callers may instead observe state through listeners.
@@ -89,6 +85,8 @@ class PackSetClient(
                 inFlight = null
                 retryTask?.cancel(false)
                 retryTask = null
+                periodicTask?.cancel(false)
+                periodicTask = null
                 val previous = state.get()
                 changed =
                     PackSetClientState(
@@ -99,10 +97,10 @@ class PackSetClient(
                         null,
                     )
                 state.set(changed)
+                enqueueLocked(changed)
             }
             refresh = beginRefreshLocked()
         }
-        changed?.let(::notifyListeners)
         return refresh
     }
 
@@ -128,6 +126,7 @@ class PackSetClient(
             inFlight?.complete(RefreshResult.Failed("Client is closed."))
             inFlight = null
             listeners.clear()
+            events.clear()
             changed = PackSetClientState(source, null, null, PackSetClientStatus.CLOSED, null)
             state.set(changed)
         }
@@ -221,7 +220,7 @@ class PackSetClient(
                             null,
                         ),
                     )
-                    complete(future, result)
+                    complete(future, result, generation)
                 } catch (_: java.io.IOException) {
                     failed(refreshSource, generation, future, "Cache write failed.")
                 } catch (_: RuntimeException) {
@@ -245,7 +244,7 @@ class PackSetClient(
                         null,
                     ),
                 )
-                complete(future, result)
+                complete(future, result, generation)
             }
             is RefreshResult.Failed -> failed(refreshSource, generation, future, result.reason)
         }
@@ -278,6 +277,8 @@ class PackSetClient(
         synchronized(lifecycle) {
             if (!closed && sourceGeneration == generation) {
                 retryTask?.cancel(false)
+                periodicTask?.cancel(false)
+                periodicTask = null
                 retryTask =
                     scheduler.schedule(
                         { refreshNow() },
@@ -313,7 +314,7 @@ class PackSetClient(
 
     private fun publish(next: PackSetClientState) {
         val previous = state.getAndSet(next)
-        if (previous != next && state.get() === next) notifyListeners(next)
+        if (previous != next && state.get() === next) enqueue(next)
     }
 
     private fun publishCurrent(generation: Long, next: PackSetClientState): Boolean {
@@ -322,30 +323,66 @@ class PackSetClient(
                 if (closed || sourceGeneration != generation) return false
                 state.getAndSet(next)
             }
-        if (previous != next && state.get() === next) notifyListeners(next)
+        if (previous != next && state.get() === next) enqueue(next)
         return true
     }
 
-    private fun notifyListeners(next: PackSetClientState) {
-        val snapshot = synchronized(lifecycle) { listeners.toList() }
-        snapshot.forEach {
-            try {
-                it.onState(next)
-            } catch (_: RuntimeException) {
-                // One plugin listener must not suppress another listener or the refresh loop.
+    private fun enqueue(next: PackSetClientState) = synchronized(lifecycle) { enqueueLocked(next) }
+
+    private fun enqueueLocked(next: PackSetClientState) {
+        if (closed) return
+        events += next
+        if (!dispatchingEvents) {
+            dispatchingEvents = true
+            scheduler.execute(::drainEvents)
+        }
+    }
+
+    private fun drainEvents() {
+        while (true) {
+            val next =
+                synchronized(lifecycle) {
+                    if (closed || events.isEmpty()) {
+                        dispatchingEvents = false
+                        return
+                    }
+                    events.removeFirst()
+                }
+            val snapshot = synchronized(lifecycle) { listeners.toList() }
+            snapshot.forEach {
+                try {
+                    it.onState(next)
+                } catch (x: Throwable) {
+                    if (x is InterruptedException) Thread.currentThread().interrupt()
+                    // Listener faults are isolated; fatal JVM errors are intentionally not rethrown
+                    // from the scheduler because they would strand later lifecycle events.
+                }
             }
         }
     }
 
     private fun emptyCache() = ResolverCache(null, null, null, null, null)
 
-    private fun complete(future: CompletableFuture<RefreshResult>, result: RefreshResult) {
+    private fun complete(
+        future: CompletableFuture<RefreshResult>,
+        result: RefreshResult,
+        generation: Long,
+    ) {
         synchronized(lifecycle) {
             if (inFlight === future) {
                 inFlight = null
                 failures = 0
                 retryTask?.cancel(false)
                 retryTask = null
+                if (!closed && sourceGeneration == generation) {
+                    periodicTask?.cancel(false)
+                    periodicTask =
+                        scheduler.schedule(
+                            { refreshNow() },
+                            config.refreshInterval.toMillis(),
+                            java.util.concurrent.TimeUnit.MILLISECONDS,
+                        )
+                }
             }
         }
         future.complete(result)

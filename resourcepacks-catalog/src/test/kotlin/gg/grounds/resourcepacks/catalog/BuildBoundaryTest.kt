@@ -17,7 +17,7 @@ class BuildBoundaryTest {
             .first { it.resolve("settings.gradle.kts").exists() }
 
     @Test
-    fun `the build exposes exactly the catalog contract and product projects`() {
+    fun `the build exposes the current root project set`() {
         val output = runGradle("projects")
 
         assertEquals(projectSet(), projectNames(output))
