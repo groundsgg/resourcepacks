@@ -611,6 +611,112 @@ class PackSetClientLifecycleTest {
         }
     }
 
+    // Break caught: completing a public refresh future while owning refreshExecution lets a
+    // synchronous continuation enqueue and join its next refresh while that refresh is blocked on
+    // the same mutex.
+    @Test
+    fun `reentrant refresh continuation runs after serialized execution is released`() {
+        withDirectory { directory ->
+            val source = source()
+            val firstTransportEntered = CountDownLatch(1)
+            val releaseFirstTransport = CountDownLatch(1)
+            val callbackEntered = CountDownLatch(1)
+            val callbackFinished = CountDownLatch(1)
+            val requests = AtomicInteger()
+            val scheduler = TrackingScheduler(2, 2)
+            val transport = ScriptedTransport { uri, _ ->
+                assertEquals(source.channelUri, uri)
+                if (requests.getAndIncrement() == 0) {
+                    firstTransportEntered.countDown()
+                    assertTrue(releaseFirstTransport.await(1, TimeUnit.SECONDS))
+                }
+                LoopbackPackSetServer.response(500)
+            }
+            val client = client(source, directory, transport, scheduler)
+            val continuationResult = java.util.concurrent.atomic.AtomicReference<RefreshResult>()
+            try {
+                val first = client.refreshNow().toCompletableFuture()
+                assertTrue(firstTransportEntered.await(1, TimeUnit.SECONDS))
+                first.whenComplete { _, _ ->
+                    callbackEntered.countDown()
+                    continuationResult.set(client.refreshNow().toCompletableFuture().join())
+                    callbackFinished.countDown()
+                }
+
+                releaseFirstTransport.countDown()
+                assertTrue(callbackEntered.await(1, TimeUnit.SECONDS))
+                assertTrue(scheduler.taskStarts.await(1, TimeUnit.SECONDS))
+                assertTrue(
+                    callbackFinished.await(1, TimeUnit.SECONDS),
+                    "reentrant continuation deadlocked with the next serialized refresh",
+                )
+
+                assertIs<RefreshResult.Failed>(continuationResult.get())
+                assertEquals(2, requests.get())
+            } finally {
+                releaseFirstTransport.countDown()
+                client.close()
+            }
+        }
+    }
+
+    // Break caught: replacing the sole inFlight reference during A-to-B-to-C reconfiguration
+    // orphaned queued B when close completed only C and removed B from the scheduler queue.
+    @Test
+    fun `close completes every superseded refresh before queued transports can start`() {
+        withDirectory { directory ->
+            val sourceA = source()
+            val sourceB =
+                PackSetSource(URI("https://b-assets.example.test"), "global", PackSetChannel.STABLE)
+            val sourceC =
+                PackSetSource(URI("https://c-assets.example.test"), "global", PackSetChannel.STABLE)
+            val firstTransportEntered = CountDownLatch(1)
+            val releaseFirstTransport = CountDownLatch(1)
+            val requests = CopyOnWriteArrayList<URI>()
+            val callbackCount = AtomicInteger()
+            val scheduler = Executors.newSingleThreadScheduledExecutor()
+            val transport = ScriptedTransport { uri, _ ->
+                requests += uri
+                assertEquals(sourceA.channelUri, uri)
+                firstTransportEntered.countDown()
+                while (releaseFirstTransport.count > 0) {
+                    try {
+                        releaseFirstTransport.await()
+                    } catch (_: InterruptedException) {
+                        // Keep A active while close removes the queued B/C refresh tasks.
+                    }
+                }
+                LoopbackPackSetServer.response(500)
+            }
+            val client = client(sourceA, directory, transport, scheduler)
+            client.addListener { callbackCount.incrementAndGet() }
+            try {
+                val refreshA = client.refreshNow().toCompletableFuture()
+                assertTrue(firstTransportEntered.await(1, TimeUnit.SECONDS))
+                val refreshB = client.reconfigure(sourceB).toCompletableFuture()
+                val refreshC = client.reconfigure(sourceC).toCompletableFuture()
+
+                client.close()
+
+                assertEquals(
+                    listOf(true, true, true),
+                    listOf(refreshA, refreshB, refreshC).map { it.isDone },
+                )
+                listOf(refreshA, refreshB, refreshC).forEach {
+                    assertIs<RefreshResult.Failed>(it.join())
+                }
+                releaseFirstTransport.countDown()
+                assertTrue(scheduler.awaitTermination(1, TimeUnit.SECONDS))
+                assertEquals(listOf(sourceA.channelUri), requests)
+                assertEquals(0, callbackCount.get())
+            } finally {
+                releaseFirstTransport.countDown()
+                client.close()
+                scheduler.awaitTermination(1, TimeUnit.SECONDS)
+            }
+        }
+    }
+
     // Break caught: a stale old-source failure must not increment the new generation's failure
     // count or select its second retry delay.
     @Test

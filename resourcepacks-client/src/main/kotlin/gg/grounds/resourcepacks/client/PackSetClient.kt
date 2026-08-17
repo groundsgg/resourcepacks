@@ -45,6 +45,7 @@ class PackSetClient(
     private var started = false
     private var closed = false
     private var inFlight: CompletableFuture<RefreshResult>? = null
+    private val outstandingRefreshes = mutableSetOf<CompletableFuture<RefreshResult>>()
     private var periodicTask: ScheduledFuture<*>? = null
     private var retryTask: ScheduledFuture<*>? = null
     private val events = ArrayDeque<StateEvent>()
@@ -53,37 +54,34 @@ class PackSetClient(
     private var callbacksDrained = CompletableFuture.completedFuture<Void>(null)
     private var closeCompletion: CompletableFuture<Void>? = null
     private val inListenerCallback = ThreadLocal.withInitial { false }
+    private val inCloseRefreshCompletion = ThreadLocal.withInitial { false }
     private var closeJoinObserver: (Boolean) -> Unit = {}
 
     fun start() {
-        val immediate: CompletionStage<RefreshResult>
+        val immediate: RefreshLaunch
         synchronized(lifecycle) {
             if (closed || started) return
             started = true
             immediate = beginRefreshLocked()
         }
         // Keep the immediate request alive; callers may instead observe state through listeners.
-        immediate.exceptionally { null }
+        finishLaunch(immediate).exceptionally { null }
     }
 
     fun state(): PackSetClientState = state.get()
 
-    fun refreshNow(): CompletionStage<RefreshResult> =
-        synchronized(lifecycle) {
-            if (closed)
-                return@synchronized CompletableFuture.completedFuture(
-                    RefreshResult.Failed("Client is closed.")
-                )
-            beginRefreshLocked()
-        }
+    fun refreshNow(): CompletionStage<RefreshResult> {
+        val launch = synchronized(lifecycle) { if (closed) null else beginRefreshLocked() }
+        return if (launch == null)
+            CompletableFuture.completedFuture(RefreshResult.Failed("Client is closed."))
+        else finishLaunch(launch)
+    }
 
     fun reconfigure(source: PackSetSource): CompletionStage<RefreshResult> {
         var drain = false
-        val refresh: CompletionStage<RefreshResult>
+        var launch: RefreshLaunch? = null
         synchronized(lifecycle) {
-            if (closed)
-                return CompletableFuture.completedFuture(RefreshResult.Failed("Client is closed."))
-            if (this.source != source) {
+            if (!closed && this.source != source) {
                 sourceGeneration += 1
                 this.source = source
                 cached = null
@@ -104,10 +102,11 @@ class PackSetClient(
                     )
                 drain = commitLocked(changed)
             }
-            refresh = beginRefreshLocked()
+            if (!closed) launch = beginRefreshLocked()
         }
         if (drain) scheduleDrain()
-        return refresh
+        return launch?.let(::finishLaunch)
+            ?: CompletableFuture.completedFuture(RefreshResult.Failed("Client is closed."))
     }
 
     fun addListener(listener: PackSetStateListener): AutoCloseable {
@@ -131,7 +130,7 @@ class PackSetClient(
     override fun close() {
         var ownsClose = false
         var callbackBarrier = CompletableFuture.completedFuture<Void>(null)
-        var pendingRefresh: CompletableFuture<RefreshResult>? = null
+        var pendingRefreshes = emptyList<CompletableFuture<RefreshResult>>()
         val completion: CompletableFuture<Void>
         synchronized(lifecycle) {
             val existing = closeCompletion
@@ -147,7 +146,8 @@ class PackSetClient(
                 retryTask?.cancel(false)
                 periodicTask = null
                 retryTask = null
-                pendingRefresh = inFlight
+                pendingRefreshes = outstandingRefreshes.toList()
+                outstandingRefreshes.clear()
                 inFlight = null
                 listeners.forEach { it.active = false }
                 listeners.clear()
@@ -157,11 +157,16 @@ class PackSetClient(
             }
         }
         if (!ownsClose) {
-            if (!inListenerCallback.get()) completion.join()
+            if (!inListenerCallback.get() && !inCloseRefreshCompletion.get()) completion.join()
             return
         }
         try {
-            pendingRefresh?.complete(RefreshResult.Failed("Client is closed."))
+            inCloseRefreshCompletion.set(true)
+            try {
+                pendingRefreshes.forEach { it.complete(RefreshResult.Failed("Client is closed.")) }
+            } finally {
+                inCloseRefreshCompletion.set(false)
+            }
             scheduler.shutdownNow()
             if (inListenerCallback.get()) {
                 callbackBarrier.whenComplete { _, failure ->
@@ -181,35 +186,53 @@ class PackSetClient(
         // Closing listeners means no application callback is dispatched for the terminal state.
     }
 
-    private fun beginRefreshLocked(): CompletionStage<RefreshResult> {
+    private fun beginRefreshLocked(): RefreshLaunch {
         inFlight?.let {
-            return it
+            return RefreshLaunch(it, null)
         }
         val future = CompletableFuture<RefreshResult>()
         val scheduledSource = source
         val scheduledGeneration = sourceGeneration
         inFlight = future
+        outstandingRefreshes += future
+        var rejected: RefreshCompletion? = null
         try {
             scheduler.execute {
-                synchronized(refreshExecution) {
-                    refresh(scheduledSource, scheduledGeneration, future)
-                }
+                val outcome =
+                    synchronized(refreshExecution) {
+                        try {
+                            refresh(scheduledSource, scheduledGeneration, future)
+                        } catch (_: Throwable) {
+                            failed(scheduledSource, scheduledGeneration, future, "Refresh failed.")
+                        }
+                    }
+                if (outcome.drainEvents) scheduleDrain()
+                completePublic(outcome.completion)
             }
         } catch (_: RejectedExecutionException) {
             inFlight = null
-            future.complete(RefreshResult.Failed("Refresh scheduler was unavailable."))
+            rejected =
+                RefreshCompletion(
+                    future,
+                    RefreshResult.Failed("Refresh scheduler was unavailable."),
+                )
         }
-        return future
+        return RefreshLaunch(future, rejected)
+    }
+
+    private fun finishLaunch(launch: RefreshLaunch): CompletionStage<RefreshResult> {
+        launch.rejected?.let(::completePublic)
+        return launch.future
     }
 
     private fun refresh(
         refreshSource: PackSetSource,
         generation: Long,
         future: CompletableFuture<RefreshResult>,
-    ) {
+    ): RefreshExecutionOutcome {
+        var drain = false
         if (!isCurrent(generation)) {
-            future.complete(RefreshResult.Failed("Source changed."))
-            return
+            return stale(future, drain)
         }
         val refreshConfig = config.copy(source = refreshSource)
         val resolver = PackSetResolver(transport, refreshConfig)
@@ -226,16 +249,19 @@ class PackSetClient(
                     is RefreshResult.Activated -> {
                         cache = requireNotNull(resolver.cacheOf(recovered))
                         if (installCache(refreshSource, generation, cache)) {
-                            publishCurrent(
-                                generation,
-                                PackSetClientState(
-                                    refreshSource,
-                                    recovered.snapshot,
-                                    null,
-                                    PackSetClientStatus.READY,
-                                    null,
-                                ),
-                            )
+                            val published =
+                                publishCurrent(
+                                    generation,
+                                    PackSetClientState(
+                                        refreshSource,
+                                        recovered.snapshot,
+                                        null,
+                                        PackSetClientStatus.READY,
+                                        null,
+                                    ),
+                                )
+                            drain = drain || published.drainEvents
+                            if (!published.accepted) return stale(future, drain)
                         }
                     }
                     else -> cache = null
@@ -243,27 +269,49 @@ class PackSetClient(
             }
         }
         if (!isCurrent(generation)) {
-            future.complete(RefreshResult.Failed("Source changed."))
-            return
+            return stale(future, drain)
         }
         val result = resolver.refresh(cache ?: emptyCache())
         if (!isCurrent(generation)) {
-            future.complete(RefreshResult.Failed("Source changed."))
-            return
+            return stale(future, drain)
         }
-        when (result) {
+        return when (result) {
             is RefreshResult.Activated -> {
                 try {
                     val refreshedCache = requireNotNull(resolver.cacheOf(result))
                     diskCache.store(refreshSource, refreshedCache)
                     if (!isCurrent(generation)) {
-                        future.complete(RefreshResult.Failed("Source changed."))
-                        return
+                        return stale(future, drain)
                     }
                     if (!installCache(refreshSource, generation, refreshedCache)) {
-                        future.complete(RefreshResult.Failed("Source changed."))
-                        return
+                        return stale(future, drain)
                     }
+                    val published =
+                        publishCurrent(
+                            generation,
+                            PackSetClientState(
+                                refreshSource,
+                                result.snapshot,
+                                null,
+                                PackSetClientStatus.READY,
+                                null,
+                            ),
+                        )
+                    drain = drain || published.drainEvents
+                    if (!published.accepted) stale(future, drain)
+                    else complete(future, result, generation, drain)
+                } catch (_: java.io.IOException) {
+                    failed(refreshSource, generation, future, "Cache write failed.", drain)
+                } catch (_: RuntimeException) {
+                    failed(refreshSource, generation, future, "Cache write failed.", drain)
+                }
+            }
+            is RefreshResult.Unchanged -> {
+                val refreshedCache = requireNotNull(resolver.cacheOf(result))
+                if (!installCache(refreshSource, generation, refreshedCache)) {
+                    return stale(future, drain)
+                }
+                val published =
                     publishCurrent(
                         generation,
                         PackSetClientState(
@@ -274,32 +322,12 @@ class PackSetClient(
                             null,
                         ),
                     )
-                    complete(future, result, generation)
-                } catch (_: java.io.IOException) {
-                    failed(refreshSource, generation, future, "Cache write failed.")
-                } catch (_: RuntimeException) {
-                    failed(refreshSource, generation, future, "Cache write failed.")
-                }
+                drain = drain || published.drainEvents
+                if (!published.accepted) stale(future, drain)
+                else complete(future, result, generation, drain)
             }
-            is RefreshResult.Unchanged -> {
-                val refreshedCache = requireNotNull(resolver.cacheOf(result))
-                if (!installCache(refreshSource, generation, refreshedCache)) {
-                    future.complete(RefreshResult.Failed("Source changed."))
-                    return
-                }
-                publishCurrent(
-                    generation,
-                    PackSetClientState(
-                        refreshSource,
-                        result.snapshot,
-                        null,
-                        PackSetClientStatus.READY,
-                        null,
-                    ),
-                )
-                complete(future, result, generation)
-            }
-            is RefreshResult.Failed -> failed(refreshSource, generation, future, result.reason)
+            is RefreshResult.Failed ->
+                failed(refreshSource, generation, future, result.reason, drain)
         }
     }
 
@@ -308,8 +336,9 @@ class PackSetClient(
         generation: Long,
         future: CompletableFuture<RefreshResult>,
         reason: String,
-    ) {
-        var drain = false
+        priorDrain: Boolean = false,
+    ): RefreshExecutionOutcome {
+        var drain = priorDrain
         var accepted = false
         synchronized(lifecycle) {
             if (!closed && sourceGeneration == generation && source == refreshSource) {
@@ -325,7 +354,7 @@ class PackSetClient(
                             else PackSetClientStatus.DEGRADED,
                             reason,
                         )
-                    )
+                    ) || drain
                 failures += 1
                 val retryDelay = retryPolicy.delayForFailure(failures - 1)
                 retryTask?.cancel(false)
@@ -345,9 +374,24 @@ class PackSetClient(
             }
             if (inFlight === future) inFlight = null
         }
-        if (drain) scheduleDrain()
-        future.complete(
-            if (accepted) RefreshResult.Failed(reason) else RefreshResult.Failed("Source changed.")
+        return RefreshExecutionOutcome(
+            RefreshCompletion(
+                future,
+                if (accepted) RefreshResult.Failed(reason)
+                else RefreshResult.Failed("Source changed."),
+            ),
+            drain,
+        )
+    }
+
+    private fun stale(
+        future: CompletableFuture<RefreshResult>,
+        drainEvents: Boolean,
+    ): RefreshExecutionOutcome {
+        synchronized(lifecycle) { if (inFlight === future) inFlight = null }
+        return RefreshExecutionOutcome(
+            RefreshCompletion(future, RefreshResult.Failed("Source changed.")),
+            drainEvents,
         )
     }
 
@@ -372,15 +416,12 @@ class PackSetClient(
             }
         }
 
-    private fun publishCurrent(generation: Long, next: PackSetClientState): Boolean {
-        var drain = false
+    private fun publishCurrent(generation: Long, next: PackSetClientState): StateCommit =
         synchronized(lifecycle) {
-            if (closed || sourceGeneration != generation || source != next.source) return false
-            drain = commitLocked(next)
+            if (closed || sourceGeneration != generation || source != next.source)
+                StateCommit(false, false)
+            else StateCommit(true, commitLocked(next))
         }
-        if (drain) scheduleDrain()
-        return true
-    }
 
     private fun commitLocked(next: PackSetClientState): Boolean {
         check(Thread.holdsLock(lifecycle))
@@ -452,7 +493,8 @@ class PackSetClient(
         future: CompletableFuture<RefreshResult>,
         result: RefreshResult,
         generation: Long,
-    ) {
+        drainEvents: Boolean,
+    ): RefreshExecutionOutcome {
         var completion: RefreshResult = result
         val resultSource =
             when (result) {
@@ -472,16 +514,42 @@ class PackSetClient(
                 if (!closed && sourceGeneration == generation) {
                     periodicTask?.cancel(false)
                     periodicTask =
-                        scheduler.schedule(
-                            { refreshNow() },
-                            config.refreshInterval.toMillis(),
-                            java.util.concurrent.TimeUnit.MILLISECONDS,
-                        )
+                        try {
+                            scheduler.schedule(
+                                { refreshNow() },
+                                config.refreshInterval.toMillis(),
+                                java.util.concurrent.TimeUnit.MILLISECONDS,
+                            )
+                        } catch (_: RejectedExecutionException) {
+                            null
+                        }
                 }
             }
         }
-        future.complete(completion)
+        return RefreshExecutionOutcome(RefreshCompletion(future, completion), drainEvents)
     }
+
+    private fun completePublic(completion: RefreshCompletion) {
+        completion.future.complete(completion.result)
+        synchronized(lifecycle) { outstandingRefreshes.remove(completion.future) }
+    }
+
+    private data class RefreshLaunch(
+        val future: CompletableFuture<RefreshResult>,
+        val rejected: RefreshCompletion?,
+    )
+
+    private data class RefreshExecutionOutcome(
+        val completion: RefreshCompletion,
+        val drainEvents: Boolean,
+    )
+
+    private data class RefreshCompletion(
+        val future: CompletableFuture<RefreshResult>,
+        val result: RefreshResult,
+    )
+
+    private data class StateCommit(val accepted: Boolean, val drainEvents: Boolean)
 
     private data class GenerationCache(
         val source: PackSetSource,
