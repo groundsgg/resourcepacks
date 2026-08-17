@@ -84,7 +84,7 @@ class AutomationContractTest {
         val sharedCheckoutPath = replaceOnce(ci, "path: run2/src", "path: run1/src")
         assertFails { assertCi(parseText(sharedCheckoutPath)) }
         val maskedDecision =
-            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 2).let {
+            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 3).let {
                 replaceOnce(
                     it,
                     "          case \"\$decision\" in\n" +
@@ -112,6 +112,24 @@ class AutomationContractTest {
         val missingContractPublication =
             removeStep(release, "Stage the exact Contract Maven publication")
         assertFails { assertRelease(parseText(missingContractPublication)) }
+        val missingClientGate =
+            replaceOnce(release, "id: client-maven-gate", "id: missing-client-maven-gate")
+        assertFails { assertRelease(parseText(missingClientGate)) }
+        val r2BeforeClientPublication =
+            replaceOnce(
+                release,
+                "      - name: Publish the unchanged Client Maven staging workspace\n" +
+                    "        if: steps.client-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-client:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n" +
+                    "      - name: Create or compare immutable R2 ZIP objects\n" +
+                    "        run: $r2Command\n",
+                "      - name: Create or compare immutable R2 ZIP objects\n" +
+                    "        run: $r2Command\n" +
+                    "      - name: Publish the unchanged Client Maven staging workspace\n" +
+                    "        if: steps.client-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-client:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n",
+            )
+        assertFails { assertRelease(parseText(r2BeforeClientPublication)) }
         val releaseWithSecretInsteadOfBuiltInToken =
             replaceExactly(
                 release,
@@ -202,6 +220,15 @@ class AutomationContractTest {
         val gate =
             workflowSource("release.yml")
                 .substringAfter("id: contract-maven-gate")
+                .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    @Test
+    fun `Client Maven decision gate rejects failed empty and invalid output before its successor`() {
+        val gate =
+            workflowSource("release.yml")
+                .substringAfter("id: client-maven-gate")
                 .substringBefore("      - name: Publish")
         assertMavenDecisionGateRejects(gate)
     }
@@ -705,13 +732,21 @@ class AutomationContractTest {
             steps.indexOf(
                 stepByName(steps, "Publish the unchanged Contract Maven staging workspace")
             )
+        val clientStage =
+            steps.indexOf(stepByName(steps, "Stage the exact Client Maven publication"))
+        val clientGate = steps.indexOfFirst { scalar(it, "id") == "client-maven-gate" }
+        val clientPublish =
+            steps.indexOf(stepByName(steps, "Publish the unchanged Client Maven staging workspace"))
         val r2 = steps.indexOf(stepByName(steps, "Create or compare immutable R2 ZIP objects"))
         assertEquals(gate - 1, stage)
         assertEquals(gate + 1, publish)
         assertEquals(publish + 1, contractStage)
         assertEquals(contractStage + 1, contractGate)
         assertEquals(contractGate + 1, contractPublish)
-        assertEquals(contractPublish + 1, r2)
+        assertEquals(contractPublish + 1, clientStage)
+        assertEquals(clientStage + 1, clientGate)
+        assertEquals(clientGate + 1, clientPublish)
+        assertEquals(clientPublish + 1, r2)
         assertEquals(
             "./gradlew :resourcepacks-catalog:stageExactMavenPublication " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
@@ -738,6 +773,21 @@ class AutomationContractTest {
             "./gradlew :resourcepacks-contract:publishMavenJavaPublicationToGitHubPackagesRepository " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
             scalar(steps[contractPublish], "run"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-client:stageExactMavenPublication " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[clientStage], "run"),
+        )
+        assertEquals(clientMavenDecisionScript, scalar(steps[clientGate], "run"))
+        assertEquals(
+            "steps.client-maven-gate.outputs.decision == 'publish'",
+            scalar(steps[clientPublish], "if"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-client:publishMavenJavaPublicationToGitHubPackagesRepository " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[clientPublish], "run"),
         )
         assertEquals(r2Command, scalar(steps[r2], "run"))
     }
@@ -1087,6 +1137,17 @@ class AutomationContractTest {
                 "case \"\$decision\" in",
                 "  publish|skip) ;;",
                 "  *) echo \"Contract Maven decision is invalid\" >&2; exit 1 ;;",
+                "esac",
+                "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
+            )
+            .joinToString("\n")
+
+    private val clientMavenDecisionScript =
+        listOf(
+                "decision=\$(node release-tools/src/client-maven-create-or-compare.mjs --staging-directory resourcepacks-client/build/release-maven-staging --version '${'$'}{{ needs.build.outputs.version }}' --username '${'$'}{{ github.actor }}' --token '${'$'}{{ secrets.GITHUB_TOKEN }}')",
+                "case \"\$decision\" in",
+                "  publish|skip) ;;",
+                "  *) echo \"Client Maven decision is invalid\" >&2; exit 1 ;;",
                 "esac",
                 "echo \"decision=\$decision\" >> \"\$GITHUB_OUTPUT\"",
             )
