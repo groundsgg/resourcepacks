@@ -111,6 +111,17 @@ class ChannelDocumentTest {
         }
     }
 
+    @Test
+    fun `policy accepts the required named base URI argument and normalizes its trailing slash`() {
+        val policy =
+            PackSetValidationPolicy(
+                baseUri = URI("https://assets.example.test/"),
+                packSet = "custom",
+            )
+
+        assertEquals(URI("https://assets.example.test"), policy.baseUri)
+    }
+
     internal companion object {
         val stableDocument =
             ChannelDocument(

@@ -1,11 +1,17 @@
 package gg.grounds.resourcepacks.contract
 
 import java.net.URI
+import kotlin.ConsistentCopyVisibility
 
-data class PackSetValidationPolicy(private val source: URI, val packSet: String) {
-    val baseUri: URI = normalizeBaseUri(source)
+@ConsistentCopyVisibility
+data class PackSetValidationPolicy
+private constructor(val baseUri: URI, val packSet: String, private val normalized: Boolean) {
+    constructor(baseUri: URI, packSet: String) : this(normalizeBaseUri(baseUri), packSet, true)
 
     init {
+        require(normalized && baseUri == normalizeBaseUri(baseUri)) {
+            "Base URI must be normalized."
+        }
         require(
             packSet.isNotEmpty() && packSet.all { it.isLetterOrDigit() || it == '-' || it == '_' }
         ) {
