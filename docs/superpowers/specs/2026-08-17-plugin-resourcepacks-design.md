@@ -96,6 +96,15 @@ The client accepts configurable sources under these rules:
 - every manifest artifact URL must use the configured origin and canonical PackSet layout;
 - all size and digest checks are mandatory before a snapshot can become current.
 
+`resourcepacks-contract` currently exposes a convenience decoder bound to the canonical
+`grounds-global` / `cdn.grounds.gg` publication. The implementation adds a public immutable
+validation-policy value and policy-aware decoder overloads for channel and manifest documents.
+The existing no-policy overloads retain their exact canonical behavior for compatibility. The
+policy-aware path moves only deployment-specific PackSet/origin binding out of the model
+constructors; structural limits, canonical JSON, publication-type, digest, size, UUID, role, order,
+and URL-layout checks remain mandatory in the shared contract implementation. The client must use
+the policy-aware overloads and must not duplicate or weaken the contract parser.
+
 An arbitrary HTTPS origin is an administrator capability. Until `service-config` gains
 application-level admin authorization, write access remains limited by the existing private-network
 deployment controls. Exposing config writes outside that boundary requires completing service-config
