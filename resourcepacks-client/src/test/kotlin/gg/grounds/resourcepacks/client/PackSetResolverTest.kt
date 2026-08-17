@@ -140,7 +140,10 @@ class PackSetResolverTest {
         val resolver = PackSetResolver(transport, config(source))
         val activated = assertIs<RefreshResult.Activated>(resolver.refresh(emptyCache()))
 
-        val unchanged = assertIs<RefreshResult.Unchanged>(resolver.refresh(activated.cache))
+        val unchanged =
+            assertIs<RefreshResult.Unchanged>(
+                resolver.refresh(requireNotNull(resolver.cacheOf(activated)))
+            )
 
         assertEquals(activated.snapshot, unchanged.snapshot)
         assertEquals(3, round)
@@ -164,9 +167,12 @@ class PackSetResolverTest {
         val resolver = PackSetResolver(transport, config(source))
         val initial = assertIs<RefreshResult.Activated>(resolver.refresh(emptyCache()))
 
-        val refreshed = assertIs<RefreshResult.Activated>(resolver.refresh(initial.cache))
+        val refreshed =
+            assertIs<RefreshResult.Activated>(
+                resolver.refresh(requireNotNull(resolver.cacheOf(initial)))
+            )
 
-        assertEquals("manifest-1", refreshed.cache.manifestEtag)
+        assertEquals("manifest-1", requireNotNull(resolver.cacheOf(refreshed)).manifestEtag)
     }
 
     @Test

@@ -17,12 +17,14 @@ import java.util.UUID
 
 /** A fail-closed cache whose only mutable item is the source-local current pointer. */
 internal class PackSetDiskCache(private val root: Path) {
+    @JvmSynthetic
     fun load(source: PackSetSource): ResolverCache? = load(source, Int.MAX_VALUE, Int.MAX_VALUE)
 
+    @JvmSynthetic
     fun load(source: PackSetSource, maxChannelBytes: Int, maxManifestBytes: Int): ResolverCache? =
         try {
             val sourceDirectory = sourceDirectory(source, create = false) ?: return null
-            requireExactEntries(sourceDirectory, setOf("current", "generations"))
+            requireSourceEntries(sourceDirectory)
             val current = sourceDirectory.resolve("current")
             if (!regularFile(current)) return null
             val fingerprint = String(readFile(current, 65), Charsets.US_ASCII)
@@ -57,6 +59,7 @@ internal class PackSetDiskCache(private val root: Path) {
             null
         }
 
+    @JvmSynthetic
     fun store(source: PackSetSource, cache: ResolverCache) {
         val channel = requireNotNull(cache.channelBytes) { "Channel bytes are required." }
         val manifest = requireNotNull(cache.manifestBytes) { "Manifest bytes are required." }
@@ -64,7 +67,7 @@ internal class PackSetDiskCache(private val root: Path) {
         require(FINGERPRINT.matches(fingerprint))
         val sourceDirectory = requireNotNull(sourceDirectory(source, create = true))
         if (Files.list(sourceDirectory).use { it.findAny().isPresent })
-            requireExactEntries(sourceDirectory, setOf("current", "generations"))
+            requireSourceEntries(sourceDirectory)
         val generations = sourceDirectory.resolve("generations")
         createDirectory(generations)
         require(directory(generations))
@@ -79,6 +82,7 @@ internal class PackSetDiskCache(private val root: Path) {
                 metadataBytes(source, fingerprint, cache, channel, manifest),
             )
             moveAtomically(staging, target, replace = false)
+            forceDirectory(generations)
         }
         require(directory(target))
         validateGeneration(source, target, fingerprint, Int.MAX_VALUE, Int.MAX_VALUE)
@@ -87,6 +91,7 @@ internal class PackSetDiskCache(private val root: Path) {
         val pointer = sourceDirectory.resolve(".current-${UUID.randomUUID()}")
         writeNew(pointer, "$fingerprint\n".encodeToByteArray())
         moveAtomically(pointer, current, replace = true)
+        forceDirectory(sourceDirectory)
     }
 
     private fun sourceDirectory(source: PackSetSource, create: Boolean): Path? {
@@ -127,6 +132,22 @@ internal class PackSetDiskCache(private val root: Path) {
         require(actual == expected)
     }
 
+    private fun requireSourceEntries(directory: Path) {
+        val actual = mutableSetOf<String>()
+        Files.newDirectoryStream(directory).use { entries ->
+            for (entry in entries) {
+                val name = entry.fileName.toString()
+                if (name.startsWith(".current-")) {
+                    require(!Files.isSymbolicLink(entry) && regularFile(entry))
+                    continue
+                }
+                require(name in setOf("current", "generations") && !Files.isSymbolicLink(entry))
+                actual += name
+            }
+        }
+        require(actual == setOf("current", "generations"))
+    }
+
     private fun createDirectory(path: Path) {
         if (!Files.exists(path, NOFOLLOW_LINKS)) Files.createDirectory(path)
         require(directory(path))
@@ -164,6 +185,10 @@ internal class PackSetDiskCache(private val root: Path) {
         } catch (x: AtomicMoveNotSupportedException) {
             throw IllegalStateException("Cache filesystem does not support atomic moves.", x)
         }
+    }
+
+    private fun forceDirectory(directory: Path) {
+        FileChannel.open(directory, setOf(READ, NOFOLLOW_LINKS)).use { it.force(true) }
     }
 
     private fun metadataBytes(
@@ -211,6 +236,10 @@ internal class PackSetDiskCache(private val root: Path) {
         Files.newDirectoryStream(generations).use { entries ->
             for (entry in entries) {
                 val fingerprint = entry.fileName.toString()
+                if (fingerprint.startsWith(".staging-")) {
+                    require(!Files.isSymbolicLink(entry) && directory(entry))
+                    continue
+                }
                 require(FINGERPRINT.matches(fingerprint) && directory(entry))
                 validateGeneration(source, entry, fingerprint, maxChannelBytes, maxManifestBytes)
             }

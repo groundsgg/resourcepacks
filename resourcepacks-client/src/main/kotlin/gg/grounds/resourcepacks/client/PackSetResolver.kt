@@ -9,6 +9,7 @@ import java.io.InputStream
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -17,7 +18,10 @@ internal class PackSetResolver(
     private val transport: PackSetHttpTransport,
     private val config: PackSetClientConfig,
 ) {
+    private val resultCaches = IdentityHashMap<RefreshResult, ResolverCache>()
+
     /** Rebind persisted raw bytes through the same contract checks used for a network response. */
+    @JvmSynthetic
     fun revalidate(cache: ResolverCache): RefreshResult {
         val channelBytes = cache.channelBytes ?: return failed("Channel cache was unavailable.")
         val manifestBytes = cache.manifestBytes ?: return failed("Manifest cache was unavailable.")
@@ -56,9 +60,10 @@ internal class PackSetResolver(
                 channelBytes,
                 manifestBytes,
             )
-        return RefreshResult.Activated(snapshot, cache.copy(snapshot = snapshot))
+        return cached(RefreshResult.Activated(snapshot), cache.copy(snapshot = snapshot))
     }
 
+    @JvmSynthetic
     fun refresh(cache: ResolverCache): RefreshResult =
         try {
             val deadline = deadlineNanos(config.requestTimeout)
@@ -68,9 +73,13 @@ internal class PackSetResolver(
                 when (response.status) {
                     304 -> {
                         val snapshot = cache.snapshot
-                        if (cache.channelBytes == null || snapshot == null)
+                        if (
+                            cache.channelBytes == null ||
+                                snapshot == null ||
+                                snapshot.source != config.source
+                        )
                             failed("Channel cache was unavailable.")
-                        else RefreshResult.Unchanged(snapshot, cache)
+                        else cached(RefreshResult.Unchanged(snapshot), cache)
                     }
                     200 ->
                         resolveChannel(
@@ -157,8 +166,8 @@ internal class PackSetResolver(
                             channelBytes,
                             manifestBytes,
                         )
-                    RefreshResult.Activated(
-                        snapshot,
+                    cached(
+                        RefreshResult.Activated(snapshot),
                         ResolverCache(
                             channelEtag,
                             channelBytes,
@@ -217,6 +226,11 @@ internal class PackSetResolver(
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private fun failed(reason: String) = RefreshResult.Failed(reason)
+
+    @JvmSynthetic fun cacheOf(result: RefreshResult): ResolverCache? = resultCaches[result]
+
+    private fun cached(result: RefreshResult, cache: ResolverCache): RefreshResult =
+        result.also { resultCaches[it] = cache }
 
     private fun deadlineNanos(timeout: java.time.Duration): Long =
         Math.addExact(System.nanoTime(), timeout.toNanos())

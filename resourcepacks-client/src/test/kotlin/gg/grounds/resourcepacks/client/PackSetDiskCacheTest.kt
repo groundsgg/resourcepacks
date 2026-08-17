@@ -147,6 +147,26 @@ class PackSetDiskCacheTest {
         }
     }
 
+    // Break caught: an interrupted plugin write leaves private staging names but must not hide the
+    // already atomically published last-known-good generation.
+    @Test
+    fun `private interrupted write artifacts do not hide published generation`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val source =
+                PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE)
+            val disk = PackSetDiskCache(directory)
+            disk.store(source, resolverCache())
+            val sourceDirectory = directory.resolve(source.cacheKey)
+            Files.createFile(sourceDirectory.resolve(".current-interrupted"))
+            Files.createDirectory(sourceDirectory.resolve("generations/.staging-interrupted"))
+
+            assertEquals("channel", requireNotNull(disk.load(source)).channelEtag)
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
     private fun generation(directory: Path, source: PackSetSource): Path {
         val sourceDirectory = directory.resolve(source.cacheKey)
         val fingerprint = Files.readString(sourceDirectory.resolve("current")).trim()

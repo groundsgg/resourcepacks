@@ -1,6 +1,6 @@
 package gg.grounds.resourcepacks.client
 
-data class ResolverCache(
+internal data class ResolverCache(
     val channelEtag: String?,
     val channelBytes: ByteArray?,
     val manifestEtag: String?,
@@ -9,11 +9,9 @@ data class ResolverCache(
 )
 
 sealed interface RefreshResult {
-    data class Activated(val snapshot: PackSetSnapshot, internal val cache: ResolverCache) :
-        RefreshResult
+    data class Activated(val snapshot: PackSetSnapshot) : RefreshResult
 
-    data class Unchanged(val snapshot: PackSetSnapshot, internal val cache: ResolverCache) :
-        RefreshResult
+    data class Unchanged(val snapshot: PackSetSnapshot) : RefreshResult
 
     data class Failed(val reason: String) : RefreshResult
 }

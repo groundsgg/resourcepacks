@@ -38,7 +38,7 @@ class PackSetClient(
     private var retryPolicy = RetryPolicy()
     private var source = config.source
     private var sourceGeneration = 0L
-    private var cached: ResolverCache? = null
+    private var cached: GenerationCache? = null
     private var failures = 0
     private var started = false
     private var closed = false
@@ -158,7 +158,8 @@ class PackSetClient(
         future: CompletableFuture<RefreshResult>,
     ) {
         val refreshConfig = config.copy(source = refreshSource)
-        var cache = cached
+        val resolver = PackSetResolver(transport, refreshConfig)
+        var cache = cachedFor(refreshSource, generation)
         if (cache == null) {
             cache =
                 diskCache.load(
@@ -167,11 +168,10 @@ class PackSetClient(
                     refreshConfig.maxManifestBytes,
                 )
             if (cache != null) {
-                when (val recovered = PackSetResolver(transport, refreshConfig).revalidate(cache)) {
+                when (val recovered = resolver.revalidate(cache)) {
                     is RefreshResult.Activated -> {
-                        cache = recovered.cache
-                        if (isCurrent(generation)) {
-                            cached = cache
+                        cache = requireNotNull(resolver.cacheOf(recovered))
+                        if (installCache(refreshSource, generation, cache)) {
                             publishCurrent(
                                 generation,
                                 PackSetClientState(
@@ -192,7 +192,7 @@ class PackSetClient(
             future.complete(RefreshResult.Failed("Source changed."))
             return
         }
-        val result = PackSetResolver(transport, refreshConfig).refresh(cache ?: emptyCache())
+        val result = resolver.refresh(cache ?: emptyCache())
         if (!isCurrent(generation)) {
             future.complete(RefreshResult.Failed("Source changed."))
             return
@@ -200,12 +200,16 @@ class PackSetClient(
         when (result) {
             is RefreshResult.Activated -> {
                 try {
-                    diskCache.store(refreshSource, result.cache)
+                    val refreshedCache = requireNotNull(resolver.cacheOf(result))
+                    diskCache.store(refreshSource, refreshedCache)
                     if (!isCurrent(generation)) {
                         future.complete(RefreshResult.Failed("Source changed."))
                         return
                     }
-                    cached = result.cache
+                    if (!installCache(refreshSource, generation, refreshedCache)) {
+                        future.complete(RefreshResult.Failed("Source changed."))
+                        return
+                    }
                     failures = 0
                     publishCurrent(
                         generation,
@@ -225,7 +229,11 @@ class PackSetClient(
                 }
             }
             is RefreshResult.Unchanged -> {
-                cached = result.cache
+                val refreshedCache = requireNotNull(resolver.cacheOf(result))
+                if (!installCache(refreshSource, generation, refreshedCache)) {
+                    future.complete(RefreshResult.Failed("Source changed."))
+                    return
+                }
                 failures = 0
                 publishCurrent(
                     generation,
@@ -285,6 +293,24 @@ class PackSetClient(
     private fun isCurrent(generation: Long): Boolean =
         synchronized(lifecycle) { !closed && sourceGeneration == generation }
 
+    private fun cachedFor(source: PackSetSource, generation: Long): ResolverCache? =
+        synchronized(lifecycle) {
+            cached?.takeIf { !closed && it.source == source && it.generation == generation }?.cache
+        }
+
+    private fun installCache(
+        source: PackSetSource,
+        generation: Long,
+        cache: ResolverCache,
+    ): Boolean =
+        synchronized(lifecycle) {
+            if (closed || sourceGeneration != generation || this.source != source) false
+            else {
+                cached = GenerationCache(source, generation, cache)
+                true
+            }
+        }
+
     private fun publish(next: PackSetClientState) {
         val previous = state.getAndSet(next)
         if (previous != next && state.get() === next) notifyListeners(next)
@@ -324,4 +350,10 @@ class PackSetClient(
         }
         future.complete(result)
     }
+
+    private data class GenerationCache(
+        val source: PackSetSource,
+        val generation: Long,
+        val cache: ResolverCache,
+    )
 }
