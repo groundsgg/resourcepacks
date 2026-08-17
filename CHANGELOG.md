@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/groundsgg/resourcepacks/compare/v0.2.0...v0.3.0) (2026-08-17)
+
+
+### Features
+
+* add configurable resourcepack client ([2ccde40](https://github.com/groundsgg/resourcepacks/commit/2ccde401bd7056de94ccb320b5462f9515f99d3c))
+
 ## [0.2.0](https://github.com/groundsgg/resourcepacks/compare/v0.1.1...v0.2.0) (2026-08-16)
 
 
