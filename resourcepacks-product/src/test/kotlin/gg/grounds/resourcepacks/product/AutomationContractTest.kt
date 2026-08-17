@@ -233,6 +233,34 @@ class AutomationContractTest {
         assertMavenDecisionGateRejects(gate)
     }
 
+    @Test
+    fun `Maven local consumer harnesses restrict local resolution to Grounds artifacts`() {
+        listOf(
+                "resourcepacks-contract/src/test/scripts/verify-maven-local-consumers.sh" to
+                    "resourcepacks-contract",
+                "resourcepacks-client/src/test/scripts/verify-maven-local-consumers.sh" to
+                    "resourcepacks-client",
+            )
+            .forEach { (path, artifact) ->
+                val script = root.resolve(path).readText()
+                assertTrue(
+                    script.contains(
+                        "mavenLocal {\n" +
+                            "      content {\n" +
+                            "        includeGroup(\"gg.grounds\")\n" +
+                            "      }\n" +
+                            "    }"
+                    ),
+                    "$path must restrict Maven Local to gg.grounds",
+                )
+                assertTrue(
+                    script.contains("module.name == \"$artifact\"") &&
+                        script.contains("module.group == \"tools.jackson.core\""),
+                    "$path must assert local Grounds and Central Jackson selections",
+                )
+            }
+    }
+
     private fun assertMavenDecisionGateRejects(gate: String) {
         listOf("fail", "", "garbage").forEach { result ->
             val directory = kotlin.io.path.createTempDirectory("maven-gate-")

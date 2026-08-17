@@ -15,7 +15,11 @@ pluginManagement { repositories { mavenCentral(); gradlePluginPortal() } }
 dependencyResolutionManagement {
   repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
   repositories {
-    mavenLocal()
+    mavenLocal {
+      content {
+        includeGroup("gg.grounds")
+      }
+    }
     mavenCentral { content { excludeGroup("gg.grounds") } }
   }
 }
@@ -49,8 +53,9 @@ configurations.configureEach {
 tasks.register("verifyContractComesFromMavenLocal") {
   dependsOn(tasks.named("compileJava"), tasks.named("compileKotlin"))
   doLast {
+    val selected = configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents
     check(
-      configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents.any {
+      selected.any {
         it.moduleVersion?.let { module ->
           module.group == "gg.grounds" &&
             module.name == "resourcepacks-contract" &&
@@ -58,6 +63,13 @@ tasks.register("verifyContractComesFromMavenLocal") {
         } == true
       }
     ) { "The Maven Local resourcepacks-contract publication was not selected." }
+    check(
+      selected.any {
+        it.moduleVersion?.let { module ->
+          module.group == "tools.jackson.core" && module.name == "jackson-core"
+        } == true
+      }
+    ) { "Jackson must resolve from Maven Central because Maven Local excludes public groups." }
   }
 }
 EOF
