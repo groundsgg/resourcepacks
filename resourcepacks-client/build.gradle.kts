@@ -1,0 +1,97 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import org.gradle.api.publish.maven.MavenPublication
+
+plugins { `maven-publish` }
+
+java { withSourcesJar() }
+
+dependencies {
+    api(project(":resourcepacks-contract"))
+    testImplementation(kotlin("test"))
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            artifactId = "resourcepacks-client"
+        }
+    }
+    repositories {
+        maven {
+            name = "ReleaseStaging"
+            url = layout.buildDirectory.dir("release-maven-staging").get().asFile.toURI()
+        }
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/groundsgg/resourcepacks")
+            credentials {
+                username =
+                    providers.gradleProperty("github.user").orNull
+                        ?: System.getenv("GITHUB_ACTOR")
+                        ?: ""
+                password =
+                    providers.gradleProperty("github.token").orNull
+                        ?: System.getenv("GITHUB_TOKEN")
+                        ?: ""
+            }
+        }
+    }
+}
+
+val stageExactMavenPublication by
+    tasks.registering {
+        group = "publishing"
+        description =
+            "Stages exactly the four immutable Client Maven publication files for the decision gate."
+        dependsOn(
+            tasks.named("jar"),
+            tasks.named("sourcesJar"),
+            tasks.named("generatePomFileForMavenJavaPublication"),
+            tasks.named("generateMetadataFileForMavenJavaPublication"),
+        )
+        doLast {
+            val versionText = project.version.toString()
+            val artifact = "resourcepacks-client"
+            val target = layout.buildDirectory.dir("release-maven-staging").get().asFile.toPath()
+            check(Files.notExists(target)) { "Maven staging directory already exists: $target" }
+            val versionDirectory = target.resolve("gg/grounds/$artifact/$versionText")
+            Files.createDirectories(versionDirectory)
+            mapOf(
+                    layout.buildDirectory
+                        .file("libs/$artifact-$versionText.jar")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.jar"),
+                    layout.buildDirectory
+                        .file("libs/$artifact-$versionText-sources.jar")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText-sources.jar"),
+                    layout.buildDirectory
+                        .file("publications/mavenJava/pom-default.xml")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.pom"),
+                    layout.buildDirectory
+                        .file("publications/mavenJava/module.json")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.module"),
+                )
+                .forEach { (source, destination) ->
+                    Files.copy(source, destination, StandardCopyOption.COPY_ATTRIBUTES)
+                }
+        }
+    }
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    dependsOn(tasks.named("jar"))
+    doFirst {
+        systemProperty(
+            "client.jar",
+            tasks.named<org.gradle.jvm.tasks.Jar>("jar").get().archiveFile.get().asFile.absolutePath,
+        )
+    }
+}

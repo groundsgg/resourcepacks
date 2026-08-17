@@ -17,16 +17,23 @@ class BuildBoundaryTest {
             .first { it.resolve("settings.gradle.kts").exists() }
 
     @Test
-    fun `the build exposes exactly the catalog contract and product projects`() {
+    fun `the build exposes the current root project set`() {
         val output = runGradle("projects")
 
-        val projectNames =
-            Regex("Project '(:[^']*)'").findAll(output).map { it.groupValues[1] }.toSet()
+        assertEquals(projectSet(), projectNames(output))
+    }
 
-        assertEquals(
-            setOf(":resourcepacks-catalog", ":resourcepacks-contract", ":resourcepacks-product"),
-            projectNames,
-        )
+    @Test
+    fun `testkit fixtures preserve every root project`() {
+        val fixtureDirectory = Files.createTempDirectory("resourcepacks-project-fixture")
+
+        try {
+            copyCompleteFixture(fixtureDirectory)
+
+            assertEquals(projectSet(), projectNames(runGradle(fixtureDirectory, "projects")))
+        } finally {
+            fixtureDirectory.toFile().deleteRecursively()
+        }
     }
 
     @Test
@@ -59,15 +66,7 @@ class BuildBoundaryTest {
         val fixtureDirectory = Files.createTempDirectory("resourcepacks-catalog-runtime-fixture")
 
         try {
-            copyFixtureFile("settings.gradle.kts", fixtureDirectory)
-            copyFixtureFile("build.gradle.kts", fixtureDirectory)
-            copyFixtureFile("version.txt", fixtureDirectory)
-            copyFixtureFile("resourcepacks-catalog/build.gradle.kts", fixtureDirectory)
-            copyFixtureFile("resourcepacks-catalog/gradle.lockfile", fixtureDirectory)
-            copyFixtureFile("resourcepacks-contract/build.gradle.kts", fixtureDirectory)
-            copyFixtureFile("resourcepacks-contract/gradle.lockfile", fixtureDirectory)
-            copyFixtureFile("resourcepacks-product/build.gradle.kts", fixtureDirectory)
-            copyFixtureFile("resourcepacks-product/gradle.lockfile", fixtureDirectory)
+            copyCompleteFixture(fixtureDirectory)
 
             val buildFile = fixtureDirectory.resolve("resourcepacks-catalog/build.gradle.kts")
             buildFile.writeText(
@@ -163,11 +162,7 @@ class BuildBoundaryTest {
         val fixtureDirectory = Files.createTempDirectory("resourcepacks-version-fixture")
 
         try {
-            copyFixtureFile("settings.gradle.kts", fixtureDirectory)
-            copyFixtureFile("build.gradle.kts", fixtureDirectory)
-            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-catalog"))
-            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-contract"))
-            Files.createDirectories(fixtureDirectory.resolve("resourcepacks-product"))
+            copyCompleteFixture(fixtureDirectory)
             fixtureDirectory.resolve("version.txt").writeText(contents)
 
             val failure = runGradleAndFail(fixtureDirectory, "help")
@@ -212,4 +207,26 @@ class BuildBoundaryTest {
         Files.createDirectories(target.parent)
         Files.copy(rootDirectory.resolve(relativePath), target, StandardCopyOption.REPLACE_EXISTING)
     }
+
+    private fun copyCompleteFixture(fixtureDirectory: Path) {
+        listOf("settings.gradle.kts", "build.gradle.kts", "version.txt").forEach {
+            copyFixtureFile(it, fixtureDirectory)
+        }
+        projectSet().forEach { project ->
+            val directory = project.removePrefix(":")
+            copyFixtureFile("$directory/build.gradle.kts", fixtureDirectory)
+            copyFixtureFile("$directory/gradle.lockfile", fixtureDirectory)
+        }
+    }
+
+    private fun projectNames(output: String): Set<String> =
+        Regex("Project '(:[^']*)'").findAll(output).map { it.groupValues[1] }.toSet()
+
+    private fun projectSet() =
+        setOf(
+            ":resourcepacks-catalog",
+            ":resourcepacks-client",
+            ":resourcepacks-contract",
+            ":resourcepacks-product",
+        )
 }

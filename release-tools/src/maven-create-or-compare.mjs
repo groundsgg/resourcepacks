@@ -59,7 +59,7 @@ export async function collectMavenPublication({stagingDirectory,manifest,coordin
   const root=resolve(stagingDirectory);await assertNoSymlinkComponents(root);
   if(typeof coordinate!=='string')throw new Error('Maven coordinate is required');
   const[group,artifact,version]=coordinate.split(':');
-  if(group!=='gg.grounds'||!['resourcepacks-catalog','resourcepacks-contract'].includes(artifact)||!MAVEN_VERSION.test(version)||coordinate!==`${group}:${artifact}:${version}`)throw new Error('Maven coordinate is invalid');
+  if(group!=='gg.grounds'||!['resourcepacks-catalog','resourcepacks-contract','resourcepacks-client'].includes(artifact)||!MAVEN_VERSION.test(version)||coordinate!==`${group}:${artifact}:${version}`)throw new Error('Maven coordinate is invalid');
   if(manifest&&(coordinate!==manifest.catalog.coordinate||version!==manifest.version))throw new Error('Maven coordinate does not match the manifest');
   const versionRoot=`${group.replaceAll('.','/')}/${artifact}/${version}`;
   const expectedNames=[`${artifact}-${version}.jar`,`${artifact}-${version}-sources.jar`,`${artifact}-${version}.pom`,`${artifact}-${version}.module`];

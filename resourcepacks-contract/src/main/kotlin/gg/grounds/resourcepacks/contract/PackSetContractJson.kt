@@ -15,9 +15,46 @@ import tools.jackson.core.json.JsonFactory
 
 /** Strict, canonical schema-v2 manifest decoder. JSON implementation types never escape it. */
 object PackSetContractJson {
-    fun decodeChannel(bytes: ByteArray): ChannelDecodeResult = CanonicalChannelJson.decode(bytes)
+    fun decodeChannel(bytes: ByteArray): ChannelDecodeResult =
+        decodeChannelWithPolicy(
+            bytes,
+            PackSetValidationPolicy.groundsDefault(),
+            expectedChannel = null,
+        )
 
-    fun decodeManifest(bytes: ByteArray): ManifestDecodeResult {
+    fun decodeChannel(
+        bytes: ByteArray,
+        policy: PackSetValidationPolicy,
+        expectedChannel: PackSetChannel,
+    ): ChannelDecodeResult = decodeChannelWithPolicy(bytes, policy, expectedChannel)
+
+    private fun decodeChannelWithPolicy(
+        bytes: ByteArray,
+        policy: PackSetValidationPolicy,
+        expectedChannel: PackSetChannel?,
+    ): ChannelDecodeResult =
+        CanonicalChannelJson.decode(bytes, policy).let { result ->
+            if (
+                result is ChannelDecodeResult.Success &&
+                    expectedChannel != null &&
+                    result.document.channel != expectedChannel
+            )
+                ChannelDecodeResult.Failure(
+                    listOf(
+                        ChannelDiagnostic(
+                            "/channel",
+                            ChannelDiagnosticCode.INVALID_VALUE,
+                            "Channel does not match the requested channel.",
+                        )
+                    )
+                )
+            else result
+        }
+
+    fun decodeManifest(bytes: ByteArray): ManifestDecodeResult =
+        decodeManifest(bytes, PackSetValidationPolicy.groundsDefault())
+
+    fun decodeManifest(bytes: ByteArray, policy: PackSetValidationPolicy): ManifestDecodeResult {
         if (bytes.size > ManifestParserLimits.MAX_DOCUMENT)
             return failure(
                 "/",
@@ -52,8 +89,12 @@ object PackSetContractJson {
             }
         val diagnostics = mutableListOf<ManifestDiagnostic>()
         val manifest = decode(root, diagnostics)
-        if (manifest != null) validate(manifest, diagnostics)
-        if (manifest != null && diagnostics.isEmpty() && !bytes.contentEquals(encode(manifest)))
+        if (manifest != null) validate(manifest, diagnostics, policy)
+        if (
+            manifest != null &&
+                diagnostics.isEmpty() &&
+                !bytes.contentEquals(encode(manifest, policy))
+        )
             diagnostics +=
                 ManifestDiagnostic(
                     "/",
@@ -75,7 +116,7 @@ object PackSetContractJson {
             )
     }
 
-    private fun encode(manifest: PackSetManifest): ByteArray =
+    private fun encode(manifest: PackSetManifest, policy: PackSetValidationPolicy): ByteArray =
         json(root(manifest), 0).plus('\n').toByteArray(StandardCharsets.UTF_8)
 
     private fun decode(root: J, d: MutableList<ManifestDiagnostic>): PackSetManifest? {
@@ -169,10 +210,14 @@ object PackSetContractJson {
         else null
     }
 
-    private fun validate(m: PackSetManifest, d: MutableList<ManifestDiagnostic>) {
+    private fun validate(
+        m: PackSetManifest,
+        d: MutableList<ManifestDiagnostic>,
+        policy: PackSetValidationPolicy,
+    ) {
         fun invalid(p: String, message: String) = bad(d, p, message)
         if (m.schemaVersion != 2) invalid("/schemaVersion", "schemaVersion must be 2.")
-        if (m.packSet != "grounds-global") invalid("/packSet", "PackSet mismatch.")
+        if (m.packSet != policy.packSet) invalid("/packSet", "PackSet mismatch.")
         if (!SEMVER.matches(m.version)) invalid("/version", "version must be strict SemVer.")
         if (m.minecraft != ManifestMinecraft("26.2", 88))
             invalid("/minecraft", "Minecraft metadata mismatch.")
@@ -189,7 +234,7 @@ object PackSetContractJson {
                 !HEX40.matches(m.provenance.commit)
         )
             invalid("/provenance", "Provenance mismatch.")
-        val root = publicationRoot(m, d)
+        val root = publicationRoot(m, d, policy)
         if (m.catalog.file != "grounds-resourcepack-catalog-${suffix(m, d)}.jar")
             invalid("/catalog/file", "Catalog filename mismatch.")
         if (m.packs.size != 2) invalid("/packs", "Exactly two packs are required.")
@@ -214,30 +259,27 @@ object PackSetContractJson {
                 invalid("/packs/$i", "Pack digest or size mismatch.")
             val role = spec?.first ?: "invalid"
             val expected = "$root/grounds-$role-pack-${suffix(m, d)}.zip"
-            val historicalBuild =
-                m.publication.type == PublicationType.BUILD &&
-                    Regex(
-                            "https://cdn\\.grounds\\.gg/resourcepacks/packsets/grounds-global/builds/[0-9a-f]{40}/grounds-$role-pack-edge-[0-9a-f]{12}\\.zip"
-                        )
-                        .matches(p.url) &&
-                    p.url.substringAfterLast("edge-").substringBefore(".zip") ==
-                        p.url.substringAfter("/builds/").take(12)
-            if (!strictUrl(p.url) || (p.url != expected && !historicalBuild))
+            val historicalBuild = historicalBuildUrl(m, p.url, role, policy)
+            if (!policy.isSafeArtifactUri(p.url) || (p.url != expected && !historicalBuild))
                 invalid("/packs/$i/url", "Pack URL mismatch.")
         }
     }
 
-    private fun publicationRoot(m: PackSetManifest, d: MutableList<ManifestDiagnostic>): String {
+    private fun publicationRoot(
+        m: PackSetManifest,
+        d: MutableList<ManifestDiagnostic>,
+        policy: PackSetValidationPolicy,
+    ): String {
         val p = m.publication
         return when (p.type) {
             PublicationType.RELEASE -> {
                 if (p.id != "v${m.version}") bad(d, "/publication", "Release publication mismatch.")
-                "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/releases/${p.id}"
+                policy.publicationUri(PublicationType.RELEASE, p.id).toString()
             }
             PublicationType.BUILD -> {
                 if (p.id != m.provenance.commit || !EDGE.matches(m.version))
                     bad(d, "/publication", "Build publication mismatch.")
-                "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/builds/${p.id}"
+                policy.publicationUri(PublicationType.BUILD, p.id).toString()
             }
         }
     }
@@ -252,20 +294,27 @@ object PackSetContractJson {
             }
         }
 
-    private fun strictUrl(value: String): Boolean =
-        runCatching {
-                URI(value).let {
-                    it.scheme == "https" &&
-                        it.host == "cdn.grounds.gg" &&
-                        it.userInfo == null &&
-                        it.port == -1 &&
-                        it.query == null &&
-                        it.fragment == null &&
-                        !it.rawPath.contains("%") &&
-                        !it.path.contains("..")
-                }
-            }
-            .getOrDefault(false)
+    private fun historicalBuildUrl(
+        manifest: PackSetManifest,
+        url: String,
+        role: String,
+        policy: PackSetValidationPolicy,
+    ): Boolean {
+        if (manifest.publication.type != PublicationType.BUILD) return false
+        val uri = runCatching { URI(url) }.getOrNull() ?: return false
+        val segments = uri.path.split('/').drop(1)
+        if (
+            segments.size != 6 ||
+                segments.take(3) != listOf("resourcepacks", "packsets", policy.packSet)
+        ) {
+            return false
+        }
+        val build = segments[4]
+        val filename = segments[5]
+        return segments[3] == "builds" &&
+            HEX40.matches(build) &&
+            filename == "grounds-$role-pack-edge-${build.take(12)}.zip"
+    }
 
     private fun parse(text: String): J =
         FACTORY.createParser(ObjectReadContext.empty(), StringReader(text)).use { p ->

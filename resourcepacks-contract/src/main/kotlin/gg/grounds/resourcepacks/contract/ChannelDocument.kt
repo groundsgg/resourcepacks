@@ -16,7 +16,7 @@ data class ChannelTarget(val type: PublicationType, val id: String) {
 
 data class ChannelManifestReference(val url: String, val sha256: String, val size: Long) {
     init {
-        require(ChannelValidation.isStrictUrl(url)) { "Manifest URL is unsafe." }
+        require(ChannelValidation.isSafeHttpsUrl(url)) { "Manifest URL is unsafe." }
         require(ChannelValidation.hex64.matches(sha256)) {
             "Manifest SHA-256 must be lowercase 64-hex."
         }
@@ -92,7 +92,6 @@ private object ChannelValidation {
 
     fun requireDocument(document: ChannelDocument) {
         require(document.schemaVersion == 2) { "schemaVersion must be 2." }
-        require(document.packSet == "grounds-global") { "PackSet mismatch." }
         require(document.sequence > 0) { "Sequence must be positive." }
         when (document.channel) {
             PackSetChannel.STABLE ->
@@ -104,27 +103,22 @@ private object ChannelValidation {
                     "Edge channels require build targets."
                 }
         }
-        require(document.manifest.url == manifestUrl(document.target)) { "Manifest URL mismatch." }
     }
 
-    fun manifestUrl(target: ChannelTarget): String =
-        "https://cdn.grounds.gg/resourcepacks/packsets/grounds-global/" +
-            when (target.type) {
-                PublicationType.RELEASE -> "releases/${target.id}/manifest.json"
-                PublicationType.BUILD -> "builds/${target.id}/manifest.json"
-            }
-
-    fun isStrictUrl(value: String): Boolean =
+    fun isSafeHttpsUrl(value: String): Boolean =
         runCatching {
                 URI(value).let {
                     it.scheme == "https" &&
-                        it.host == "cdn.grounds.gg" &&
+                        it.host != null &&
                         it.userInfo == null &&
                         it.port == -1 &&
                         it.query == null &&
                         it.fragment == null &&
                         !it.rawPath.contains("%") &&
-                        !it.path.contains("..")
+                        !it.rawPath.contains('\\') &&
+                        it.path.split('/').drop(1).all { segment ->
+                            segment.isNotEmpty() && segment != "." && segment != ".."
+                        }
                 }
             }
             .getOrDefault(false)

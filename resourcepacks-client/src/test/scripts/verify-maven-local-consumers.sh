@@ -4,7 +4,7 @@ set -euo pipefail
 source_root=${1:-$(git rev-parse --show-toplevel)}
 gradle_command=${2:-"$source_root/gradlew"}
 version=$(tr -d '\n' < "$source_root/version.txt")
-scratch=$(mktemp -d /tmp/resourcepacks-contract-consumers-XXXXXX)
+scratch=$(mktemp -d /tmp/resourcepacks-client-consumers-XXXXXX)
 trap 'rm -rf -- "$scratch"' EXIT
 
 "$gradle_command" -p "$source_root" --offline :resourcepacks-contract:publishToMavenLocal
@@ -23,7 +23,7 @@ dependencyResolutionManagement {
     mavenCentral { content { excludeGroup("gg.grounds") } }
   }
 }
-rootProject.name = "resourcepacks-contract-consumers"
+rootProject.name = "resourcepacks-client-consumers"
 EOF
 cat > "$scratch/build.gradle.kts" <<EOF
 import org.gradle.api.JavaVersion
@@ -33,7 +33,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins { kotlin("jvm") version "2.2.20" }
 
-dependencies { implementation("gg.grounds:resourcepacks-contract:$version") }
+dependencies { implementation("gg.grounds:resourcepacks-client:$version") }
 
 kotlin { jvmToolchain(25) }
 
@@ -50,7 +50,7 @@ configurations.configureEach {
   attributes.attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 25)
 }
 
-tasks.register("verifyContractComesFromMavenLocal") {
+tasks.register("verifyClientComesFromMavenLocal") {
   dependsOn(tasks.named("compileJava"), tasks.named("compileKotlin"))
   doLast {
     val selected = configurations.runtimeClasspath.get().incoming.resolutionResult.allComponents
@@ -58,11 +58,11 @@ tasks.register("verifyContractComesFromMavenLocal") {
       selected.any {
         it.moduleVersion?.let { module ->
           module.group == "gg.grounds" &&
-            module.name == "resourcepacks-contract" &&
+            module.name == "resourcepacks-client" &&
             module.version == "$version"
         } == true
       }
-    ) { "The Maven Local resourcepacks-contract publication was not selected." }
+    ) { "The Maven Local resourcepacks-client publication was not selected." }
     check(
       selected.any {
         it.moduleVersion?.let { module ->
@@ -76,29 +76,33 @@ EOF
 cat > "$scratch/src/main/java/consumer/JavaConsumer.java" <<'EOF'
 package consumer;
 
-import gg.grounds.resourcepacks.contract.ManifestDecodeResult;
-import gg.grounds.resourcepacks.contract.PackSetContractJson;
-import gg.grounds.resourcepacks.contract.ChannelDecodeResult;
+import java.net.URI;
+import gg.grounds.resourcepacks.client.PackSetClient;
+import gg.grounds.resourcepacks.client.PackSetClientState;
+import gg.grounds.resourcepacks.client.PackSetSource;
+import gg.grounds.resourcepacks.contract.PackSetChannel;
 
 public final class JavaConsumer {
-  public static ManifestDecodeResult decode(byte[] bytes) {
-    return PackSetContractJson.INSTANCE.decodeManifest(bytes);
+  public static PackSetSource source() {
+    return new PackSetSource(URI.create("https://assets.example.test"), "custom", PackSetChannel.EDGE);
   }
-  public static ChannelDecodeResult decodeChannel(byte[] bytes) {
-    return PackSetContractJson.INSTANCE.decodeChannel(bytes);
+  public static PackSetClientState state(PackSetClient client) {
+    return client.state();
   }
 }
 EOF
 cat > "$scratch/src/main/kotlin/consumer/KotlinConsumer.kt" <<'EOF'
 package consumer
 
-import gg.grounds.resourcepacks.contract.ManifestDecodeResult
-import gg.grounds.resourcepacks.contract.PackSetContractJson
-import gg.grounds.resourcepacks.contract.ChannelDecodeResult
+import gg.grounds.resourcepacks.client.PackSetClient
+import gg.grounds.resourcepacks.client.PackSetClientState
+import gg.grounds.resourcepacks.client.PackSetSource
+import gg.grounds.resourcepacks.contract.PackSetChannel
+import java.net.URI
 
-fun decode(bytes: ByteArray): ManifestDecodeResult = PackSetContractJson.decodeManifest(bytes)
-fun decodeChannel(bytes: ByteArray): ChannelDecodeResult = PackSetContractJson.decodeChannel(bytes)
+fun source(): PackSetSource = PackSetSource(URI("https://assets.example.test"), "custom", PackSetChannel.EDGE)
+fun state(client: PackSetClient): PackSetClientState = client.state()
 EOF
 
-"$gradle_command" -p "$scratch" clean verifyContractComesFromMavenLocal
+"$gradle_command" -p "$scratch" clean verifyClientComesFromMavenLocal
 echo "Maven Local JDK25 Java/Kotlin consumers verified for $version"

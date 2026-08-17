@@ -137,6 +137,20 @@ jobs:
       - name: Publish the unchanged Contract Maven staging workspace
         if: steps.contract-maven-gate.outputs.decision == 'publish'
         run: ./gradlew :resourcepacks-contract:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}'
+      - name: Stage the exact Client Maven publication
+        run: ./gradlew :resourcepacks-client:stageExactMavenPublication -PpackSetVersion='${{ needs.build.outputs.version }}'
+      - id: client-maven-gate
+        name: Decide whether GitHub Packages needs Client publication
+        run: |
+          decision=$(node release-tools/src/client-maven-create-or-compare.mjs --staging-directory resourcepacks-client/build/release-maven-staging --version '${{ needs.build.outputs.version }}' --username '${{ github.actor }}' --token '${{ secrets.GITHUB_TOKEN }}')
+          case "$decision" in
+            publish|skip) ;;
+            *) echo "Client Maven decision is invalid" >&2; exit 1 ;;
+          esac
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+      - name: Publish the unchanged Client Maven staging workspace
+        if: steps.client-maven-gate.outputs.decision == 'publish'
+        run: ./gradlew :resourcepacks-client:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}'
       - name: Create or compare immutable R2 ZIP objects
         run: node release-tools/src/r2-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
 

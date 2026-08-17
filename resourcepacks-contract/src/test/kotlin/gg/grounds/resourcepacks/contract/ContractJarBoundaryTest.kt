@@ -31,8 +31,31 @@ class ContractJarBoundaryTest {
     fun `final public method signatures expose contract and JDK types only`() {
         val publicDescriptors = publicDescriptors(contractJar())
         assertTrue(publicDescriptors.isNotEmpty())
+        assertTrue(
+            publicDescriptors.all(::hasOnlyApprovedDescriptorTypes),
+            publicDescriptors.filterNot(::hasOnlyApprovedDescriptorTypes).joinToString(),
+        )
         assertFalse(publicDescriptors.any { it.contains("Ltools/jackson/") })
         assertFalse(publicDescriptors.any { it.contains("Lgg/grounds/resourcepacks/product/") })
+    }
+
+    @Test
+    fun `JAR gate catches a foreign type injected into a public descriptor`() {
+        val directory = kotlin.io.path.createTempDirectory("contract-descriptor-mutation-")
+        try {
+            val mutated = directory.resolve("mutated.jar")
+            mutateJarClass(
+                contractJar(),
+                mutated,
+                "gg/grounds/resourcepacks/contract/PackSetValidationPolicy.class",
+                "java/net/URI",
+                "evil/foreign",
+            )
+
+            assertFalse(publicDescriptors(mutated).all(::hasOnlyApprovedDescriptorTypes))
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
     }
 
     @Test
@@ -98,13 +121,63 @@ class ContractJarBoundaryTest {
                             .methods()
                             .asSequence()
                             .filter {
-                                it.flags().has(AccessFlag.PUBLIC) ||
-                                    it.flags().has(AccessFlag.PROTECTED)
+                                (it.flags().has(AccessFlag.PUBLIC) ||
+                                    it.flags().has(AccessFlag.PROTECTED)) &&
+                                    !it.flags().has(AccessFlag.SYNTHETIC)
                             }
                             .map { it.methodType().stringValue() }
                 }
                 .toList()
         }
+
+    private fun hasOnlyApprovedDescriptorTypes(descriptor: String): Boolean =
+        Regex("L([^;]+);")
+            .findAll(descriptor)
+            .map { it.groupValues[1] }
+            .all {
+                it.startsWith("java/") ||
+                    it.startsWith("gg/grounds/resourcepacks/contract/") ||
+                    it == "kotlin/enums/EnumEntries"
+            }
+
+    private fun mutateJarClass(
+        original: Path,
+        mutated: Path,
+        className: String,
+        from: String,
+        to: String,
+    ) {
+        require(from.length == to.length)
+        var changed = false
+        JarFile(original.toFile()).use { archive ->
+            java.util.zip.ZipOutputStream(java.nio.file.Files.newOutputStream(mutated)).use { output
+                ->
+                archive.entries().asSequence().forEach { entry ->
+                    val bytes = archive.getInputStream(entry).readBytes()
+                    val replacement =
+                        if (entry.name == className) replaceAscii(bytes, from, to) else bytes
+                    changed = changed || !replacement.contentEquals(bytes)
+                    output.putNextEntry(java.util.zip.ZipEntry(entry.name))
+                    output.write(replacement)
+                    output.closeEntry()
+                }
+            }
+        }
+        assertTrue(changed, "Expected the final JAR to contain the descriptor mutation target.")
+    }
+
+    private fun replaceAscii(bytes: ByteArray, from: String, to: String): ByteArray {
+        val source = from.encodeToByteArray()
+        val replacement = to.encodeToByteArray()
+        val output = bytes.copyOf()
+        bytes.indices
+            .filter { start ->
+                start <= bytes.size - source.size &&
+                    source.indices.all { offset -> bytes[start + offset] == source[offset] }
+            }
+            .forEach { replacement.copyInto(output, destinationOffset = it) }
+        return output
+    }
 
     private fun expectedOwners() =
         setOf(
@@ -127,6 +200,7 @@ class ContractJarBoundaryTest {
             "gg.grounds.resourcepacks.contract.PackSetContractJson",
             "gg.grounds.resourcepacks.contract.PackSetChannel",
             "gg.grounds.resourcepacks.contract.PackSetManifest",
+            "gg.grounds.resourcepacks.contract.PackSetValidationPolicy",
             "gg.grounds.resourcepacks.contract.PublicationType",
         )
 
