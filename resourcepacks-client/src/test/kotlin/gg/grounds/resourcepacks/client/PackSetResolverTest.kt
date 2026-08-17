@@ -1,12 +1,17 @@
 package gg.grounds.resourcepacks.client
 
+import com.sun.net.httpserver.HttpServer
 import gg.grounds.resourcepacks.contract.PackSetChannel
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.URI
+import java.net.http.HttpClient
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -43,6 +48,29 @@ class PackSetResolverTest {
         assertEquals(
             listOf(source.channelUri, manifestUri),
             server.requests.map(LoopbackPackSetServer.Request::uri),
+        )
+    }
+
+    @Test
+    fun `activated fingerprint hashes the exact validated document bytes in order`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        val transport = ScriptedTransport { uri, _, _ ->
+            LoopbackPackSetServer.response(
+                200,
+                body = if (uri == source.channelUri) channel else manifest,
+            )
+        }
+
+        val activated =
+            assertIs<RefreshResult.Activated>(
+                PackSetResolver(transport, config(source)).refresh(emptyCache())
+            )
+
+        assertEquals(
+            "aa8dbcbc939f3943c91f399f0871a82e035aa6059346edeb5dc36a851966ba26",
+            activated.snapshot.fingerprint,
         )
     }
 
@@ -195,6 +223,61 @@ class PackSetResolverTest {
         assertEquals(1, transport.requests.size)
     }
 
+    @Test
+    fun `a stalled body is closed and fails within the request timeout`() {
+        val source = source()
+        val body = StallingInputStream()
+        val transport = ScriptedTransport { _, _, _ -> PackSetHttpResponse(200, null, body) }
+        val config =
+            PackSetClientConfig(source, Path.of("cache"), requestTimeout = Duration.ofMillis(100))
+        val started = System.nanoTime()
+
+        val result = PackSetResolver(transport, config).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(body.closed)
+        assertTrue(System.nanoTime() - started < Duration.ofSeconds(2).toNanos())
+    }
+
+    @Test
+    fun `transport rejects injected clients that permit redirects`() {
+        val client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()
+
+        assertFailsWith<IllegalArgumentException> { JdkPackSetHttpTransport(client, false) }
+    }
+
+    @Test
+    fun `transport returns a redirect response without following its location`() {
+        var requests = 0
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+        server.createContext("/redirect") { exchange ->
+            requests += 1
+            exchange.responseHeaders.add("Location", "/follow-up")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        }
+        server.createContext("/follow-up") { exchange ->
+            requests += 1
+            exchange.sendResponseHeaders(200, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            val response =
+                JdkPackSetHttpTransport()
+                    .get(
+                        URI("http://127.0.0.1:${server.address.port}/redirect"),
+                        null,
+                        Duration.ofSeconds(1),
+                    )
+
+            response.use { assertEquals(302, it.status) }
+            assertEquals(1, requests)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     private fun stableChannel(manifest: ByteArray) =
         """
         {
@@ -286,6 +369,19 @@ class PackSetResolverTest {
         override fun close() {
             closed = true
             super.close()
+        }
+    }
+
+    private class StallingInputStream : java.io.InputStream() {
+        @Volatile var closed = false
+
+        override fun read(): Int {
+            while (!closed) Thread.sleep(10)
+            return -1
+        }
+
+        override fun close() {
+            closed = true
         }
     }
 

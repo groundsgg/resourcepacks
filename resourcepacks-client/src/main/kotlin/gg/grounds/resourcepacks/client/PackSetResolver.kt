@@ -10,6 +10,9 @@ import java.io.InputStream
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 internal class PackSetResolver(
     private val transport: PackSetHttpTransport,
@@ -17,6 +20,7 @@ internal class PackSetResolver(
 ) {
     fun refresh(cache: ResolverCache): RefreshResult =
         try {
+            val deadline = deadlineNanos(config.requestTimeout)
             val channelResponse =
                 transport.get(config.source.channelUri, cache.channelEtag, config.requestTimeout)
             channelResponse.use { response ->
@@ -29,7 +33,7 @@ internal class PackSetResolver(
                     }
                     200 ->
                         resolveChannel(
-                            readBounded(response.body, config.maxChannelBytes),
+                            readBounded(response.body, config.maxChannelBytes, deadline),
                             response.etag,
                             cache,
                         )
@@ -68,6 +72,7 @@ internal class PackSetResolver(
     ): RefreshResult {
         val reusable = cache.manifestBytes?.takeIf { matchesManifestReference(it, channel) }
         return try {
+            val deadline = deadlineNanos(config.requestTimeout)
             transport
                 .get(
                     URI(channel.manifest.url),
@@ -77,7 +82,7 @@ internal class PackSetResolver(
                 .use { response ->
                     val manifestBytes =
                         when (response.status) {
-                            200 -> readBounded(response.body, config.maxManifestBytes)
+                            200 -> readBounded(response.body, config.maxManifestBytes, deadline)
                             304 -> reusable ?: return failed("Manifest cache was unavailable.")
                             else -> return failed("Manifest request failed.")
                         }
@@ -103,7 +108,14 @@ internal class PackSetResolver(
                     )
                         return failed("Manifest target did not match channel.")
                     val snapshot =
-                        PackSetSnapshot(config.source, channel, manifest, resolvedPacks(manifest))
+                        PackSetSnapshot.fromValidatedBytes(
+                            config.source,
+                            channel,
+                            manifest,
+                            resolvedPacks(manifest),
+                            channelBytes,
+                            manifestBytes,
+                        )
                     RefreshResult.Activated(
                         snapshot,
                         ResolverCache(
@@ -142,6 +154,20 @@ internal class PackSetResolver(
                 }
         )
 
+    private fun readBounded(input: InputStream, limit: Int, deadlineNanos: Long): ByteArray =
+        Executors.newVirtualThreadPerTaskExecutor().use { executor ->
+            val read = executor.submit<ByteArray> { readBounded(input, limit) }
+            try {
+                val remaining = deadlineNanos - System.nanoTime()
+                if (remaining <= 0) throw TimeoutException("Response timed out.")
+                read.get(remaining, TimeUnit.NANOSECONDS)
+            } catch (x: TimeoutException) {
+                input.close()
+                read.cancel(true)
+                throw x
+            }
+        }
+
     private fun readBounded(input: InputStream, limit: Int): ByteArray {
         val output = ByteArrayOutputStream(minOf(limit, BUFFER_SIZE))
         val buffer = ByteArray(BUFFER_SIZE)
@@ -161,6 +187,9 @@ internal class PackSetResolver(
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private fun failed(reason: String) = RefreshResult.Failed(reason)
+
+    private fun deadlineNanos(timeout: java.time.Duration): Long =
+        Math.addExact(System.nanoTime(), timeout.toNanos())
 
     private companion object {
         const val BUFFER_SIZE = 65_536

@@ -27,6 +27,7 @@ private constructor(
     val channel: ChannelDocument,
     val manifest: PackSetManifest,
     val packs: List<ResolvedPack>,
+    val fingerprint: String,
     private val immutable: Boolean,
 ) {
     constructor(
@@ -34,60 +35,89 @@ private constructor(
         channel: ChannelDocument,
         manifest: PackSetManifest,
         packs: List<ResolvedPack>,
-    ) : this(source, channel, manifest, Collections.unmodifiableList(ArrayList(packs)), true)
-
-    val fingerprint: String = fingerprint(channel, manifest)
+    ) : this(
+        source,
+        channel,
+        manifest,
+        Collections.unmodifiableList(ArrayList(packs)),
+        semanticFingerprint(channel, manifest),
+        true,
+    )
 
     init {
         require(immutable) { "Packs must be an immutable snapshot." }
     }
 
-    private companion object {
-        fun fingerprint(channel: ChannelDocument, manifest: PackSetManifest): String =
-            MessageDigest.getInstance("SHA-256")
-                .digest(identityParts(channel, manifest).joinToString("\u0000").encodeToByteArray())
-                .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    internal companion object {
+        fun fromValidatedBytes(
+            source: PackSetSource,
+            channel: ChannelDocument,
+            manifest: PackSetManifest,
+            packs: List<ResolvedPack>,
+            channelBytes: ByteArray,
+            manifestBytes: ByteArray,
+        ): PackSetSnapshot =
+            PackSetSnapshot(
+                source,
+                channel,
+                manifest,
+                Collections.unmodifiableList(ArrayList(packs)),
+                fingerprint(channelBytes + manifestBytes),
+                true,
+            )
 
-        fun identityParts(channel: ChannelDocument, manifest: PackSetManifest): List<String> =
-            listOf(
-                channel.schemaVersion.toString(),
-                channel.packSet,
-                channel.channel.name,
-                channel.sequence.toString(),
-                channel.target.type.name,
-                channel.target.id,
-                channel.manifest.url,
-                channel.manifest.sha256,
-                channel.manifest.size.toString(),
-                manifest.schemaVersion.toString(),
-                manifest.packSet,
-                manifest.publication.type.name,
-                manifest.publication.id,
-                manifest.version,
-                manifest.minecraft.version,
-                manifest.minecraft.resourcePackFormat.toString(),
-                manifest.catalog.id,
-                manifest.catalog.version,
-                manifest.catalog.coordinate,
-                manifest.catalog.file,
-                manifest.catalog.sha256,
-                manifest.catalog.size.toString(),
-                manifest.provenance.repository,
-                manifest.provenance.commit,
-            ) +
-                manifest.packs.flatMap { pack ->
-                    listOf(
-                        pack.order.toString(),
-                        pack.role,
-                        pack.id,
-                        pack.uuid.toString(),
-                        pack.required.toString(),
-                        pack.url,
-                        pack.sha1,
-                        pack.sha256,
-                        pack.size.toString(),
-                        pack.resourcePackFormat.toString(),
-                    )
-                }
+        private fun fingerprint(bytes: ByteArray): String =
+            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
+                "%02x".format(byte.toInt() and 0xff)
+            }
+
+        private fun semanticFingerprint(
+            channel: ChannelDocument,
+            manifest: PackSetManifest,
+        ): String =
+            fingerprint(
+                (listOf(
+                        channel.schemaVersion.toString(),
+                        channel.packSet,
+                        channel.channel.name,
+                        channel.sequence.toString(),
+                        channel.target.type.name,
+                        channel.target.id,
+                        channel.manifest.url,
+                        channel.manifest.sha256,
+                        channel.manifest.size.toString(),
+                        manifest.schemaVersion.toString(),
+                        manifest.packSet,
+                        manifest.publication.type.name,
+                        manifest.publication.id,
+                        manifest.version,
+                        manifest.minecraft.version,
+                        manifest.minecraft.resourcePackFormat.toString(),
+                        manifest.catalog.id,
+                        manifest.catalog.version,
+                        manifest.catalog.coordinate,
+                        manifest.catalog.file,
+                        manifest.catalog.sha256,
+                        manifest.catalog.size.toString(),
+                        manifest.provenance.repository,
+                        manifest.provenance.commit,
+                    ) +
+                        manifest.packs.flatMap { pack ->
+                            listOf(
+                                pack.order.toString(),
+                                pack.role,
+                                pack.id,
+                                pack.uuid.toString(),
+                                pack.required.toString(),
+                                pack.url,
+                                pack.sha1,
+                                pack.sha256,
+                                pack.size.toString(),
+                                pack.resourcePackFormat.toString(),
+                            )
+                        })
+                    .joinToString("\u0000")
+                    .encodeToByteArray()
+            )
     }
 }

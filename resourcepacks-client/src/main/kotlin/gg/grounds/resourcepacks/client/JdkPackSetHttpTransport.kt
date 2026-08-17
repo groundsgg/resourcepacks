@@ -6,13 +6,27 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-class JdkPackSetHttpTransport(
-    private val client: HttpClient =
-        HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build()
-) : PackSetHttpTransport {
+class JdkPackSetHttpTransport private constructor(private val client: HttpClient) :
+    PackSetHttpTransport {
+    constructor() :
+        this(
+            HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build()
+        )
+
+    internal constructor(
+        client: HttpClient,
+        testOnly: Boolean,
+    ) : this(
+        client.also {
+            require(it.followRedirects() == HttpClient.Redirect.NEVER) {
+                "HTTP client must reject redirects."
+            }
+        }
+    )
+
     override fun get(uri: URI, ifNoneMatch: String?, timeout: Duration): PackSetHttpResponse {
         val request =
             HttpRequest.newBuilder(uri)
