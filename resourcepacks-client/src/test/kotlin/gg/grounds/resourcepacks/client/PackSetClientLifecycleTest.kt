@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PackSetClientLifecycleTest {
@@ -480,6 +481,136 @@ class PackSetClientLifecycleTest {
         }
     }
 
+    // Break caught: reconfiguration used to clear inFlight and let a multi-worker injected
+    // scheduler enter the replacement refresh while the stale refresh still owned transport/cache
+    // work. The stale completion could then race the replacement's lifecycle.
+    @Test
+    fun `reconfigure serializes replacement refresh on a multi-worker scheduler`() {
+        withDirectory { directory ->
+            val oldSource = source()
+            val newSource =
+                PackSetSource(
+                    URI("https://new-assets.example.test"),
+                    "global",
+                    PackSetChannel.STABLE,
+                )
+            val oldEntered = CountDownLatch(1)
+            val releaseOld = CountDownLatch(1)
+            val newEntered = CountDownLatch(1)
+            val releaseNew = CountDownLatch(1)
+            val scheduler = TrackingScheduler(2, 2)
+            val transport = ScriptedTransport { uri, _ ->
+                when (uri) {
+                    oldSource.channelUri -> {
+                        oldEntered.countDown()
+                        assertTrue(releaseOld.await(1, TimeUnit.SECONDS))
+                    }
+                    newSource.channelUri -> {
+                        newEntered.countDown()
+                        assertTrue(releaseNew.await(1, TimeUnit.SECONDS))
+                    }
+                    else -> error("Unexpected URI: $uri")
+                }
+                LoopbackPackSetServer.response(500)
+            }
+            val client = client(oldSource, directory, transport, scheduler)
+            try {
+                val stale = client.refreshNow().toCompletableFuture()
+                assertTrue(oldEntered.await(1, TimeUnit.SECONDS))
+
+                val current = client.reconfigure(newSource).toCompletableFuture()
+                assertSame(current, client.refreshNow().toCompletableFuture())
+                assertTrue(scheduler.taskStarts.await(1, TimeUnit.SECONDS))
+                assertTrue(
+                    awaitCondition {
+                        newEntered.count == 0L ||
+                            scheduler.taskThreads.count { it.state == Thread.State.BLOCKED } >= 1
+                    }
+                )
+                assertEquals(1L, newEntered.count, "replacement transport overlapped stale work")
+
+                releaseOld.countDown()
+                assertIs<RefreshResult.Failed>(stale.get(1, TimeUnit.SECONDS))
+                assertTrue(newEntered.await(1, TimeUnit.SECONDS))
+                assertFalse(current.isDone, "stale completion completed the replacement future")
+
+                releaseNew.countDown()
+                assertIs<RefreshResult.Failed>(current.get(1, TimeUnit.SECONDS))
+            } finally {
+                releaseOld.countDown()
+                releaseNew.countDown()
+                client.close()
+            }
+        }
+    }
+
+    // Break caught: rapid A-to-B-to-A changes could run all three queued refresh bodies at once,
+    // including a stale B request, and race stores for the same A cache directory.
+    @Test
+    fun `rapid source changes keep one refresh body active and preserve coalescing`() {
+        withDirectory { directory ->
+            val sourceA = source()
+            val sourceB =
+                PackSetSource(
+                    URI("https://new-assets.example.test"),
+                    "global",
+                    PackSetChannel.STABLE,
+                )
+            val firstA = AtomicBoolean(true)
+            val oldEntered = CountDownLatch(1)
+            val releaseOld = CountDownLatch(1)
+            val unexpectedEntered = CountDownLatch(1)
+            val active = AtomicInteger()
+            val maxActive = AtomicInteger()
+            val requests = CopyOnWriteArrayList<URI>()
+            val scheduler = TrackingScheduler(3, 3)
+            val transport = ScriptedTransport { uri, _ ->
+                requests += uri
+                val nowActive = active.incrementAndGet()
+                maxActive.accumulateAndGet(nowActive, ::maxOf)
+                try {
+                    if (uri == sourceA.channelUri && firstA.compareAndSet(true, false)) {
+                        oldEntered.countDown()
+                        assertTrue(releaseOld.await(1, TimeUnit.SECONDS))
+                    } else {
+                        unexpectedEntered.countDown()
+                    }
+                    LoopbackPackSetServer.response(500)
+                } finally {
+                    active.decrementAndGet()
+                }
+            }
+            val client = client(sourceA, directory, transport, scheduler)
+            try {
+                val staleA = client.refreshNow().toCompletableFuture()
+                assertTrue(oldEntered.await(1, TimeUnit.SECONDS))
+                val staleB = client.reconfigure(sourceB).toCompletableFuture()
+                val currentA = client.reconfigure(sourceA).toCompletableFuture()
+                assertSame(currentA, client.refreshNow().toCompletableFuture())
+
+                assertTrue(scheduler.taskStarts.await(1, TimeUnit.SECONDS))
+                assertTrue(
+                    awaitCondition {
+                        unexpectedEntered.count == 0L ||
+                            scheduler.taskThreads.count { it.state == Thread.State.BLOCKED } >= 2
+                    }
+                )
+                assertEquals(1L, unexpectedEntered.count, "refresh bodies overlapped")
+                assertEquals(1, maxActive.get())
+
+                releaseOld.countDown()
+                assertIs<RefreshResult.Failed>(staleA.get(1, TimeUnit.SECONDS))
+                assertIs<RefreshResult.Failed>(staleB.get(1, TimeUnit.SECONDS))
+                assertIs<RefreshResult.Failed>(currentA.get(1, TimeUnit.SECONDS))
+                assertEquals(listOf(sourceA.channelUri, sourceA.channelUri), requests)
+                assertEquals(1, maxActive.get())
+            } finally {
+                releaseOld.countDown()
+                client.close()
+            }
+        }
+    }
+
     // Break caught: a stale old-source failure must not increment the new generation's failure
     // count or select its second retry delay.
     @Test
@@ -600,6 +731,104 @@ class PackSetClientLifecycleTest {
         }
     }
 
+    // Break caught: a second idempotent close used to observe closed=true and return while the
+    // first close still had an admitted listener callback to join.
+    @Test
+    fun `concurrent close callers share the callback completion barrier`() {
+        withDirectory { directory ->
+            val source = source()
+            val documents = clientDocuments(source)
+            val callbackEntered = CountDownLatch(1)
+            val releaseCallback = CountDownLatch(1)
+            val firstAtJoin = CountDownLatch(1)
+            val allowFirstJoin = CountDownLatch(1)
+            val callbackFinished = CountDownLatch(1)
+            val secondStarted = CountDownLatch(1)
+            val secondReturned = CountDownLatch(1)
+            val executor = Executors.newSingleThreadScheduledExecutor()
+            val responses =
+                ArrayDeque(
+                    listOf(
+                        LoopbackPackSetServer.response(200, body = documents.channel),
+                        LoopbackPackSetServer.response(200, body = documents.manifest),
+                    )
+                )
+            val client =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { _, _ -> responses.removeFirst() },
+                    executor,
+                )
+            client.addListener {
+                try {
+                    callbackEntered.countDown()
+                    while (releaseCallback.count > 0) {
+                        try {
+                            releaseCallback.await()
+                        } catch (_: InterruptedException) {
+                            // Keep the admitted callback active across scheduler shutdown.
+                        }
+                    }
+                } finally {
+                    callbackFinished.countDown()
+                }
+            }
+            installCloseJoinObserver(client) { afterJoin ->
+                if (!afterJoin) {
+                    firstAtJoin.countDown()
+                    assertTrue(allowFirstJoin.await(1, TimeUnit.SECONDS))
+                }
+            }
+            val firstCloser =
+                thread(start = false, name = "pack-client-first-close") { client.close() }
+            val secondCloser =
+                thread(start = false, name = "pack-client-second-close") {
+                    secondStarted.countDown()
+                    client.close()
+                    secondReturned.countDown()
+                }
+            try {
+                assertIs<RefreshResult.Activated>(
+                    client.refreshNow().toCompletableFuture().get(1, TimeUnit.SECONDS)
+                )
+                assertTrue(callbackEntered.await(1, TimeUnit.SECONDS))
+                firstCloser.start()
+                assertTrue(firstAtJoin.await(1, TimeUnit.SECONDS))
+                secondCloser.start()
+                assertTrue(secondStarted.await(1, TimeUnit.SECONDS))
+                assertTrue(
+                    awaitCondition {
+                        secondCloser.state == Thread.State.WAITING ||
+                            secondCloser.state == Thread.State.TERMINATED
+                    }
+                )
+                assertEquals(
+                    1L,
+                    secondReturned.count,
+                    "second close returned before first completed",
+                )
+
+                releaseCallback.countDown()
+                allowFirstJoin.countDown()
+                firstCloser.join(1_000)
+                secondCloser.join(1_000)
+                assertFalse(firstCloser.isAlive)
+                assertFalse(secondCloser.isAlive)
+                assertEquals(0L, callbackFinished.count)
+                assertEquals(0L, secondReturned.count)
+            } finally {
+                releaseCallback.countDown()
+                allowFirstJoin.countDown()
+                if (firstCloser.state == Thread.State.NEW) firstCloser.start()
+                if (secondCloser.state == Thread.State.NEW) secondCloser.start()
+                firstCloser.join(1_000)
+                secondCloser.join(1_000)
+                client.close()
+            }
+        }
+    }
+
     // Break caught: shutdown must cancel delayed retry/periodic work and reject later refreshes.
     @Test
     fun `shutdown cancels delayed work and closes the refresh lifecycle`() {
@@ -688,6 +917,15 @@ class PackSetClientLifecycleTest {
         field.set(client, observer)
     }
 
+    private fun awaitCondition(condition: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+        while (!condition()) {
+            if (System.nanoTime() >= deadline) return false
+            Thread.onSpinWait()
+        }
+        return true
+    }
+
     private class ScriptedTransport(private val script: (URI, String?) -> PackSetHttpResponse) :
         PackSetHttpTransport {
         override fun get(uri: URI, ifNoneMatch: String?, timeout: Duration): PackSetHttpResponse =
@@ -700,6 +938,20 @@ class PackSetClientLifecycleTest {
         override fun schedule(command: Runnable, delay: Long, unit: TimeUnit): ScheduledFuture<*> {
             if (delay > 0) positiveDelays += Duration.ofNanos(unit.toNanos(delay))
             return super.schedule(command, delay, unit)
+        }
+    }
+
+    private class TrackingScheduler(workers: Int, expectedTasks: Int) :
+        ScheduledThreadPoolExecutor(workers) {
+        val taskStarts = CountDownLatch(expectedTasks)
+        val taskThreads = CopyOnWriteArrayList<Thread>()
+
+        override fun execute(command: Runnable) {
+            super.execute {
+                taskThreads += Thread.currentThread()
+                taskStarts.countDown()
+                command.run()
+            }
         }
     }
 }
