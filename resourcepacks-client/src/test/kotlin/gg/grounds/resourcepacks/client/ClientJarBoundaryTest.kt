@@ -94,17 +94,21 @@ class ClientJarBoundaryTest {
         setOf(
             "gg.grounds.resourcepacks.client.BoundedResponseReader",
             "gg.grounds.resourcepacks.client.JdkPackSetHttpTransport",
+            "gg.grounds.resourcepacks.client.PackSetClient",
             "gg.grounds.resourcepacks.client.PackSetClientConfig",
             "gg.grounds.resourcepacks.client.PackSetClientState",
             "gg.grounds.resourcepacks.client.PackSetClientStatus",
+            "gg.grounds.resourcepacks.client.PackSetDiskCache",
             "gg.grounds.resourcepacks.client.PackSetHttpResponse",
             "gg.grounds.resourcepacks.client.PackSetHttpTransport",
             "gg.grounds.resourcepacks.client.PackSetResolver",
             "gg.grounds.resourcepacks.client.PackSetSnapshot",
             "gg.grounds.resourcepacks.client.PackSetSource",
+            "gg.grounds.resourcepacks.client.PackSetStateListener",
             "gg.grounds.resourcepacks.client.RefreshResult",
             "gg.grounds.resourcepacks.client.ResolvedPack",
             "gg.grounds.resourcepacks.client.ResolverCache",
+            "gg.grounds.resourcepacks.client.RetryPolicy",
         )
 
     private fun allowedEntry(entry: String): Boolean =

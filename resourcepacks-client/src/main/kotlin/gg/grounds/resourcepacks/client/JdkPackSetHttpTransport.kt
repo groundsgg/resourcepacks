@@ -8,13 +8,16 @@ import java.time.Duration
 
 class JdkPackSetHttpTransport private constructor(private val client: HttpClient) :
     PackSetHttpTransport {
-    constructor() :
-        this(
-            HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(5))
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build()
-        )
+    constructor() : this(Duration.ofSeconds(5))
+
+    constructor(
+        connectTimeout: Duration
+    ) : this(
+        HttpClient.newBuilder()
+            .connectTimeout(connectTimeout)
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build()
+    )
 
     internal constructor(
         client: HttpClient,

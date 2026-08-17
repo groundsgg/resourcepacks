@@ -17,6 +17,48 @@ internal class PackSetResolver(
     private val transport: PackSetHttpTransport,
     private val config: PackSetClientConfig,
 ) {
+    /** Rebind persisted raw bytes through the same contract checks used for a network response. */
+    fun revalidate(cache: ResolverCache): RefreshResult {
+        val channelBytes = cache.channelBytes ?: return failed("Channel cache was unavailable.")
+        val manifestBytes = cache.manifestBytes ?: return failed("Manifest cache was unavailable.")
+        val channel =
+            when (
+                val result =
+                    PackSetContractJson.decodeChannel(
+                        channelBytes,
+                        config.source.policy,
+                        config.source.channel,
+                    )
+            ) {
+                is ChannelDecodeResult.Success -> result.document
+                is ChannelDecodeResult.Failure -> return failed("Channel document was invalid.")
+            }
+        if (!matchesManifestReference(manifestBytes, channel))
+            return failed("Manifest integrity check failed.")
+        val manifest =
+            when (
+                val result = PackSetContractJson.decodeManifest(manifestBytes, config.source.policy)
+            ) {
+                is ManifestDecodeResult.Success -> result.manifest
+                is ManifestDecodeResult.Failure -> return failed("Manifest document was invalid.")
+            }
+        if (
+            manifest.publication.type != channel.target.type ||
+                manifest.publication.id != channel.target.id
+        )
+            return failed("Manifest target did not match channel.")
+        val snapshot =
+            PackSetSnapshot.fromValidatedBytes(
+                config.source,
+                channel,
+                manifest,
+                resolvedPacks(manifest),
+                channelBytes,
+                manifestBytes,
+            )
+        return RefreshResult.Activated(snapshot, cache.copy(snapshot = snapshot))
+    }
+
     fun refresh(cache: ResolverCache): RefreshResult =
         try {
             val deadline = deadlineNanos(config.requestTimeout)
