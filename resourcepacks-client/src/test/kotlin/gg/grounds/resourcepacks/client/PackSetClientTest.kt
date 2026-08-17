@@ -18,11 +18,15 @@ class PackSetClientTest {
     // Break caught: a failed refresh not scheduling the first bounded retry leaves the client
     // unavailable.
     @Test
-    fun `retry policy starts with one second and applies injected jitter`() {
-        val policy = RetryPolicy { 0.8 }
-
-        assertEquals(Duration.ofMillis(800), policy.delayForFailure(0))
-        assertEquals(Duration.ofSeconds(24), policy.delayForFailure(9))
+    fun `retry policy uses exact bounded exponential delays at both jitter bounds`() {
+        assertEquals(
+            listOf(800L, 1_600L, 3_200L, 6_400L, 12_800L, 24_000L, 24_000L),
+            (0..6).map { RetryPolicy { 0.8 }.delayForFailure(it).toMillis() },
+        )
+        assertEquals(
+            listOf(1_200L, 2_400L, 4_800L, 9_600L, 19_200L, 30_000L, 30_000L),
+            (0..6).map { RetryPolicy { 1.2 }.delayForFailure(it).toMillis() },
+        )
     }
 
     @Test

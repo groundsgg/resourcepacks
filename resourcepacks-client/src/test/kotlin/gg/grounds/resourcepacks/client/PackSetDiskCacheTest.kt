@@ -5,8 +5,10 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Comparator
+import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -150,7 +152,7 @@ class PackSetDiskCacheTest {
     // Break caught: an interrupted plugin write leaves private staging names but must not hide the
     // already atomically published last-known-good generation.
     @Test
-    fun `private interrupted write artifacts do not hide published generation`() {
+    fun `exact private interrupted write artifacts do not hide published generation`() {
         val directory = Files.createTempDirectory("pack-cache-test")
         try {
             val source =
@@ -158,12 +160,205 @@ class PackSetDiskCacheTest {
             val disk = PackSetDiskCache(directory)
             disk.store(source, resolverCache())
             val sourceDirectory = directory.resolve(source.cacheKey)
-            Files.createFile(sourceDirectory.resolve(".current-interrupted"))
-            Files.createDirectory(sourceDirectory.resolve("generations/.staging-interrupted"))
+            Files.createFile(sourceDirectory.resolve(".current-${UUID.randomUUID()}"))
+            Files.createDirectory(
+                sourceDirectory.resolve("generations/.staging-${UUID.randomUUID()}")
+            )
 
             assertEquals("channel", requireNotNull(disk.load(source)).channelEtag)
         } finally {
             deleteTree(directory)
+        }
+    }
+
+    // Break caught: prefix-only matching lets caller-owned or attacker-controlled names masquerade
+    // as plugin-private interrupted-write artifacts.
+    @Test
+    fun `private artifact prefix impostors fail closed`() {
+        listOf(
+                ".current-interrupted" to false,
+                ".current-${UUID.randomUUID()}-suffix" to false,
+                ".staging-interrupted" to true,
+                ".staging-${UUID.randomUUID()}-suffix" to true,
+            )
+            .forEach { (name, staging) ->
+                val directory = Files.createTempDirectory("pack-cache-test")
+                try {
+                    val source = source()
+                    val disk = PackSetDiskCache(directory)
+                    disk.store(source, resolverCache())
+                    val sourceDirectory = directory.resolve(source.cacheKey)
+                    if (staging) Files.createDirectory(sourceDirectory.resolve("generations/$name"))
+                    else Files.createFile(sourceDirectory.resolve(name))
+
+                    assertNull(disk.load(source), name)
+                } finally {
+                    deleteTree(directory)
+                }
+            }
+    }
+
+    // Break caught: a symlink with an otherwise exact private name must never be treated as a safe
+    // interrupted plugin write.
+    @Test
+    fun `symlinked private artifacts fail closed`() {
+        listOf(false, true).forEach { staging ->
+            val directory = Files.createTempDirectory("pack-cache-test")
+            val target = Files.createTempFile("pack-cache-private-target", ".tmp")
+            try {
+                val source = source()
+                val disk = PackSetDiskCache(directory)
+                disk.store(source, resolverCache())
+                val sourceDirectory = directory.resolve(source.cacheKey)
+                val link =
+                    if (staging)
+                        sourceDirectory.resolve("generations/.staging-${UUID.randomUUID()}")
+                    else sourceDirectory.resolve(".current-${UUID.randomUUID()}")
+                Files.createSymbolicLink(link, target)
+
+                assertNull(disk.load(source))
+            } finally {
+                deleteTree(directory)
+                Files.deleteIfExists(target)
+            }
+        }
+    }
+
+    // Break caught: validating every immutable generation lets a corrupt non-current generation
+    // hide a valid pointer-selected last-known-good generation.
+    @Test
+    fun `malformed non-current generation does not hide selected generation`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val source = source()
+            val disk = PackSetDiskCache(directory)
+            disk.store(source, resolverCache())
+            val generations = directory.resolve(source.cacheKey).resolve("generations")
+            val malformed = generations.resolve("0".repeat(64))
+            Files.createDirectory(malformed)
+            Files.createFile(malformed.resolve("channel.json"))
+
+            assertEquals("channel", requireNotNull(disk.load(source)).channelEtag)
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
+    // Break caught: a crash after creating generations but before publishing current must not make
+    // the source directory permanently unwritable.
+    @Test
+    fun `store repairs an interrupted first publication with no current pointer`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val source = source()
+            val sourceDirectory = directory.resolve(source.cacheKey)
+            val generations = sourceDirectory.resolve("generations")
+            Files.createDirectories(generations)
+            Files.createDirectory(generations.resolve(".staging-${UUID.randomUUID()}"))
+            val disk = PackSetDiskCache(directory)
+
+            disk.store(source, resolverCache())
+
+            assertEquals("channel", requireNotNull(disk.load(source)).channelEtag)
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
+    // Break caught: forcing file contents without forcing staging directory entries before rename
+    // can publish a generation whose names disappear after a crash.
+    @Test
+    fun `store fsyncs staging entries before generation and pointer parent directories`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val source = source()
+            val synced = mutableListOf<Path>()
+            val disk = diskCacheWithDirectorySync(directory) { path -> synced.add(path) }
+
+            disk.store(source, resolverCache())
+
+            val sourceDirectory = directory.resolve(source.cacheKey)
+            val generations = sourceDirectory.resolve("generations")
+            assertEquals(4, synced.size)
+            assertEquals(directory, synced[0])
+            assertEquals(generations, synced[1].parent)
+            assertTrue(synced[1].fileName.toString().startsWith(".staging-"))
+            assertEquals(generations, synced[2])
+            assertEquals(sourceDirectory, synced[3])
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
+    // Break caught: creating the cache root must durably publish both the root and source-key
+    // entries before store reports success.
+    @Test
+    fun `first store fsyncs created cache and source directory parent entries`() {
+        val parent = Files.createTempDirectory("pack-cache-parent")
+        try {
+            val root = parent.resolve("cache")
+            val source = source()
+            val synced = mutableListOf<Path>()
+            val disk = diskCacheWithDirectorySync(root) { path -> synced.add(path) }
+
+            disk.store(source, resolverCache())
+
+            assertEquals(parent, synced[0])
+            assertEquals(root, synced[1])
+            assertEquals("channel", requireNotNull(disk.load(source)).channelEtag)
+        } finally {
+            deleteTree(parent)
+        }
+    }
+
+    // Break caught: exact private staging names do not authorize unknown or symlinked child
+    // entries, even though interrupted partial generation files are otherwise tolerated.
+    @Test
+    fun `private staging children reject unknown names and symlinks`() {
+        listOf(false, true).forEach { symlinkChild ->
+            val directory = Files.createTempDirectory("pack-cache-test")
+            val target = Files.createTempFile("pack-cache-staging-target", ".tmp")
+            try {
+                val source = source()
+                val disk = PackSetDiskCache(directory)
+                disk.store(source, resolverCache())
+                val staging =
+                    directory
+                        .resolve(source.cacheKey)
+                        .resolve("generations/.staging-${UUID.randomUUID()}")
+                Files.createDirectory(staging)
+                if (symlinkChild) Files.createSymbolicLink(staging.resolve("channel.json"), target)
+                else Files.createFile(staging.resolve("unknown"))
+
+                assertNull(disk.load(source))
+                assertFailsWith<IllegalArgumentException> { disk.store(source, resolverCache()) }
+            } finally {
+                deleteTree(directory)
+                Files.deleteIfExists(target)
+            }
+        }
+    }
+
+    // Break caught: unknown caller-owned entries must not be silently ignored as recovery debris.
+    @Test
+    fun `unknown source and generation entries fail closed`() {
+        listOf(false, true).forEach { generationEntry ->
+            val directory = Files.createTempDirectory("pack-cache-test")
+            try {
+                val source = source()
+                val disk = PackSetDiskCache(directory)
+                disk.store(source, resolverCache())
+                val sourceDirectory = directory.resolve(source.cacheKey)
+                val unknown =
+                    if (generationEntry) sourceDirectory.resolve("generations/unknown")
+                    else sourceDirectory.resolve("unknown")
+                Files.createFile(unknown)
+
+                assertNull(disk.load(source))
+                assertFailsWith<IllegalArgumentException> { disk.store(source, resolverCache()) }
+            } finally {
+                deleteTree(directory)
+            }
         }
     }
 
@@ -181,6 +376,16 @@ class PackSetDiskCacheTest {
             "manifest".encodeToByteArray(),
             null,
         )
+
+    private fun source() =
+        PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE)
+
+    private fun diskCacheWithDirectorySync(root: Path, sync: (Path) -> Unit): PackSetDiskCache {
+        val constructor =
+            PackSetDiskCache::class.java.declaredConstructors.single { it.parameterCount == 3 }
+        constructor.isAccessible = true
+        return constructor.newInstance(root, sync, Unit) as PackSetDiskCache
+    }
 
     private fun deleteTree(root: Path) {
         Files.walk(root).use { stream ->

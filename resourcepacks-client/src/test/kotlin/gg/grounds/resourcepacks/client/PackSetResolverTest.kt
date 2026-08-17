@@ -149,6 +149,31 @@ class PackSetResolverTest {
         assertEquals(3, round)
     }
 
+    // Break caught: a 304 response must never activate a validated snapshot that belongs to a
+    // different configured source.
+    @Test
+    fun `not modified response rejects a cache bound to another source`() {
+        val oldSource = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        val oldResolver =
+            PackSetResolver(validTransport(oldSource, channel, manifest), config(oldSource))
+        val activated = assertIs<RefreshResult.Activated>(oldResolver.refresh(emptyCache()))
+        val oldCache = requireNotNull(oldResolver.cacheOf(activated))
+        val newSource =
+            PackSetSource(URI("https://new-assets.example.test"), "global", PackSetChannel.STABLE)
+        val transport = ScriptedTransport { uri, etag, _ ->
+            assertEquals(newSource.channelUri, uri)
+            assertNull(etag)
+            LoopbackPackSetServer.response(304)
+        }
+
+        val result = PackSetResolver(transport, config(newSource)).refresh(oldCache)
+
+        assertIs<RefreshResult.Failed>(result)
+        assertEquals(listOf(newSource.channelUri), transport.requests)
+    }
+
     @Test
     fun `a not modified manifest retains its ETag after a changed channel response`() {
         val source = source()

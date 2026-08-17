@@ -16,7 +16,14 @@ import java.util.Base64
 import java.util.UUID
 
 /** A fail-closed cache whose only mutable item is the source-local current pointer. */
-internal class PackSetDiskCache(private val root: Path) {
+internal class PackSetDiskCache
+private constructor(
+    private val root: Path,
+    private val directorySync: (Path) -> Unit,
+    @Suppress("UNUSED_PARAMETER") marker: Unit,
+) {
+    constructor(root: Path) : this(root, ::forceDirectoryDefault, Unit)
+
     @JvmSynthetic
     fun load(source: PackSetSource): ResolverCache? = load(source, Int.MAX_VALUE, Int.MAX_VALUE)
 
@@ -24,7 +31,8 @@ internal class PackSetDiskCache(private val root: Path) {
     fun load(source: PackSetSource, maxChannelBytes: Int, maxManifestBytes: Int): ResolverCache? =
         try {
             val sourceDirectory = sourceDirectory(source, create = false) ?: return null
-            requireSourceEntries(sourceDirectory)
+            val hasCurrent = requireSourceEntries(sourceDirectory)
+            if (!hasCurrent) return null
             val current = sourceDirectory.resolve("current")
             if (!regularFile(current)) return null
             val fingerprint = String(readFile(current, 65), Charsets.US_ASCII)
@@ -34,7 +42,7 @@ internal class PackSetDiskCache(private val root: Path) {
             )
             val generations = sourceDirectory.resolve("generations")
             require(directory(generations))
-            validateGenerations(source, generations, maxChannelBytes, maxManifestBytes)
+            validateGenerationEntries(generations)
             val generation = generations.resolve(fingerprint.trimEnd())
             require(directory(generation))
             requireExactEntries(generation, GENERATION_FILES)
@@ -71,6 +79,7 @@ internal class PackSetDiskCache(private val root: Path) {
         val generations = sourceDirectory.resolve("generations")
         createDirectory(generations)
         require(directory(generations))
+        validateGenerationEntries(generations)
         val target = generations.resolve(fingerprint)
         if (!Files.exists(target, NOFOLLOW_LINKS)) {
             val staging = generations.resolve(".staging-${UUID.randomUUID()}")
@@ -81,8 +90,9 @@ internal class PackSetDiskCache(private val root: Path) {
                 staging.resolve("metadata.properties"),
                 metadataBytes(source, fingerprint, cache, channel, manifest),
             )
+            directorySync(staging)
             moveAtomically(staging, target, replace = false)
-            forceDirectory(generations)
+            directorySync(generations)
         }
         require(directory(target))
         validateGeneration(source, target, fingerprint, Int.MAX_VALUE, Int.MAX_VALUE)
@@ -91,7 +101,7 @@ internal class PackSetDiskCache(private val root: Path) {
         val pointer = sourceDirectory.resolve(".current-${UUID.randomUUID()}")
         writeNew(pointer, "$fingerprint\n".encodeToByteArray())
         moveAtomically(pointer, current, replace = true)
-        forceDirectory(sourceDirectory)
+        directorySync(sourceDirectory)
     }
 
     private fun sourceDirectory(source: PackSetSource, create: Boolean): Path? {
@@ -99,6 +109,7 @@ internal class PackSetDiskCache(private val root: Path) {
             require(directory(root))
         } else if (create) {
             Files.createDirectory(root)
+            directorySync(root.toAbsolutePath().parent)
         } else return null
         require(directory(root))
         requireRootEntries()
@@ -107,6 +118,7 @@ internal class PackSetDiskCache(private val root: Path) {
             require(directory(sourceDirectory))
         } else if (create) {
             Files.createDirectory(sourceDirectory)
+            directorySync(root)
         } else return null
         require(directory(sourceDirectory))
         return sourceDirectory
@@ -132,12 +144,12 @@ internal class PackSetDiskCache(private val root: Path) {
         require(actual == expected)
     }
 
-    private fun requireSourceEntries(directory: Path) {
+    private fun requireSourceEntries(directory: Path): Boolean {
         val actual = mutableSetOf<String>()
         Files.newDirectoryStream(directory).use { entries ->
             for (entry in entries) {
                 val name = entry.fileName.toString()
-                if (name.startsWith(".current-")) {
+                if (PRIVATE_CURRENT.matches(name)) {
                     require(!Files.isSymbolicLink(entry) && regularFile(entry))
                     continue
                 }
@@ -145,7 +157,9 @@ internal class PackSetDiskCache(private val root: Path) {
                 actual += name
             }
         }
-        require(actual == setOf("current", "generations"))
+        require("generations" in actual)
+        require(actual == setOf("generations") || actual == setOf("current", "generations"))
+        return "current" in actual
     }
 
     private fun createDirectory(path: Path) {
@@ -187,10 +201,6 @@ internal class PackSetDiskCache(private val root: Path) {
         }
     }
 
-    private fun forceDirectory(directory: Path) {
-        FileChannel.open(directory, setOf(READ, NOFOLLOW_LINKS)).use { it.force(true) }
-    }
-
     private fun metadataBytes(
         source: PackSetSource,
         fingerprint: String,
@@ -227,21 +237,24 @@ internal class PackSetDiskCache(private val root: Path) {
         require(sha256(channel + manifest) == fingerprint)
     }
 
-    private fun validateGenerations(
-        source: PackSetSource,
-        generations: Path,
-        maxChannelBytes: Int,
-        maxManifestBytes: Int,
-    ) {
+    private fun validateGenerationEntries(generations: Path) {
         Files.newDirectoryStream(generations).use { entries ->
             for (entry in entries) {
                 val fingerprint = entry.fileName.toString()
-                if (fingerprint.startsWith(".staging-")) {
+                if (PRIVATE_STAGING.matches(fingerprint)) {
                     require(!Files.isSymbolicLink(entry) && directory(entry))
+                    validateStagingEntries(entry)
                     continue
                 }
                 require(FINGERPRINT.matches(fingerprint) && directory(entry))
-                validateGeneration(source, entry, fingerprint, maxChannelBytes, maxManifestBytes)
+            }
+        }
+    }
+
+    private fun validateStagingEntries(staging: Path) {
+        Files.newDirectoryStream(staging).use { entries ->
+            for (entry in entries) {
+                require(entry.fileName.toString() in GENERATION_FILES && regularFile(entry))
             }
         }
     }
@@ -271,7 +284,14 @@ internal class PackSetDiskCache(private val root: Path) {
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private companion object {
+        fun forceDirectoryDefault(directory: Path) {
+            FileChannel.open(directory, setOf(READ, NOFOLLOW_LINKS)).use { it.force(true) }
+        }
+
         val FINGERPRINT = Regex("[0-9a-f]{64}")
+        val UUID_SUFFIX = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        val PRIVATE_CURRENT = Regex("\\.current-$UUID_SUFFIX")
+        val PRIVATE_STAGING = Regex("\\.staging-$UUID_SUFFIX")
         val GENERATION_FILES = setOf("channel.json", "manifest.json", "metadata.properties")
         val METADATA_KEYS =
             setOf(
