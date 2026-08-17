@@ -17,6 +17,7 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotEquals
 
 class PackSetSourceTest {
     @Test
@@ -102,7 +103,7 @@ class PackSetSourceTest {
         val source =
             PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE)
         val packs = mutableListOf(resolvedPack())
-        val snapshot = PackSetSnapshot(source, channel(), manifest(), packs, "a".repeat(64))
+        val snapshot = PackSetSnapshot(source, channel(), manifest(), packs)
         packs.clear()
 
         assertEquals(1, snapshot.packs.size)
@@ -112,31 +113,49 @@ class PackSetSourceTest {
     }
 
     @Test
-    fun `snapshot fingerprint is stable for an identity and changes for a different identity`() {
+    fun `snapshot derives fingerprint from channel and manifest identity only`() {
         val source =
             PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE)
-        val sameIdentity =
-            PackSetSnapshot(source, channel(), manifest(), listOf(resolvedPack()), "a".repeat(64))
-        val changedIdentity =
+        val sameIdentity = PackSetSnapshot(source, channel(), manifest(), listOf(resolvedPack()))
+        val sameIdentityDifferentPacks =
+            PackSetSnapshot(source, channel(), manifest(), listOf(resolvedPack(required = false)))
+        val changedSequence =
+            PackSetSnapshot(source, channel(sequence = 2), manifest(), listOf(resolvedPack()))
+        val changedTarget =
             PackSetSnapshot(
                 source,
-                channel(sequence = 2),
+                channel(target = ChannelTarget(PublicationType.RELEASE, "v1.2.4")),
                 manifest(),
                 listOf(resolvedPack()),
-                "b".repeat(64),
+            )
+        val changedManifestIdentity =
+            PackSetSnapshot(
+                source,
+                channel(),
+                manifest(publicationId = "v1.2.4"),
+                listOf(resolvedPack()),
             )
 
-        assertEquals("a".repeat(64), sameIdentity.fingerprint)
-        assertEquals("b".repeat(64), changedIdentity.fingerprint)
+        assertEquals(
+            "7f20f25e7b5d322a9192c3fb06e3b48af87dd62a20914433d4bd482e18746b42",
+            sameIdentity.fingerprint,
+        )
+        assertEquals(sameIdentity.fingerprint, sameIdentityDifferentPacks.fingerprint)
+        assertNotEquals(sameIdentity.fingerprint, changedSequence.fingerprint)
+        assertNotEquals(sameIdentity.fingerprint, changedTarget.fingerprint)
+        assertNotEquals(sameIdentity.fingerprint, changedManifestIdentity.fingerprint)
     }
 
-    private fun channel(sequence: Long = 1) =
+    private fun channel(
+        sequence: Long = 1,
+        target: ChannelTarget = ChannelTarget(PublicationType.RELEASE, "v1.2.3"),
+    ) =
         ChannelDocument(
             schemaVersion = 2,
             packSet = "global",
             channel = PackSetChannel.STABLE,
             sequence = sequence,
-            target = ChannelTarget(PublicationType.RELEASE, "v1.2.3"),
+            target = target,
             manifest =
                 ChannelManifestReference(
                     "https://assets.example.test/manifest.json",
@@ -145,11 +164,11 @@ class PackSetSourceTest {
                 ),
         )
 
-    private fun manifest() =
+    private fun manifest(publicationId: String = "v1.2.3") =
         PackSetManifest(
             schemaVersion = 2,
             packSet = "global",
-            publication = ManifestPublication(PublicationType.RELEASE, "v1.2.3"),
+            publication = ManifestPublication(PublicationType.RELEASE, publicationId),
             version = "1.2.3",
             minecraft = ManifestMinecraft("1.21.8", 55),
             catalog =
@@ -165,7 +184,7 @@ class PackSetSourceTest {
             provenance = ManifestProvenance("grounds/resourcepacks", "c".repeat(40)),
         )
 
-    private fun resolvedPack() =
+    private fun resolvedPack(required: Boolean = true) =
         ResolvedPack(
             order = 1,
             role = "global",
@@ -175,6 +194,6 @@ class PackSetSourceTest {
             sha1 = "d".repeat(40),
             sha256 = "e".repeat(64),
             size = 100,
-            required = true,
+            required = required,
         )
 }
