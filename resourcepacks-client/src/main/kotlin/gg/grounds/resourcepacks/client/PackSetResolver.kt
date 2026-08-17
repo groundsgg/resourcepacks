@@ -5,7 +5,6 @@ import gg.grounds.resourcepacks.contract.ChannelDocument
 import gg.grounds.resourcepacks.contract.ManifestDecodeResult
 import gg.grounds.resourcepacks.contract.PackSetContractJson
 import gg.grounds.resourcepacks.contract.PackSetManifest
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.URI
 import java.security.MessageDigest
@@ -169,18 +168,7 @@ internal class PackSetResolver(
         }
 
     private fun readBounded(input: InputStream, limit: Int): ByteArray {
-        val output = ByteArrayOutputStream(minOf(limit, BUFFER_SIZE))
-        val buffer = ByteArray(BUFFER_SIZE)
-        val limitPlusOne = Math.addExact(limit, 1)
-        var count = 0
-        while (true) {
-            val permitted = minOf(buffer.size, limitPlusOne - count)
-            val read = input.read(buffer, 0, permitted)
-            if (read < 0) return output.toByteArray()
-            count = Math.addExact(count, read)
-            if (count > limit) throw IllegalArgumentException("Response exceeds configured limit.")
-            output.write(buffer, 0, read)
-        }
+        return BoundedResponseReader.read(input, limit)
     }
 
     private fun sha256(bytes: ByteArray): String =
@@ -190,8 +178,4 @@ internal class PackSetResolver(
 
     private fun deadlineNanos(timeout: java.time.Duration): Long =
         Math.addExact(System.nanoTime(), timeout.toNanos())
-
-    private companion object {
-        const val BUFFER_SIZE = 65_536
-    }
 }

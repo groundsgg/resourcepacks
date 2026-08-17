@@ -92,6 +92,7 @@ class ClientJarBoundaryTest {
 
     private fun expectedOwners() =
         setOf(
+            "gg.grounds.resourcepacks.client.BoundedResponseReader",
             "gg.grounds.resourcepacks.client.JdkPackSetHttpTransport",
             "gg.grounds.resourcepacks.client.PackSetClientConfig",
             "gg.grounds.resourcepacks.client.PackSetClientState",

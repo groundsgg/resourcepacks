@@ -9,6 +9,8 @@ import java.net.http.HttpClient
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -175,17 +177,23 @@ class PackSetResolverTest {
             stableChannel(manifest)
                 .replace("\"sha256\": \"${sha256(manifest)}\"", "\"sha256\": \"${"0".repeat(64)}\"")
                 .encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(channel)
+        val manifestBody = CloseTrackingInputStream(manifest)
+        val manifestUri = URI(STABLE_MANIFEST_URI)
         val transport = ScriptedTransport { uri, _, _ ->
             when (uri) {
-                source.channelUri -> LoopbackPackSetServer.response(200, body = channel)
-                else -> LoopbackPackSetServer.response(200, body = manifest)
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> PackSetHttpResponse(200, null, manifestBody)
+                else -> error("Unexpected request: $uri")
             }
         }
 
         val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
 
         assertIs<RefreshResult.Failed>(result)
-        assertEquals(2, transport.requests.size)
+        assertTrue(channelBody.closed)
+        assertTrue(manifestBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
     }
 
     @Test
@@ -200,14 +208,26 @@ class PackSetResolverTest {
                     "\"id\": \"v1.2.4\",\n    \"type\": \"release\"",
                 )
                 .encodeToByteArray()
-        var request = 0
-        val transport = ScriptedTransport { _, _, _ ->
-            LoopbackPackSetServer.response(200, body = if (request++ == 0) channel else manifest)
+        val channelBody = CloseTrackingInputStream(channel)
+        val manifestBody = CloseTrackingInputStream(manifest)
+        val manifestUri =
+            URI(
+                "https://assets.example.test/resourcepacks/packsets/global/releases/v1.2.4/manifest.json"
+            )
+        val transport = ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> PackSetHttpResponse(200, null, manifestBody)
+                else -> error("Unexpected request: $uri")
+            }
         }
 
         val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
 
         assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertTrue(manifestBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
     }
 
     @Test
@@ -220,7 +240,7 @@ class PackSetResolverTest {
 
         assertIs<RefreshResult.Failed>(result)
         assertTrue(body.closed)
-        assertEquals(1, transport.requests.size)
+        assertEquals(listOf(source.channelUri), transport.requests)
     }
 
     @Test
@@ -237,6 +257,7 @@ class PackSetResolverTest {
         assertIs<RefreshResult.Failed>(result)
         assertTrue(body.closed)
         assertTrue(System.nanoTime() - started < Duration.ofSeconds(2).toNanos())
+        assertEquals(listOf(source.channelUri), transport.requests)
     }
 
     @Test
@@ -276,6 +297,362 @@ class PackSetResolverTest {
         } finally {
             server.stop(0)
         }
+    }
+
+    @Test
+    fun `channel 404 and 500 fail before a manifest request`() {
+        listOf(404, 500).forEach { status ->
+            val source = source()
+            val body = CloseTrackingInputStream(ByteArray(0))
+            val transport = ScriptedTransport { _, _, _ -> PackSetHttpResponse(status, null, body) }
+
+            val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+            assertIs<RefreshResult.Failed>(result, "status $status")
+            assertTrue(body.closed, "status $status")
+            assertEquals(listOf(source.channelUri), transport.requests, "status $status")
+        }
+    }
+
+    @Test
+    fun `manifest 404 and 500 fail after the channel request`() {
+        listOf(404, 500).forEach { status ->
+            val source = source()
+            val manifest = stableManifest.encodeToByteArray()
+            val channel = stableChannel(manifest).encodeToByteArray()
+            val channelBody = CloseTrackingInputStream(channel)
+            val statusBody = CloseTrackingInputStream(ByteArray(0))
+            val manifestUri = URI(STABLE_MANIFEST_URI)
+            val transport = ScriptedTransport { uri, _, _ ->
+                when (uri) {
+                    source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                    manifestUri -> PackSetHttpResponse(status, null, statusBody)
+                    else -> error("Unexpected request: $uri")
+                }
+            }
+
+            val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+            assertIs<RefreshResult.Failed>(result, "status $status")
+            assertTrue(channelBody.closed, "status $status")
+            assertTrue(statusBody.closed, "status $status")
+            assertEquals(
+                listOf(source.channelUri, manifestUri),
+                transport.requests,
+                "status $status",
+            )
+        }
+    }
+
+    @Test
+    fun `channel and manifest read failures close their response independently`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        listOf(true, false).forEach { failChannel ->
+            val body = FailingInputStream()
+            val transport = ScriptedTransport { uri, _, _ ->
+                when {
+                    failChannel && uri == source.channelUri -> PackSetHttpResponse(200, null, body)
+                    !failChannel && uri != source.channelUri -> PackSetHttpResponse(200, null, body)
+                    uri == source.channelUri -> LoopbackPackSetServer.response(200, body = channel)
+                    else -> LoopbackPackSetServer.response(200, body = manifest)
+                }
+            }
+
+            val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+            assertIs<RefreshResult.Failed>(result)
+            assertTrue(body.closed)
+            assertEquals(
+                if (failChannel) listOf(source.channelUri)
+                else listOf(source.channelUri, URI(STABLE_MANIFEST_URI)),
+                transport.requests,
+            )
+        }
+    }
+
+    @Test
+    fun `bounded reader accepts exact channel and manifest limits and rejects one extra byte`() {
+        listOf(65_536, 1_048_576).forEach { limit ->
+            assertEquals(
+                limit,
+                BoundedResponseReader.read(java.io.ByteArrayInputStream(ByteArray(limit)), limit)
+                    .size,
+            )
+            assertFailsWith<IllegalArgumentException> {
+                BoundedResponseReader.read(
+                    java.io.ByteArrayInputStream(ByteArray(limit + 1)),
+                    limit,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `manifest declared size mismatch fails after both valid responses are closed`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel =
+            stableChannel(manifest)
+                .replace("\"size\": ${manifest.size}", "\"size\": ${manifest.size + 1}")
+                .encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(channel)
+        val manifestBody = CloseTrackingInputStream(manifest)
+        val manifestUri = URI(STABLE_MANIFEST_URI)
+        val transport = ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> PackSetHttpResponse(200, null, manifestBody)
+                else -> error("Unexpected request: $uri")
+            }
+        }
+
+        val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertTrue(manifestBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
+    }
+
+    @Test
+    fun `channel PackSet mismatch fails before a manifest request`() {
+        val channel =
+            stableChannel(stableManifest.encodeToByteArray())
+                .replace("\"packSet\": \"global\"", "\"packSet\": \"other\"")
+                .encodeToByteArray()
+
+        assertFailedChannelDocument(channel)
+    }
+
+    @Test
+    fun `manifest PackSet mismatch fails after exact integrity validation`() {
+        val manifest =
+            stableManifest
+                .replace("\"packSet\": \"global\"", "\"packSet\": \"other\"")
+                .encodeToByteArray()
+
+        assertFailedManifestDocument(manifest)
+    }
+
+    @Test
+    fun `document channel mismatch fails at the requested edge channel URI`() {
+        val source =
+            PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.EDGE)
+        val channel = stableChannel(stableManifest.encodeToByteArray()).encodeToByteArray()
+
+        assertFailedChannelDocument(channel, source)
+    }
+
+    @Test
+    fun `alternate manifest origin fails before its URL is requested`() {
+        val channel =
+            stableChannel(stableManifest.encodeToByteArray())
+                .replace("https://assets.example.test", "https://mirror.example.test")
+                .encodeToByteArray()
+
+        assertFailedChannelDocument(channel)
+    }
+
+    @Test
+    fun `alternate manifest root fails before its URL is requested`() {
+        val channel =
+            stableChannel(stableManifest.encodeToByteArray())
+                .replace("/releases/v1.2.3/manifest.json", "/releases/v9.9.9/manifest.json")
+                .encodeToByteArray()
+
+        assertFailedChannelDocument(channel)
+    }
+
+    @Test
+    fun `alternate artifact origin fails after exact manifest fetch`() {
+        val manifest =
+            stableManifest
+                .replace("https://assets.example.test", "https://mirror.example.test")
+                .encodeToByteArray()
+
+        assertFailedManifestDocument(manifest)
+    }
+
+    @Test
+    fun `alternate artifact root fails after exact manifest fetch`() {
+        val manifest =
+            stableManifest.replace("/releases/v1.2.3/", "/releases/v9.9.9/").encodeToByteArray()
+
+        assertFailedManifestDocument(manifest)
+    }
+
+    @Test
+    fun `malformed channel fails before a manifest request`() {
+        val valid = stableChannel(stableManifest.encodeToByteArray())
+        val malformed = valid.dropLast(2).encodeToByteArray()
+
+        assertFailedChannelDocument(malformed)
+    }
+
+    @Test
+    fun `malformed manifest fails after exact integrity validation`() {
+        val malformed = stableManifest.dropLast(2).encodeToByteArray()
+
+        assertFailedManifestDocument(malformed)
+    }
+
+    @Test
+    fun `noncanonical channel fails before a manifest request`() {
+        val noncanonical =
+            stableChannel(stableManifest.encodeToByteArray())
+                .replaceFirst("{\n", "{ \n")
+                .encodeToByteArray()
+
+        assertFailedChannelDocument(noncanonical)
+    }
+
+    @Test
+    fun `noncanonical manifest fails after exact integrity validation`() {
+        val noncanonical = stableManifest.replaceFirst("{\n", "{ \n").encodeToByteArray()
+
+        assertFailedManifestDocument(noncanonical)
+    }
+
+    @Test
+    fun `channel connection failure fails without a response to close`() {
+        val source = source()
+        val transport = ScriptedTransport { _, _, _ ->
+            throw java.io.IOException("synthetic connection failure")
+        }
+
+        val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertEquals(listOf(source.channelUri), transport.requests)
+    }
+
+    @Test
+    fun `manifest connection failure follows a closed valid channel response`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(stableChannel(manifest).encodeToByteArray())
+        val manifestUri = URI(STABLE_MANIFEST_URI)
+        val transport = ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> throw java.io.IOException("synthetic connection failure")
+                else -> error("Unexpected request: $uri")
+            }
+        }
+
+        val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
+    }
+
+    @Test
+    fun `manifest header timeout follows a closed valid channel response`() {
+        val source = source()
+        val timeout = Duration.ofMillis(100)
+        val manifest = stableManifest.encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(stableChannel(manifest).encodeToByteArray())
+        val manifestUri = URI(STABLE_MANIFEST_URI)
+        val transport = ScriptedTransport { uri, _, actualTimeout ->
+            assertEquals(timeout, actualTimeout)
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> throw java.net.http.HttpTimeoutException("headers timed out")
+                else -> error("Unexpected request: $uri")
+            }
+        }
+        val timedConfig = config(source).copy(requestTimeout = timeout)
+
+        val result = PackSetResolver(transport, timedConfig).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
+    }
+
+    @Test
+    fun `transport times out when response headers never arrive`() {
+        val requests = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+        server.createContext("/no-headers") { exchange ->
+            requests.countDown()
+            release.await(2, TimeUnit.SECONDS)
+            exchange.close()
+        }
+        server.start()
+        try {
+            val timeout = Duration.ofMillis(100)
+
+            assertFailsWith<java.net.http.HttpTimeoutException> {
+                JdkPackSetHttpTransport()
+                    .get(URI("http://127.0.0.1:${server.address.port}/no-headers"), null, timeout)
+            }
+            assertTrue(requests.await(1, TimeUnit.SECONDS))
+            assertEquals(0L, requests.count)
+        } finally {
+            release.countDown()
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `resolver accepts otherwise valid documents exactly at configured byte limits`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        val transport = validTransport(source, channel, manifest)
+        val exactConfig =
+            config(source).copy(maxChannelBytes = channel.size, maxManifestBytes = manifest.size)
+
+        val result = PackSetResolver(transport, exactConfig).refresh(emptyCache())
+
+        assertIs<RefreshResult.Activated>(result)
+        assertEquals(listOf(source.channelUri, URI(STABLE_MANIFEST_URI)), transport.requests)
+    }
+
+    @Test
+    fun `resolver rejects an otherwise valid channel one byte over its configured limit`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(channel)
+        val transport = ScriptedTransport { _, _, _ -> PackSetHttpResponse(200, null, channelBody) }
+        val oneByteShort = config(source).copy(maxChannelBytes = channel.size - 1)
+
+        val result = PackSetResolver(transport, oneByteShort).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertEquals(listOf(source.channelUri), transport.requests)
+    }
+
+    @Test
+    fun `resolver rejects an otherwise valid manifest one byte over its configured limit`() {
+        val source = source()
+        val manifest = stableManifest.encodeToByteArray()
+        val channel = stableChannel(manifest).encodeToByteArray()
+        val channelBody = CloseTrackingInputStream(channel)
+        val manifestBody = CloseTrackingInputStream(manifest)
+        val manifestUri = URI(STABLE_MANIFEST_URI)
+        val transport = ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> PackSetHttpResponse(200, null, manifestBody)
+                else -> error("Unexpected request: $uri")
+            }
+        }
+        val oneByteShort = config(source).copy(maxManifestBytes = manifest.size - 1)
+
+        val result = PackSetResolver(transport, oneByteShort).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertTrue(manifestBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
     }
 
     private fun stableChannel(manifest: ByteArray) =
@@ -352,6 +729,47 @@ class PackSetResolverTest {
 
     private fun emptyCache() = ResolverCache(null, null, null, null, null)
 
+    private fun assertFailedChannelDocument(channel: ByteArray, source: PackSetSource = source()) {
+        val channelBody = CloseTrackingInputStream(channel)
+        val transport = ScriptedTransport { _, _, _ -> PackSetHttpResponse(200, null, channelBody) }
+
+        val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertEquals(listOf(source.channelUri), transport.requests)
+    }
+
+    private fun assertFailedManifestDocument(manifest: ByteArray) {
+        val source = source()
+        val channelBody = CloseTrackingInputStream(stableChannel(manifest).encodeToByteArray())
+        val manifestBody = CloseTrackingInputStream(manifest)
+        val manifestUri = URI(STABLE_MANIFEST_URI)
+        val transport = ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> PackSetHttpResponse(200, null, channelBody)
+                manifestUri -> PackSetHttpResponse(200, null, manifestBody)
+                else -> error("Unexpected request: $uri")
+            }
+        }
+
+        val result = PackSetResolver(transport, config(source)).refresh(emptyCache())
+
+        assertIs<RefreshResult.Failed>(result)
+        assertTrue(channelBody.closed)
+        assertTrue(manifestBody.closed)
+        assertEquals(listOf(source.channelUri, manifestUri), transport.requests)
+    }
+
+    private fun validTransport(source: PackSetSource, channel: ByteArray, manifest: ByteArray) =
+        ScriptedTransport { uri, _, _ ->
+            when (uri) {
+                source.channelUri -> LoopbackPackSetServer.response(200, body = channel)
+                URI(STABLE_MANIFEST_URI) -> LoopbackPackSetServer.response(200, body = manifest)
+                else -> error("Unexpected request: $uri")
+            }
+        }
+
     private class ScriptedTransport(
         private val script: (URI, String?, Duration) -> PackSetHttpResponse
     ) : PackSetHttpTransport {
@@ -385,7 +803,20 @@ class PackSetResolverTest {
         }
     }
 
+    private class FailingInputStream : java.io.InputStream() {
+        var closed = false
+
+        override fun read(): Int = throw java.io.IOException("synthetic body failure")
+
+        override fun close() {
+            closed = true
+        }
+    }
+
     private companion object {
+        const val STABLE_MANIFEST_URI =
+            "https://assets.example.test/resourcepacks/packsets/global/releases/v1.2.3/manifest.json"
+
         val stableManifest =
             """
             {
