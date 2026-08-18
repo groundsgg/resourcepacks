@@ -62,10 +62,7 @@ internal object ProductGraph {
             afterSourcesPinned()
             val contribution =
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
-                    .withLicense(
-                        held.getValue(PLATFORM_LICENSE_SOURCE),
-                        PLATFORM_LICENSE_ENTRY,
-                    )
+                    .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
             val icon =
                 ByteArrayEntrySource(
                     held
@@ -109,9 +106,7 @@ internal object ProductGraph {
                         PackPolicy(VanillaPathPolicy.FORBID, PackSetConstants.contentLimits),
                     ),
                 contributions =
-                    listOf(
-                        ContentContribution.withLicense(contentLicense, CONTENT_LICENSE_ENTRY)
-                    ),
+                    listOf(ContentContribution.withLicense(contentLicense, CONTENT_LICENSE_ENTRY)),
             ),
             PhysicalPack(
                 order = 1,
