@@ -107,6 +107,31 @@ class AutomationContractTest {
         val ciWithoutResolutionToken =
             replaceOnce(ci, "      GITHUB_TOKEN: \${{ github.token }}\n", "")
         assertFails { assertCi(parseText(ciWithoutResolutionToken)) }
+        val restoredSecondCleanBuild =
+            replaceOnce(
+                ci,
+                "      - name: Build clean checkout\n" +
+                    "        working-directory: run1/src\n" +
+                    "        run: ./gradlew --no-build-cache clean build -PpackSetVersion='\${{ steps.version.outputs.value }}'\n",
+                "      - name: Build clean checkout\n" +
+                    "        working-directory: run1/src\n" +
+                    "        run: ./gradlew --no-build-cache clean build -PpackSetVersion='\${{ steps.version.outputs.value }}'\n" +
+                    "      - name: Build clean checkout two\n" +
+                    "        working-directory: run2/src\n" +
+                    "        run: ./gradlew --no-build-cache clean build -PpackSetVersion='\${{ steps.version.outputs.value }}'\n",
+            )
+        assertFails { assertCi(parseText(restoredSecondCleanBuild)) }
+        val edgePackSetTwoWithTests =
+            replaceOnce(
+                edge,
+                "      - name: Build raw current-commit PackSet two\n" +
+                    "        working-directory: run2/src\n" +
+                    "        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet",
+                "      - name: Build raw current-commit PackSet two\n" +
+                    "        working-directory: run2/src\n" +
+                    "        run: ./gradlew --no-build-cache clean build :resourcepacks-product:buildPackSet",
+            )
+        assertFails { assertEdge(parseText(edgePackSetTwoWithTests)) }
         val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
         assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
         val missingContractPublication =
@@ -356,12 +381,9 @@ class AutomationContractTest {
 
         assertEquals(
             "./gradlew --no-build-cache clean build -PpackSetVersion='$versionOutput'",
-            run(stepByName(steps, "Build clean checkout one"), "run1/src"),
+            run(stepByName(steps, "Build clean checkout"), "run1/src"),
         )
-        assertEquals(
-            "./gradlew --no-build-cache clean build -PpackSetVersion='$versionOutput'",
-            run(stepByName(steps, "Build clean checkout two"), "run2/src"),
-        )
+        assertEquals(1, runScripts(steps).count { it.contains("clean build") })
         assertEquals(
             "npm ci --ignore-scripts\nnpm test\nnpm test\nnpm audit --audit-level=high",
             run(
@@ -619,12 +641,13 @@ class AutomationContractTest {
             ),
         )
         assertEquals(
-            "./gradlew --no-build-cache clean build :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-two\"",
+            "./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-two\"",
             run(
                 stepByName(steps.getValue("build"), "Build raw current-commit PackSet two"),
                 "run2/src",
             ),
         )
+        assertEquals(1, runScripts(steps.getValue("build")).count { it.contains("clean build") })
         assertEquals(
             "diff --no-dereference -r \"\$RUNNER_TEMP/raw-edge-one\" \"\$RUNNER_TEMP/raw-edge-two\"",
             scalar(
