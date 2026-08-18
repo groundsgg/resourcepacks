@@ -7,12 +7,24 @@ import java.util.jar.JarFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
  * Final-artifact gate: public contract classes are the only API and no implementation is shaded.
  */
 class ContractJarBoundaryTest {
+    @Test
+    fun `final contract JAR carries the Apache license terms`() {
+        JarFile(contractJar().toFile()).use { archive ->
+            val entry = assertNotNull(archive.getJarEntry("META-INF/LICENSE"))
+            val terms = archive.getInputStream(entry).bufferedReader().readText()
+
+            assertTrue(terms.trimStart().startsWith("Apache License\n"))
+            assertTrue(terms.contains("Version 2.0, January 2004"))
+        }
+    }
+
     @Test
     fun `final contract JAR has the exact public owner set and no implementation payload`() {
         val entries =
@@ -206,6 +218,7 @@ class ContractJarBoundaryTest {
 
     private fun allowedEntry(entry: String): Boolean =
         entry == "META-INF/MANIFEST.MF" ||
+            entry == "META-INF/LICENSE" ||
             entry == "META-INF/resourcepacks-contract.kotlin_module" ||
             entry.startsWith("gg/grounds/resourcepacks/contract/")
 }

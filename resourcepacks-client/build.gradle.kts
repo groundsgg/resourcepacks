@@ -16,6 +16,15 @@ publishing {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
             artifactId = "resourcepacks-client"
+            pom {
+                licenses {
+                    license {
+                        name.set("The Apache License, Version 2.0")
+                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                        distribution.set("repo")
+                    }
+                }
+            }
         }
     }
     repositories {
@@ -37,6 +46,13 @@ publishing {
                         ?: ""
             }
         }
+    }
+}
+
+tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    from(rootProject.layout.projectDirectory.file("LICENSES/Apache-2.0.txt")) {
+        into("META-INF")
+        rename { "LICENSE" }
     }
 }
 

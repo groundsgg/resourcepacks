@@ -1,0 +1,15 @@
+All rights reserved.
+
+Copyright (C) 2026 Grounds contributors.
+
+The first-party platform artwork in this directory is not licensed under AGPL-3.0.
+Grounds may use it in-game on Grounds-operated servers, including CDN delivery to
+Grounds players. Recipients do not receive a right to copy, modify, or
+redistribute these files.
+
+This directory may contain only first-party Grounds artwork. Commercial marketplace
+assets, including MCModels products, must not be copied here. They belong under
+art/content/ with the vendor licence.
+
+Attribution and source-copy records are in ASSET_ORIGINS.json. The records name
+the approved first-party source path and SHA-256 for every copied image.

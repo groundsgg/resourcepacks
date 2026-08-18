@@ -1,0 +1,10 @@
+SPDX-License-Identifier: AGPL-3.0-only
+
+Copyright (C) 2026 Grounds contributors.
+
+This PackSet product component is licensed under the GNU Affero General Public
+License, version 3, except artwork under ../art/platform/ and ../art/content/.
+First-party platform artwork remains all rights reserved under
+../art/platform/LICENSE. Third-party content artwork remains under the vendor
+licence in ../art/content/LICENSE. Those files are not sublicensed under
+AGPL-3.0. The complete AGPL text is in ../LICENSE.

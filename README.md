@@ -2,6 +2,18 @@
 
 This repository composes the immutable Grounds PackSet: `grounds-content` followed by the higher-priority `grounds-platform`, a canonical manifest, and the JVM catalog `gg.grounds:resourcepacks-catalog`.
 
+## Licensing
+
+The PackSet product code is licensed under AGPL-3.0-only, except artwork under
+[`art/platform/`](art/platform/) and [`art/content/`](art/content/). First-party
+platform artwork is all rights reserved. Third-party files under `art/content/`
+keep their vendor licences and are not sublicensed. Reusable JVM contracts,
+clients, catalogs, and release tooling are Apache-2.0; documentation is MIT.
+Provenance for copied platform images is in
+[`art/platform/ASSET_ORIGINS.json`](art/platform/ASSET_ORIGINS.json). The
+component-specific `LICENSE` file is authoritative when it differs from the
+repository-level notice.
+
 ## Local build
 
 `version.txt` is the only authoritative ASCII SemVer source. Build a release with explicit provenance; no command infers it from Git or the environment:

@@ -7,9 +7,21 @@ import java.util.jar.JarFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ClientJarBoundaryTest {
+    @Test
+    fun `final client JAR carries the Apache license terms`() {
+        JarFile(clientJar().toFile()).use { archive ->
+            val entry = assertNotNull(archive.getJarEntry("META-INF/LICENSE"))
+            val terms = archive.getInputStream(entry).bufferedReader().readText()
+
+            assertTrue(terms.trimStart().startsWith("Apache License\n"))
+            assertTrue(terms.contains("Version 2.0, January 2004"))
+        }
+    }
+
     @Test
     fun `final client JAR contains only client classes and Kotlin metadata`() {
         val entries =
@@ -113,6 +125,7 @@ class ClientJarBoundaryTest {
 
     private fun allowedEntry(entry: String): Boolean =
         entry == "META-INF/MANIFEST.MF" ||
+            entry == "META-INF/LICENSE" ||
             entry == "META-INF/resourcepacks-client.kotlin_module" ||
             entry.startsWith("gg/grounds/resourcepacks/client/")
 }
