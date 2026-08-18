@@ -192,7 +192,7 @@ class ThemeAssetContractTest {
 
     private fun actualPlatformFiles(): Set<String> {
         validatePlatformArt(platformArt)
-        return EXPECTED_PLATFORM_FILES - "ASSET_ORIGINS.json"
+        return EXPECTED_PLATFORM_FILES - setOf("ASSET_ORIGINS.json", "LICENSE")
     }
 
     private fun copyPlatformArt(): Path {
@@ -246,7 +246,7 @@ class ThemeAssetContractTest {
                 "tooltips/default_frame.png",
                 "frames/hover.png",
             )
-        val EXPECTED_PLATFORM_FILES = ART_FILES.toSet() + "ASSET_ORIGINS.json"
+        val EXPECTED_PLATFORM_FILES = ART_FILES.toSet() + setOf("ASSET_ORIGINS.json", "LICENSE")
         val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames")
         val APPROVED_ORIGINS =
             mapOf(
