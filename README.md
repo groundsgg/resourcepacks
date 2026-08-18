@@ -4,9 +4,11 @@ This repository composes the immutable Grounds PackSet: `grounds-content` follow
 
 ## Licensing
 
-The PackSet product is licensed under AGPL-3.0-only. Reusable JVM
-contracts, clients, catalogs, and release tooling are Apache-2.0; documentation
-is MIT; platform artwork is CC-BY-NC-SA-4.0 with provenance in
+The PackSet product code is licensed under AGPL-3.0-only, except third-party
+files under [`art/content/`](art/content/), which keep their vendor licences
+and are not sublicensed. Reusable JVM contracts, clients, catalogs, and
+release tooling are Apache-2.0; documentation is MIT; platform artwork is
+CC-BY-NC-SA-4.0 with provenance in
 [`art/platform/ASSET_ORIGINS.json`](art/platform/ASSET_ORIGINS.json). The
 component-specific `LICENSE` file is authoritative when it differs from the
 repository-level notice.
