@@ -17,7 +17,10 @@ class PackComposerTest {
             assertEquals(listOf("grounds-content", "grounds-platform"), built.map { it.pack.id })
             val contentEntries = zipEntries(built.first().file)
             val platformEntries = zipEntries(built.last().file)
-            assertEquals(listOf("pack.mcmeta"), contentEntries.map { it.name })
+            assertEquals(
+                listOf("assets/grounds/legal/content.txt", "pack.mcmeta"),
+                contentEntries.map { it.name },
+            )
             assertEquals(
                 (ProductGraph.packs
                         .last()

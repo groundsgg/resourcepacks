@@ -55,8 +55,17 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
+            held[PLATFORM_LICENSE_SOURCE] =
+                HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
+            held[CONTENT_LICENSE_SOURCE] =
+                HeldSourceFile.capture(contentLicenseFile(), MAX_LICENSE_BYTES)
             afterSourcesPinned()
-            val contribution = immutableThemeContribution(held)
+            val contribution =
+                immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
+                    .withLicense(
+                        held.getValue(PLATFORM_LICENSE_SOURCE),
+                        PLATFORM_LICENSE_ENTRY,
+                    )
             val icon =
                 ByteArrayEntrySource(
                     held
@@ -64,7 +73,7 @@ internal object ProductGraph {
                         .readBytes(PLATFORM_ARTWORK.getValue(PACK_ICON_SOURCE).size)
                 )
             return SecureSourceInputs.captureWithHeld(
-                    createPacks(contribution, icon),
+                    createPacks(contribution, icon, held.getValue(CONTENT_LICENSE_SOURCE)),
                     held.values.toList(),
                 )
                 .also { it.verifyUnchanged() }
@@ -83,6 +92,7 @@ internal object ProductGraph {
     private fun createPacks(
         platformContribution: PackContribution,
         packIcon: PackEntrySource,
+        contentLicense: HeldSourceFile,
     ): List<PhysicalPack> =
         listOf(
             PhysicalPack(
@@ -98,7 +108,10 @@ internal object ProductGraph {
                         null,
                         PackPolicy(VanillaPathPolicy.FORBID, PackSetConstants.contentLimits),
                     ),
-                contributions = listOf(ContentContribution),
+                contributions =
+                    listOf(
+                        ContentContribution.withLicense(contentLicense, CONTENT_LICENSE_ENTRY)
+                    ),
             ),
             PhysicalPack(
                 order = 1,
@@ -127,6 +140,19 @@ internal object ProductGraph {
             GroundsGuiTheme.theme.toPackContribution(fileSystem.root).withImmutableSources()
         }
     }
+
+    private fun PackContribution.withLicense(
+        source: HeldSourceFile,
+        path: String,
+    ): PackContribution =
+        PackContribution(
+            id,
+            supportedFormats,
+            entries + PackEntry.bytes(path, source.readBytes(source.digests.size)),
+            vanillaClaims,
+            provides,
+            requires,
+        )
 
     private fun PackContribution.withImmutableSources(): PackContribution =
         PackContribution(
@@ -167,11 +193,19 @@ internal object ProductGraph {
             .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
             .resolve("art/platform")
 
+    private fun contentLicenseFile(): Path =
+        platformArtDirectory().parent.resolve("content").resolve("LICENSE")
+
     private data class ArtworkExpectation(val size: Long, val sha256: String)
 
     private const val MAX_ARTWORK_BYTES = 4L * 1024
     private const val MAX_MATERIALIZED_ARTWORK_BYTES = 1024L * 1024
+    private const val MAX_LICENSE_BYTES = 16L * 1024
     private const val PACK_ICON_SOURCE = "frames/hover.png"
+    private const val CONTENT_LICENSE_ENTRY = "assets/grounds/legal/content.txt"
+    private const val PLATFORM_LICENSE_ENTRY = "assets/grounds/legal/platform.txt"
+    private const val PLATFORM_LICENSE_SOURCE = "platform-license"
+    private const val CONTENT_LICENSE_SOURCE = "content-license"
 
     private val PLATFORM_ARTWORK =
         linkedMapOf(
