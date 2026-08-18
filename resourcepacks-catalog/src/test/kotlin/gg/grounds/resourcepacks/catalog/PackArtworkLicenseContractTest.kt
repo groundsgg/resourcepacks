@@ -47,7 +47,10 @@ class PackArtworkLicenseContractTest {
     fun `asset origins only name first-party library-gui example art`() {
         val manifest = Files.readString(root.resolve("art/platform/ASSET_ORIGINS.json"))
         val sources =
-            Regex(""""source"\s*:\s*"([^"]+)"""").findAll(manifest).map { it.groupValues[1] }.toList()
+            Regex(""""source"\s*:\s*"([^"]+)"""")
+                .findAll(manifest)
+                .map { it.groupValues[1] }
+                .toList()
         assertTrue(sources.isNotEmpty(), "ASSET_ORIGINS.json must list first-party sources")
         sources.forEach { source ->
             assertTrue(
@@ -65,7 +68,8 @@ class PackArtworkLicenseContractTest {
     fun `repository image files are the approved first-party platform set`() {
         val actual = linkedSetOf<String>()
         Files.walk(root).use { paths ->
-            paths.filter { path ->
+            paths
+                .filter { path ->
                     Files.isRegularFile(path) &&
                         IMAGE_EXTENSIONS.any { path.fileName.toString().endsWith(it) } &&
                         !isSkipped(root.relativize(path))
@@ -81,7 +85,8 @@ class PackArtworkLicenseContractTest {
         require(Files.isDirectory(contentArt)) { "Missing art/content directory" }
         val actual = linkedSetOf<String>()
         Files.walk(contentArt).use { paths ->
-            paths.filter { Files.isRegularFile(it) }
+            paths
+                .filter { Files.isRegularFile(it) }
                 .forEach { path ->
                     actual += contentArt.relativize(path).joinToString("/") { it.toString() }
                 }
@@ -127,7 +132,15 @@ class PackArtworkLicenseContractTest {
         const val FIRST_PARTY_SOURCE_PREFIX = "library-gui/examples/theme-demo/art/"
         val IMAGE_EXTENSIONS = listOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".tga", ".bmp")
         val SKIP_ROOTS =
-            setOf(".git", ".gradle", ".idea", ".worktrees", ".superpowers", ".cursor", "node_modules")
+            setOf(
+                ".git",
+                ".gradle",
+                ".idea",
+                ".worktrees",
+                ".superpowers",
+                ".cursor",
+                "node_modules",
+            )
         val APPROVED_PLATFORM_IMAGES =
             setOf(
                 "art/platform/frames/hover.png",
