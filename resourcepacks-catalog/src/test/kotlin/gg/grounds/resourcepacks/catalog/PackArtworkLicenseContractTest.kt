@@ -13,23 +13,34 @@ class PackArtworkLicenseContractTest {
             .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
 
     @Test
-    fun `platform license keeps artwork first-party and excludes commercial marketplace files`() {
+    fun `platform license keeps first-party artwork proprietary`() {
         val license = Files.readString(root.resolve("art/platform/LICENSE"))
-        assertTrue(license.contains("CC-BY-NC-SA-4.0") || license.contains("CC BY-NC-SA 4.0"))
+        assertTrue(license.contains("all rights reserved", ignoreCase = true))
+        assertTrue(
+            license.contains("not licensed under AGPL", ignoreCase = true) ||
+                license.contains("not sublicensed", ignoreCase = true)
+        )
         assertTrue(license.contains("first-party", ignoreCase = true))
         assertTrue(license.contains("commercial marketplace", ignoreCase = true))
         assertTrue(license.contains("MCModels"))
         assertTrue(license.contains("art/content"))
+        assertFalse(license.contains("CC-BY-NC-SA"))
+        assertFalse(license.contains("CC BY-NC-SA"))
     }
 
     @Test
-    fun `readme licensing carves vendor content out of agpl and cc`() {
+    fun `readme licensing carves artwork out of agpl`() {
         val readme = Files.readString(root.resolve("README.md"))
         val licensing = readme.substringAfter("## Licensing", missingDelimiterValue = "")
         assertTrue(licensing.isNotBlank(), "README must have a Licensing section")
         assertTrue(licensing.contains("AGPL-3.0-only"))
+        assertTrue(licensing.contains("art/platform"))
         assertTrue(licensing.contains("art/content"))
-        assertTrue(licensing.contains("vendor", ignoreCase = true))
+        assertTrue(
+            licensing.contains("all rights reserved", ignoreCase = true) ||
+                licensing.contains("proprietary", ignoreCase = true)
+        )
+        assertFalse(licensing.contains("CC-BY-NC-SA"))
     }
 
     @Test
@@ -96,11 +107,15 @@ class PackArtworkLicenseContractTest {
     }
 
     @Test
-    fun `product license carves art content out of agpl`() {
+    fun `product license carves artwork out of agpl`() {
         val license = Files.readString(root.resolve("resourcepacks-product/LICENSE"))
         assertTrue(license.contains("AGPL-3.0"))
+        assertTrue(license.contains("art/platform"))
         assertTrue(license.contains("art/content"))
-        assertTrue(license.contains("vendor", ignoreCase = true))
+        assertTrue(
+            license.contains("not sublicensed", ignoreCase = true) ||
+                license.contains("all rights reserved", ignoreCase = true)
+        )
     }
 
     private fun isSkipped(relative: Path): Boolean {

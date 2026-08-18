@@ -1,19 +1,15 @@
-Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
-(CC-BY-NC-SA-4.0)
+All rights reserved.
 
 Copyright (C) 2026 Grounds contributors.
 
-The platform artwork in this directory is licensed under CC BY-NC-SA 4.0.
-You may share and adapt it for non-commercial purposes when you give appropriate
-credit, link to the licence, indicate changes, and distribute adaptations under
-the same licence.
+The first-party platform artwork in this directory is not licensed under AGPL-3.0.
+Grounds may use it in-game on Grounds-operated servers, including CDN delivery to
+Grounds players. Recipients do not receive a right to copy, modify, or
+redistribute these files.
 
-This directory may contain only first-party Grounds artwork or artwork that the
-copyright holder already licensed under CC-BY-NC-SA-4.0. Commercial marketplace
+This directory may contain only first-party Grounds artwork. Commercial marketplace
 assets, including MCModels products, must not be copied here. They belong under
 art/content/ with the vendor licence.
-
-Full licence text: https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
 
 Attribution and source-copy records are in ASSET_ORIGINS.json. The records name
 the approved first-party source path and SHA-256 for every copied image.
