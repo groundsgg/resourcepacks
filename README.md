@@ -67,7 +67,7 @@ credentials.
 
 An exact push to `main` also creates an Edge build. Its version is
 `0.0.0-edge.<github.run_number>.g<first-12-commit-hex>` and its raw build is deterministic.
-The protected `Edge/Stage` environment alone receives R2 credentials. It validates the previous
+The protected `edge` environment alone receives R2 credentials. It validates the previous
 `channels/edge.json` pointer and its immutable manifest before reusing a content or platform URL;
 reuse requires exact SHA-1, SHA-256, and size equality. Otherwise the changed pack is published
 under the current commit root. Catalog and manifest always remain current-commit objects, CDN
