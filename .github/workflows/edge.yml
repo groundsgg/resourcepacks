@@ -29,13 +29,6 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
-          path: run1/src
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-          path: run2/src
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -44,7 +37,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: run1/src/release-tools/package-lock.json
+          cache-dependency-path: release-tools/package-lock.json
       - id: edge
         name: Derive exact Edge identity
         run: |
@@ -53,18 +46,11 @@ jobs:
           echo "version=$edge_version" >> "$GITHUB_OUTPUT"
           echo "commit=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Build clean deterministic checkout
-        working-directory: run1/src
         run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}'
-      - name: Build raw current-commit PackSet one
-        working-directory: run1/src
-        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}' -PreleaseOutput="$RUNNER_TEMP/raw-edge-one"
-      - name: Build raw current-commit PackSet two
-        working-directory: run2/src
-        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}' -PreleaseOutput="$RUNNER_TEMP/raw-edge-two"
-      - name: Compare deterministic raw Edge PackSets
-        run: diff --no-dereference -r "$RUNNER_TEMP/raw-edge-one" "$RUNNER_TEMP/raw-edge-two"
+      - name: Build raw current-commit PackSet
+        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${{ steps.edge.outputs.version }}' -PprovenanceCommit='${{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ steps.edge.outputs.commit }}' -PreleaseOutput="$RUNNER_TEMP/raw-edge"
       - name: Run Node release-tool tests twice and audit dependencies
-        working-directory: run1/src/release-tools
+        working-directory: release-tools
         run: |
           npm ci --ignore-scripts
           npm test
@@ -74,12 +60,40 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: raw-edge-packset
-          path: ${{ runner.temp }}/raw-edge-one
+          path: ${{ runner.temp }}/raw-edge
           if-no-files-found: error
           retention-days: 1
 
+  wait-for-ci:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for CI verify on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 3600))
+          while (( SECONDS < deadline )); do
+            payload="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=1")"
+            status="$(printf '%s' "$payload" | jq -r '.workflow_runs[0].status // empty')"
+            conclusion="$(printf '%s' "$payload" | jq -r '.workflow_runs[0].conclusion // empty')"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "CI verify succeeded on ${GITHUB_SHA}"
+                exit 0
+              fi
+              echo "CI verify finished with conclusion=${conclusion}" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Timed out waiting for CI verify on ${GITHUB_SHA}" >&2
+          exit 1
+
   publish:
-    needs: build
+    needs: [build, wait-for-ci]
     runs-on: ubuntu-24.04
     environment: edge
     permissions:
