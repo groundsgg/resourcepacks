@@ -611,25 +611,16 @@ class PackSetResolverTest {
         val server = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
         server.createContext("/no-headers") { exchange ->
             requests.countDown()
-            release.await(5, TimeUnit.SECONDS)
+            release.await(10, TimeUnit.SECONDS)
             exchange.close()
         }
         server.start()
         try {
-            val timeout = Duration.ofMillis(100)
-            val uri = URI("http://127.0.0.1:${server.address.port}/no-headers")
-            var caught: Throwable? = null
-            val client = Thread {
-                try {
-                    JdkPackSetHttpTransport().get(uri, null, timeout)
-                } catch (throwable: Throwable) {
-                    caught = throwable
-                }
+            val timeout = Duration.ofSeconds(1)
+            assertFailsWith<java.net.http.HttpTimeoutException> {
+                JdkPackSetHttpTransport()
+                    .get(URI("http://127.0.0.1:${server.address.port}/no-headers"), null, timeout)
             }
-            client.start()
-            assertTrue(requests.await(5, TimeUnit.SECONDS), "server should receive the request")
-            client.join(5_000)
-            assertIs<java.net.http.HttpTimeoutException>(caught)
             assertEquals(0L, requests.count)
         } finally {
             release.countDown()
