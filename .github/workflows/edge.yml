@@ -64,8 +64,36 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  wait-for-ci:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for CI verify on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 3600))
+          while (( SECONDS < deadline )); do
+            payload="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=1")"
+            status="$(printf '%s' "$payload" | jq -r '.workflow_runs[0].status // empty')"
+            conclusion="$(printf '%s' "$payload" | jq -r '.workflow_runs[0].conclusion // empty')"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" == "success" ]]; then
+                echo "CI verify succeeded on ${GITHUB_SHA}"
+                exit 0
+              fi
+              echo "CI verify finished with conclusion=${conclusion}" >&2
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "Timed out waiting for CI verify on ${GITHUB_SHA}" >&2
+          exit 1
+
   publish:
-    needs: build
+    needs: [build, wait-for-ci]
     runs-on: ubuntu-24.04
     environment: edge
     permissions:

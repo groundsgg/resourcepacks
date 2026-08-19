@@ -47,6 +47,7 @@ class AutomationContractTest {
 
         listOf(
                 removeStep(edge, "Build raw current-commit PackSet"),
+                removeStep(edge, "Wait for CI verify on this commit"),
                 replaceFirstOf(edge, "name: prepared-edge-packset", "name: wrong-prepared-edge", 3),
                 replaceOnce(
                     edge,
@@ -137,6 +138,9 @@ class AutomationContractTest {
                     "        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet",
             )
         assertFails { assertEdge(parseText(restoredSecondEdgePackSet)) }
+        val publishWithoutCiGate =
+            replaceOnce(edge, "    needs: [build, wait-for-ci]\n", "    needs: build\n")
+        assertFails { assertEdge(parseText(publishWithoutCiGate)) }
         val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
         assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
         val missingContractPublication =
@@ -542,9 +546,13 @@ class AutomationContractTest {
             mapping(edge, "concurrency"),
         )
         val jobs = mapping(edge, "jobs")
-        assertEquals(setOf("build", "publish", "public-cdn", "edge-channel"), jobs.keys)
+        assertEquals(
+            setOf("build", "wait-for-ci", "publish", "public-cdn", "edge-channel"),
+            jobs.keys,
+        )
         assertEquals(null, mapping(jobs, "build")["needs"])
-        assertEquals("build", mapping(jobs, "publish")["needs"])
+        assertEquals(null, mapping(jobs, "wait-for-ci")["needs"])
+        assertEquals(listOf("build", "wait-for-ci"), mapping(jobs, "publish")["needs"])
         assertEquals("publish", mapping(jobs, "public-cdn")["needs"])
         assertEquals(listOf("build", "public-cdn"), mapping(jobs, "edge-channel")["needs"])
         assertEquals(
@@ -561,14 +569,23 @@ class AutomationContractTest {
                 name,
             )
             assertEquals(
-                if (name == "build") mapOf("contents" to "read", "packages" to "read")
-                else mapOf("contents" to "read"),
+                when (name) {
+                    "build" -> mapOf("contents" to "read", "packages" to "read")
+                    "wait-for-ci" -> mapOf("actions" to "read")
+                    else -> mapOf("contents" to "read")
+                },
                 mapping(job, "permissions"),
                 name,
             )
         }
         val steps = jobs.mapValues { steps(mapping(it.value)) }
         steps.forEach { (name, jobSteps) ->
+            if (name == "wait-for-ci") {
+                assertTrue(actionSteps(jobSteps, "actions/checkout@v7").isEmpty(), name)
+                assertTrue(actionSteps(jobSteps, "actions/setup-node@v5").isEmpty(), name)
+                assertNoDestructiveCommands(jobSteps)
+                return@forEach
+            }
             val checkouts = actionSteps(jobSteps, "actions/checkout@v7")
             assertEquals(
                 mapOf("ref" to githubSha, "fetch-depth" to 1, "persist-credentials" to false),
@@ -628,6 +645,13 @@ class AutomationContractTest {
                 "retention-days" to 1,
             ),
             mapping(stepByName(steps.getValue("build"), "Upload raw Edge PackSet"), "with"),
+        )
+        assertEquals(
+            waitForCiScript,
+            scalar(
+                stepByName(steps.getValue("wait-for-ci"), "Wait for CI verify on this commit"),
+                "run",
+            ),
         )
         assertEquals(
             "node release-tools/src/prepare-edge.mjs --manifest \"\$RUNNER_TEMP/raw-edge/manifest.json\" --release-directory \"\$RUNNER_TEMP/raw-edge\" --output-directory \"\$RUNNER_TEMP/prepared-edge\" --bucket '${'$'}{{ secrets.R2_BUCKET }}' --endpoint '${'$'}{{ secrets.R2_ENDPOINT }}' --access-key '${'$'}{{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${'$'}{{ secrets.R2_SECRET_ACCESS_KEY }}'",
@@ -1099,6 +1123,29 @@ class AutomationContractTest {
             }
         return source.removeRange(start, end)
     }
+
+    private val waitForCiScript =
+        listOf(
+                "set -euo pipefail",
+                "deadline=\$((SECONDS + 3600))",
+                "while (( SECONDS < deadline )); do",
+                "  payload=\"\$(gh api \"repos/\${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=\${GITHUB_SHA}&event=push&per_page=1\")\"",
+                "  status=\"\$(printf '%s' \"\$payload\" | jq -r '.workflow_runs[0].status // empty')\"",
+                "  conclusion=\"\$(printf '%s' \"\$payload\" | jq -r '.workflow_runs[0].conclusion // empty')\"",
+                "  if [[ \"\$status\" == \"completed\" ]]; then",
+                "    if [[ \"\$conclusion\" == \"success\" ]]; then",
+                "      echo \"CI verify succeeded on \${GITHUB_SHA}\"",
+                "      exit 0",
+                "    fi",
+                "    echo \"CI verify finished with conclusion=\${conclusion}\" >&2",
+                "    exit 1",
+                "  fi",
+                "  sleep 30",
+                "done",
+                "echo \"Timed out waiting for CI verify on \${GITHUB_SHA}\" >&2",
+                "exit 1",
+            )
+            .joinToString("\n")
 
     private val ciInspectionScript =
         listOf(
