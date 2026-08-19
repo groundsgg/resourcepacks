@@ -66,7 +66,8 @@ newer runs can advance it and stale runs fail closed. The public CDN check has n
 credentials.
 
 An exact push to `main` also creates an Edge build. Its version is
-`0.0.0-edge.<github.run_number>.g<first-12-commit-hex>` and its raw build is deterministic.
+`0.0.0-edge.<github.run_number>.g<first-12-commit-hex>`. CI verifies PackSet determinism on every
+pull request; Edge publishes one raw build from the current commit.
 The protected `edge` environment alone receives R2 credentials. It validates the previous
 `channels/edge.json` pointer and its immutable manifest before reusing a content or platform URL;
 reuse requires exact SHA-1, SHA-256, and size equality. Otherwise the changed pack is published

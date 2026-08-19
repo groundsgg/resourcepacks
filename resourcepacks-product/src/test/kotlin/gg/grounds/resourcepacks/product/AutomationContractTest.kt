@@ -46,7 +46,7 @@ class AutomationContractTest {
         val edge = workflowSource("edge.yml")
 
         listOf(
-                removeStep(edge, "Build raw current-commit PackSet two"),
+                removeStep(edge, "Build raw current-commit PackSet"),
                 replaceFirstOf(edge, "name: prepared-edge-packset", "name: wrong-prepared-edge", 3),
                 replaceOnce(
                     edge,
@@ -121,17 +121,22 @@ class AutomationContractTest {
                     "        run: ./gradlew --no-build-cache clean build -PpackSetVersion='\${{ steps.version.outputs.value }}'\n",
             )
         assertFails { assertCi(parseText(restoredSecondCleanBuild)) }
-        val edgePackSetTwoWithTests =
+        val restoredSecondEdgePackSet =
             replaceOnce(
                 edge,
-                "      - name: Build raw current-commit PackSet two\n" +
-                    "        working-directory: run2/src\n" +
+                "      - name: Build raw current-commit PackSet\n" +
                     "        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet",
-                "      - name: Build raw current-commit PackSet two\n" +
-                    "        working-directory: run2/src\n" +
-                    "        run: ./gradlew --no-build-cache clean build :resourcepacks-product:buildPackSet",
+                "      - name: Build raw current-commit PackSet\n" +
+                    "        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet" +
+                    " -PpackSetVersion='\${{ steps.edge.outputs.version }}'" +
+                    " -PprovenanceCommit='\${{ steps.edge.outputs.commit }}'" +
+                    " -PpublicationType=build" +
+                    " -PpublicationId='\${{ steps.edge.outputs.commit }}'" +
+                    " -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge\"\n" +
+                    "      - name: Build raw current-commit PackSet two\n" +
+                    "        run: ./gradlew --no-build-cache :resourcepacks-product:buildPackSet",
             )
-        assertFails { assertEdge(parseText(edgePackSetTwoWithTests)) }
+        assertFails { assertEdge(parseText(restoredSecondEdgePackSet)) }
         val releaseWithoutBuildPackageRead = replaceOnce(release, "      packages: read\n", "")
         assertFails { assertRelease(parseText(releaseWithoutBuildPackageRead)) }
         val missingContractPublication =
@@ -565,37 +570,16 @@ class AutomationContractTest {
         val steps = jobs.mapValues { steps(mapping(it.value)) }
         steps.forEach { (name, jobSteps) ->
             val checkouts = actionSteps(jobSteps, "actions/checkout@v7")
-            if (name == "build") {
-                assertEquals(
-                    setOf(
-                        mapOf(
-                            "ref" to githubSha,
-                            "fetch-depth" to 1,
-                            "persist-credentials" to false,
-                            "path" to "run1/src",
-                        ),
-                        mapOf(
-                            "ref" to githubSha,
-                            "fetch-depth" to 1,
-                            "persist-credentials" to false,
-                            "path" to "run2/src",
-                        ),
-                    ),
-                    checkouts.map { mapping(it, "with") }.toSet(),
-                )
-            } else
-                assertEquals(
-                    mapOf("ref" to githubSha, "fetch-depth" to 1, "persist-credentials" to false),
-                    mapping(checkouts.single(), "with"),
-                    name,
-                )
+            assertEquals(
+                mapOf("ref" to githubSha, "fetch-depth" to 1, "persist-credentials" to false),
+                mapping(checkouts.single(), "with"),
+                name,
+            )
             assertEquals(
                 mapOf(
                     "node-version" to "24",
                     "cache" to "npm",
-                    "cache-dependency-path" to
-                        if (name == "build") "run1/src/release-tools/package-lock.json"
-                        else "release-tools/package-lock.json",
+                    "cache-dependency-path" to "release-tools/package-lock.json",
                 ),
                 mapping(actionSteps(jobSteps, "actions/setup-node@v5").single(), "with"),
                 name,
@@ -619,7 +603,7 @@ class AutomationContractTest {
                     steps.getValue("build"),
                     "Run Node release-tool tests twice and audit dependencies",
                 ),
-                "run1/src/release-tools",
+                "release-tools",
             ),
         )
         assertEquals(
@@ -628,37 +612,18 @@ class AutomationContractTest {
                 "-PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' " +
                 "-PpublicationType=build " +
                 "-PpublicationId='${'$'}{{ steps.edge.outputs.commit }}'",
-            run(
-                stepByName(steps.getValue("build"), "Build clean deterministic checkout"),
-                "run1/src",
-            ),
+            scalar(stepByName(steps.getValue("build"), "Build clean deterministic checkout"), "run"),
         )
         assertEquals(
-            "./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-one\"",
-            run(
-                stepByName(steps.getValue("build"), "Build raw current-commit PackSet one"),
-                "run1/src",
-            ),
-        )
-        assertEquals(
-            "./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge-two\"",
-            run(
-                stepByName(steps.getValue("build"), "Build raw current-commit PackSet two"),
-                "run2/src",
-            ),
+            "./gradlew --no-build-cache :resourcepacks-product:buildPackSet -PpackSetVersion='${'$'}{{ steps.edge.outputs.version }}' -PprovenanceCommit='${'$'}{{ steps.edge.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ steps.edge.outputs.commit }}' -PreleaseOutput=\"\$RUNNER_TEMP/raw-edge\"",
+            scalar(stepByName(steps.getValue("build"), "Build raw current-commit PackSet"), "run"),
         )
         assertEquals(1, runScripts(steps.getValue("build")).count { it.contains("clean build") })
-        assertEquals(
-            "diff --no-dereference -r \"\$RUNNER_TEMP/raw-edge-one\" \"\$RUNNER_TEMP/raw-edge-two\"",
-            scalar(
-                stepByName(steps.getValue("build"), "Compare deterministic raw Edge PackSets"),
-                "run",
-            ),
-        )
+        assertEquals(1, runScripts(steps.getValue("build")).count { it.contains("buildPackSet") })
         assertEquals(
             mapOf(
                 "name" to "raw-edge-packset",
-                "path" to "${'$'}{{ runner.temp }}/raw-edge-one",
+                "path" to "${'$'}{{ runner.temp }}/raw-edge",
                 "if-no-files-found" to "error",
                 "retention-days" to 1,
             ),
