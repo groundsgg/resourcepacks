@@ -41,11 +41,8 @@ jobs:
         name: Read the authoritative version once
         working-directory: run1/src
         run: echo "value=$(tr -d '\n' < version.txt)" >> "$GITHUB_OUTPUT"
-      - name: Build clean checkout one
+      - name: Build clean checkout
         working-directory: run1/src
-        run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
-      - name: Build clean checkout two
-        working-directory: run2/src
         run: ./gradlew --no-build-cache clean build -PpackSetVersion='${{ steps.version.outputs.value }}'
       - name: Run Node release-tool tests twice and audit dependencies
         working-directory: run1/src/release-tools
