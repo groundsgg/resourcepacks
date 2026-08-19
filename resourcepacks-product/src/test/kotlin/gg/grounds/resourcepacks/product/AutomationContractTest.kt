@@ -70,7 +70,7 @@ class AutomationContractTest {
                     "  edge-channel:\n    needs: [build, public-cdn]\n",
                     "  edge-channel:\n    needs: [build]\n",
                 ),
-                replaceFirstOf(edge, "environment: Edge/Stage", "environment: production", 2),
+                replaceFirstOf(edge, "environment: edge", "environment: production", 2),
                 replaceFirstOf(
                     edge,
                     "      contents: read\n    steps:\n      - uses: actions/checkout@v7",
@@ -551,7 +551,7 @@ class AutomationContractTest {
             val job = mapping(raw)
             assertEquals("ubuntu-24.04", scalar(job, "runs-on"), name)
             assertEquals(
-                if (name == "publish" || name == "edge-channel") "Edge/Stage" else null,
+                if (name == "publish" || name == "edge-channel") "edge" else null,
                 job["environment"],
                 name,
             )
@@ -977,6 +977,7 @@ class AutomationContractTest {
                 "resourcepacks/packsets/grounds-global/releases/v<version>/",
                 "channels/stable.json",
                 "channels/edge.json",
+                "The protected `edge` environment",
                 "## Out of scope",
                 "does not activate a PackSet in Config Service",
             )
