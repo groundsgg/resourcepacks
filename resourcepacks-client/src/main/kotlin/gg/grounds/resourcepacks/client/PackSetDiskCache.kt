@@ -90,9 +90,9 @@ private constructor(
                 staging.resolve("metadata.properties"),
                 metadataBytes(source, fingerprint, cache, channel, manifest),
             )
-            directorySync(staging)
+            syncDirectory(staging)
             moveAtomically(staging, target, replace = false)
-            directorySync(generations)
+            syncDirectory(generations)
         }
         require(directory(target))
         validateGeneration(source, target, fingerprint, Int.MAX_VALUE, Int.MAX_VALUE)
@@ -101,7 +101,7 @@ private constructor(
         val pointer = sourceDirectory.resolve(".current-${UUID.randomUUID()}")
         writeNew(pointer, "$fingerprint\n".encodeToByteArray())
         moveAtomically(pointer, current, replace = true)
-        directorySync(sourceDirectory)
+        syncDirectory(sourceDirectory)
     }
 
     private fun sourceDirectory(source: PackSetSource, create: Boolean): Path? {
@@ -109,7 +109,7 @@ private constructor(
             require(directory(root))
         } else if (create) {
             Files.createDirectory(root)
-            directorySync(root.toAbsolutePath().parent)
+            syncDirectory(root.toAbsolutePath().parent)
         } else return null
         require(directory(root))
         requireRootEntries()
@@ -118,7 +118,7 @@ private constructor(
             require(directory(sourceDirectory))
         } else if (create) {
             Files.createDirectory(sourceDirectory)
-            directorySync(root)
+            syncDirectory(root)
         } else return null
         require(directory(sourceDirectory))
         return sourceDirectory
@@ -165,6 +165,16 @@ private constructor(
     private fun createDirectory(path: Path) {
         if (!Files.exists(path, NOFOLLOW_LINKS)) Files.createDirectory(path)
         require(directory(path))
+    }
+
+    private fun syncDirectory(path: Path) {
+        try {
+            directorySync(path)
+        } catch (failure: java.io.IOException) {
+            throw IllegalStateException(DIRECTORY_SYNC_FAILURE, failure)
+        } catch (failure: RuntimeException) {
+            throw IllegalStateException(DIRECTORY_SYNC_FAILURE, failure)
+        }
     }
 
     private fun directory(path: Path): Boolean =
@@ -284,6 +294,8 @@ private constructor(
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private companion object {
+        const val DIRECTORY_SYNC_FAILURE = "Cache directory sync failed."
+
         fun forceDirectoryDefault(directory: Path) {
             FileChannel.open(directory, setOf(READ, NOFOLLOW_LINKS)).use { it.force(true) }
         }

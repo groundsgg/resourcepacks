@@ -300,6 +300,15 @@ class PackSetClient(
                     drain = drain || published.drainEvents
                     if (!published.accepted) stale(future, drain)
                     else complete(future, result, generation, drain)
+                } catch (failure: IllegalStateException) {
+                    failed(
+                        refreshSource,
+                        generation,
+                        future,
+                        failure.message?.takeIf { it == "Cache directory sync failed." }
+                            ?: "Cache write failed.",
+                        drain,
+                    )
                 } catch (_: java.io.IOException) {
                     failed(refreshSource, generation, future, "Cache write failed.", drain)
                 } catch (_: RuntimeException) {

@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.client
 
 import gg.grounds.resourcepacks.contract.PackSetChannel
+import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -13,6 +14,21 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PackSetDiskCacheTest {
+    @Test
+    fun `directory synchronization failure has a controlled diagnostic`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val disk = diskCacheWithDirectorySync(directory) { throw IOException("synthetic") }
+
+            val failure =
+                assertFailsWith<IllegalStateException> { disk.store(source(), resolverCache()) }
+
+            assertEquals("Cache directory sync failed.", failure.message)
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
     // Break caught: accepting a truncated current pointer could activate an arbitrary generation.
     @Test
     fun `truncated current pointer fails closed`() {
