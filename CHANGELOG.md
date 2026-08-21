@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/groundsgg/resourcepacks/compare/v0.3.0...v0.3.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* diagnose cache directory sync failures ([#14](https://github.com/groundsgg/resourcepacks/issues/14)) ([6e21769](https://github.com/groundsgg/resourcepacks/commit/6e2176974fadf7f1b6ea0c47095998dadb34fe2c))
+
 ## [0.3.0](https://github.com/groundsgg/resourcepacks/compare/v0.2.0...v0.3.0) (2026-08-17)
 
 
