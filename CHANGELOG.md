@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/groundsgg/resourcepacks/compare/v0.3.1...v0.4.0) (2026-08-21)
+
+
+### Features
+
+* use Grounds logo as pack icon ([#17](https://github.com/groundsgg/resourcepacks/issues/17)) ([c6fa2fd](https://github.com/groundsgg/resourcepacks/commit/c6fa2fd503cfb34090114ef36fb35b5e4c92c14a))
+
 ## [0.3.1](https://github.com/groundsgg/resourcepacks/compare/v0.3.0...v0.3.1) (2026-08-21)
 
 
