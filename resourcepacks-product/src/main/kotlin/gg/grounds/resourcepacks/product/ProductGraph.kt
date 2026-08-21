@@ -55,6 +55,16 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
+            val packIcon =
+                HeldSourceFile.capture(art.resolve(PACK_ICON_SOURCE), PACK_ICON_ARTWORK.size)
+            if (
+                packIcon.digests.size != PACK_ICON_ARTWORK.size ||
+                    packIcon.digests.sha256 != PACK_ICON_ARTWORK.sha256
+            ) {
+                packIcon.close()
+                throw java.io.IOException("Product artwork hash mismatch: $PACK_ICON_SOURCE")
+            }
+            held[PACK_ICON_SOURCE] = packIcon
             held[PLATFORM_LICENSE_SOURCE] =
                 HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
             held[CONTENT_LICENSE_SOURCE] =
@@ -65,9 +75,7 @@ internal object ProductGraph {
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
             val icon =
                 ByteArrayEntrySource(
-                    held
-                        .getValue(PACK_ICON_SOURCE)
-                        .readBytes(PLATFORM_ARTWORK.getValue(PACK_ICON_SOURCE).size)
+                    held.getValue(PACK_ICON_SOURCE).readBytes(PACK_ICON_ARTWORK.size)
                 )
             return SecureSourceInputs.captureWithHeld(
                     createPacks(contribution, icon, held.getValue(CONTENT_LICENSE_SOURCE)),
@@ -196,11 +204,17 @@ internal object ProductGraph {
     private const val MAX_ARTWORK_BYTES = 4L * 1024
     private const val MAX_MATERIALIZED_ARTWORK_BYTES = 1024L * 1024
     private const val MAX_LICENSE_BYTES = 16L * 1024
-    private const val PACK_ICON_SOURCE = "frames/hover.png"
+    private const val PACK_ICON_SOURCE = "pack.png"
     private const val CONTENT_LICENSE_ENTRY = "assets/grounds/legal/content.txt"
     private const val PLATFORM_LICENSE_ENTRY = "assets/grounds/legal/platform.txt"
     private const val PLATFORM_LICENSE_SOURCE = "platform-license"
     private const val CONTENT_LICENSE_SOURCE = "content-license"
+
+    private val PACK_ICON_ARTWORK =
+        ArtworkExpectation(
+            32_575,
+            "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a",
+        )
 
     private val PLATFORM_ARTWORK =
         linkedMapOf(
