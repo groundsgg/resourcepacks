@@ -246,7 +246,8 @@ class ThemeAssetContractTest {
                 "tooltips/default_frame.png",
                 "frames/hover.png",
             )
-        val EXPECTED_PLATFORM_FILES = ART_FILES.toSet() + setOf("ASSET_ORIGINS.json", "LICENSE")
+        val EXPECTED_PLATFORM_FILES =
+            ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
         val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames")
         val APPROVED_ORIGINS =
             mapOf(

@@ -44,7 +44,7 @@ class PackArtworkLicenseContractTest {
     }
 
     @Test
-    fun `asset origins only name first-party library-gui example art`() {
+    fun `asset origins name approved first-party art`() {
         val manifest = Files.readString(root.resolve("art/platform/ASSET_ORIGINS.json"))
         val sources =
             Regex(""""source"\s*:\s*"([^"]+)"""")
@@ -55,7 +55,7 @@ class PackArtworkLicenseContractTest {
         sources.forEach { source ->
             assertTrue(
                 source.startsWith(FIRST_PARTY_SOURCE_PREFIX),
-                "Origin $source is not first-party library-gui art",
+                "Origin $source is not approved first-party art",
             )
             assertFalse(
                 source.contains("mcmodels", ignoreCase = true),
@@ -143,6 +143,7 @@ class PackArtworkLicenseContractTest {
             )
         val APPROVED_PLATFORM_IMAGES =
             setOf(
+                "art/platform/pack.png",
                 "art/platform/frames/hover.png",
                 "art/platform/icons/back.png",
                 "art/platform/icons/blank.png",

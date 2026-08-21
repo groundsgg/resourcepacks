@@ -57,6 +57,6 @@ class PackIconTest {
     private companion object {
         val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
         const val APPROVED_ICON_SHA256 =
-            "73460b5b00c8d5f984dd274c8852c44dd05f8819679691f92e624f8ada3e9a31"
+            "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a"
     }
 }

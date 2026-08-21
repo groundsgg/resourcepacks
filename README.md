@@ -44,7 +44,7 @@ URLs. Two fresh builds with identical explicit inputs must compare byte-for-byte
 
 Publish and consume the catalog as `gg.grounds:resourcepacks-catalog:<packSetVersion>` on JVM 25. Its exact public owner boundary is `GroundsGuiIds`, `GroundsGuiTheme`, `GroundsAssets`, and `GroundsAssetCatalog`; it contains declarations and metadata only, never the ZIP bytes or a runtime delivery client. `GroundsGuiIds` provides the approved theme identifier constants so consumers do not duplicate string literals.
 
-The platform pack reuses the approved first-party `art/platform/frames/hover.png` bytes as its visible, square `pack.png`. The artwork is captured through the same held, no-follow source pipeline as the Theme assets and is never reread from an ordinary mutable path during a release build.
+The platform pack uses the approved first-party Grounds brand icon at `art/platform/pack.png` as its visible, square `pack.png`. The artwork is captured through the same held, no-follow source pipeline as the Theme assets and is never reread from an ordinary mutable path during a release build.
 
 ## Release automation
 
