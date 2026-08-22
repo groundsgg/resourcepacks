@@ -255,7 +255,7 @@ class PackSetBuilderTest {
         }
     }
 
-    // Break caught: shipped packs must identify their role and exact build in Minecraft's pack UI.
+    // Break caught: the client already renders the world-resource header above this description.
     @Test
     fun `build writes branded role and build descriptions into delivered packs`() {
         val parent = Files.createTempDirectory("packset-description-")
@@ -264,12 +264,12 @@ class PackSetBuilderTest {
             val artifacts = PackSetBuilder.build(ReleaseTestContext.inputs(output), catalogJar())
 
             assertEquals(
-                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§fWorld Specific Resources\n§6Grounds Network\n§fPack » §eContent §7(${ReleaseTestContext.version})"}}""" +
+                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§6Grounds Network\n§fPack » §eContent §7(${ReleaseTestContext.version})"}}""" +
                     "\n",
                 packMetadata(artifacts.content.file),
             )
             assertEquals(
-                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§fWorld Specific Resources\n§6Grounds Network\n§fPack » §ePlatform §7(${ReleaseTestContext.version})"}}""" +
+                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§6Grounds Network\n§fPack » §ePlatform §7(${ReleaseTestContext.version})"}}""" +
                     "\n",
                 packMetadata(artifacts.platform.file),
             )
