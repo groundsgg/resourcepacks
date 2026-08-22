@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/groundsgg/resourcepacks/compare/v0.5.0...v0.5.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* remove duplicate pack description header ([#21](https://github.com/groundsgg/resourcepacks/issues/21)) ([23292f3](https://github.com/groundsgg/resourcepacks/commit/23292f349b14ad5d31471ab22b877be99f70c448))
+
 ## [0.5.0](https://github.com/groundsgg/resourcepacks/compare/v0.4.0...v0.5.0) (2026-08-22)
 
 
