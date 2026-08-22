@@ -135,9 +135,7 @@ internal object ProductGraph {
         )
 
     private fun packDescription(role: String): String =
-        "§fWorld Specific Resources\n" +
-            "§6Grounds Network\n" +
-            "§fPack » §e$role §7(${GroundsAssetCatalog.catalog.version})"
+        "§6Grounds Network\n" + "§fPack » §e$role §7(${GroundsAssetCatalog.catalog.version})"
 
     /** Materializes library-gui from immutable bytes, never from mutable source paths. */
     private fun immutableThemeContribution(sources: Map<String, HeldSourceFile>): PackContribution {
