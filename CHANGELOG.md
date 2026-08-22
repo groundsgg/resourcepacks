@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/groundsgg/resourcepacks/compare/v0.4.0...v0.5.0) (2026-08-22)
+
+
+### Features
+
+* brand resourcepack descriptions ([#19](https://github.com/groundsgg/resourcepacks/issues/19)) ([28ee238](https://github.com/groundsgg/resourcepacks/commit/28ee2386dfa7f1c2e97424970f2a034b4a6f7abf))
+
 ## [0.4.0](https://github.com/groundsgg/resourcepacks/compare/v0.3.1...v0.4.0) (2026-08-21)
 
 
