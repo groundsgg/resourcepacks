@@ -8,6 +8,7 @@ import gg.grounds.resourcepack.api.PackEntry
 import gg.grounds.resourcepack.api.PackEntrySource
 import gg.grounds.resourcepack.api.PackPolicy
 import gg.grounds.resourcepack.api.VanillaPathPolicy
+import gg.grounds.resourcepacks.catalog.GroundsAssetCatalog
 import gg.grounds.resourcepacks.catalog.GroundsGuiTheme
 import java.nio.file.Files
 import java.nio.file.Path
@@ -108,7 +109,7 @@ internal object ProductGraph {
                 required = true,
                 definition =
                     PackDefinition(
-                        "Grounds content",
+                        packDescription("Content"),
                         PackSetConstants.packFormat,
                         null,
                         PackPolicy(VanillaPathPolicy.FORBID, PackSetConstants.contentLimits),
@@ -124,7 +125,7 @@ internal object ProductGraph {
                 required = true,
                 definition =
                     PackDefinition(
-                        "Grounds platform",
+                        packDescription("Platform"),
                         PackSetConstants.packFormat,
                         packIcon,
                         PackPolicy(VanillaPathPolicy.ALLOW_CLAIMED, PackSetConstants.platformLimits),
@@ -132,6 +133,11 @@ internal object ProductGraph {
                 contributions = listOf(platformContribution),
             ),
         )
+
+    private fun packDescription(role: String): String =
+        "§fWorld Specific Resources\n" +
+            "§6Grounds Network\n" +
+            "§fPack » §e$role §7(${GroundsAssetCatalog.catalog.version})"
 
     /** Materializes library-gui from immutable bytes, never from mutable source paths. */
     private fun immutableThemeContribution(sources: Map<String, HeldSourceFile>): PackContribution {

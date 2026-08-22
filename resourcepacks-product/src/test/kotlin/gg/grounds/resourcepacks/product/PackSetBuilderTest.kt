@@ -13,6 +13,7 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
@@ -254,6 +255,29 @@ class PackSetBuilderTest {
         }
     }
 
+    // Break caught: shipped packs must identify their role and exact build in Minecraft's pack UI.
+    @Test
+    fun `build writes branded role and build descriptions into delivered packs`() {
+        val parent = Files.createTempDirectory("packset-description-")
+        val output = parent.resolve("release")
+        try {
+            val artifacts = PackSetBuilder.build(ReleaseTestContext.inputs(output), catalogJar())
+
+            assertEquals(
+                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§fWorld Specific Resources\n§6Grounds Network\n§fPack » §eContent §7(${ReleaseTestContext.version})"}}""" +
+                    "\n",
+                packMetadata(artifacts.content.file),
+            )
+            assertEquals(
+                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§fWorld Specific Resources\n§6Grounds Network\n§fPack » §ePlatform §7(${ReleaseTestContext.version})"}}""" +
+                    "\n",
+                packMetadata(artifacts.platform.file),
+            )
+        } finally {
+            parent.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun `build rejects wrong explicit provenance before creating output`() {
         val parent = Files.createTempDirectory("packset-builder-invalid-")
@@ -397,6 +421,11 @@ class PackSetBuilderTest {
 }
 
 private fun catalogJar(): java.nio.file.Path = ReleaseTestContext.catalogJar
+
+private fun packMetadata(archive: Path): String =
+    ZipFile(archive.toFile()).use { zip ->
+        zip.getInputStream(requireNotNull(zip.getEntry("pack.mcmeta"))).bufferedReader().readText()
+    }
 
 private fun repositoryRoot(): Path =
     generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
