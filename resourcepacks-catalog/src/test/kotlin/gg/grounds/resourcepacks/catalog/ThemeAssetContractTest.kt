@@ -114,6 +114,25 @@ class ThemeAssetContractTest {
     }
 
     @Test
+    fun `tab logo is 64 px tall rgba with visible pixels`() {
+        val image = readImage("tab/logo.png")
+        assertEquals(64, image.height)
+        assertTrue(image.width > 64)
+        assertTrue(image.pixels().any { it ushr 24 != 0 })
+    }
+
+    @Test
+    fun `tab badge slices are 8 px tall and fully opaque`() {
+        assertImage("tab/badge_left.png", 3, 8, hasOpaquePixel = true)
+        assertImage("tab/badge_middle.png", 1, 8, hasOpaquePixel = true)
+        assertImage("tab/badge_right.png", 3, 8, hasOpaquePixel = true)
+        listOf("tab/badge_left.png", "tab/badge_middle.png", "tab/badge_right.png").forEach { path
+            ->
+            assertTrue(readImage(path).pixels().all { it ushr 24 == 0xFF }, path)
+        }
+    }
+
+    @Test
     fun `theme materializes with precisely its hover shader capability`() {
         val contribution = GroundsGuiTheme.theme.toPackContribution(platformArt)
 
@@ -245,10 +264,14 @@ class ThemeAssetContractTest {
                 "tooltips/default_bg.png",
                 "tooltips/default_frame.png",
                 "frames/hover.png",
+                "tab/logo.png",
+                "tab/badge_left.png",
+                "tab/badge_middle.png",
+                "tab/badge_right.png",
             )
         val EXPECTED_PLATFORM_FILES =
             ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
-        val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames")
+        val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames", "tab")
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
@@ -300,6 +323,20 @@ class ThemeAssetContractTest {
     "tooltips/default_frame.png": {
       "source": "library-gui/examples/theme-demo/art/tooltips/steel_frame.png",
       "sha256": "a1c5355ab5945428d821a62a0eab7948f04443c7622e1fbd96ea67776e6da966"
+    }
+  },
+  "firstPartyOriginals": {
+    "tab/logo.png": {
+      "source": "brand/logo-text-noglow.png"
+    },
+    "tab/badge_left.png": {
+      "source": "original"
+    },
+    "tab/badge_middle.png": {
+      "source": "original"
+    },
+    "tab/badge_right.png": {
+      "source": "original"
     }
   }
 }
