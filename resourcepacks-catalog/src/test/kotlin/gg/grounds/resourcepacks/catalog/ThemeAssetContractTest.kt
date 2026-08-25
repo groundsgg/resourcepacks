@@ -126,7 +126,8 @@ class ThemeAssetContractTest {
         assertImage("tab/badge_left.png", 3, 8, hasOpaquePixel = true)
         assertImage("tab/badge_middle.png", 1, 8, hasOpaquePixel = true)
         assertImage("tab/badge_right.png", 3, 8, hasOpaquePixel = true)
-        listOf("tab/badge_left.png", "tab/badge_middle.png", "tab/badge_right.png").forEach { path ->
+        listOf("tab/badge_left.png", "tab/badge_middle.png", "tab/badge_right.png").forEach { path
+            ->
             assertTrue(readImage(path).pixels().all { it ushr 24 == 0xFF }, path)
         }
     }
