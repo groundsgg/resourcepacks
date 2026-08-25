@@ -256,8 +256,8 @@ internal object ProductGraph {
         linkedMapOf(
             "tab/logo.png" to
                 ArtworkExpectation(
-                    49_762,
-                    "fd94b0febe2eacea34609e00c6b4860f798d05fe9b481597fc5a8553fcc666f1",
+                    35_236,
+                    "6bbed2d5cceb0c34392d5fca7dbdc7257f989c0fd451e8ef240217de8189a7ae",
                 ),
             "tab/badge_left.png" to
                 ArtworkExpectation(
