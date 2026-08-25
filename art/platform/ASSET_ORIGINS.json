@@ -20,5 +20,19 @@
       "source": "library-gui/examples/theme-demo/art/tooltips/steel_frame.png",
       "sha256": "a1c5355ab5945428d821a62a0eab7948f04443c7622e1fbd96ea67776e6da966"
     }
+  },
+  "firstPartyOriginals": {
+    "tab/logo.png": {
+      "source": "brand/logo-text-noglow.png"
+    },
+    "tab/badge_left.png": {
+      "source": "original"
+    },
+    "tab/badge_middle.png": {
+      "source": "original"
+    },
+    "tab/badge_right.png": {
+      "source": "original"
+    }
   }
 }

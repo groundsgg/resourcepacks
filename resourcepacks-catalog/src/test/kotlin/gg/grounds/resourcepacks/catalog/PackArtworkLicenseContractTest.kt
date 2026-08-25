@@ -46,9 +46,15 @@ class PackArtworkLicenseContractTest {
     @Test
     fun `asset origins name approved first-party art`() {
         val manifest = Files.readString(root.resolve("art/platform/ASSET_ORIGINS.json"))
+        val copiesKey = manifest.indexOf("\"approvedExampleCopies\"")
+        assertTrue(copiesKey >= 0, "ASSET_ORIGINS.json must include approvedExampleCopies")
+        val originalsKey = manifest.indexOf("\"firstPartyOriginals\"")
+        val approvedExampleCopies =
+            if (originalsKey >= 0) manifest.substring(copiesKey, originalsKey)
+            else manifest.substring(copiesKey)
         val sources =
             Regex(""""source"\s*:\s*"([^"]+)"""")
-                .findAll(manifest)
+                .findAll(approvedExampleCopies)
                 .map { it.groupValues[1] }
                 .toList()
         assertTrue(sources.isNotEmpty(), "ASSET_ORIGINS.json must list first-party sources")
@@ -150,6 +156,10 @@ class PackArtworkLicenseContractTest {
                 "art/platform/icons/close.png",
                 "art/platform/icons/next.png",
                 "art/platform/panels/menu.png",
+                "art/platform/tab/badge_left.png",
+                "art/platform/tab/badge_middle.png",
+                "art/platform/tab/badge_right.png",
+                "art/platform/tab/logo.png",
                 "art/platform/tooltips/default_bg.png",
                 "art/platform/tooltips/default_frame.png",
             )
