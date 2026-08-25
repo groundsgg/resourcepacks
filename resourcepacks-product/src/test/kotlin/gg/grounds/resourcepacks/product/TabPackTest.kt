@@ -18,10 +18,11 @@ class TabPackTest {
                         built.single { it.pack.role == PackRole.PLATFORM }.scratchFile
                     )
                 ZipFile(zipPath.toFile()).use { zip ->
-                    TAB_PATHS.forEach { path ->
-                        assertNotNull(zip.getEntry(path), path)
-                    }
-                    val font = zip.getInputStream(zip.getEntry("assets/grounds/font/tab.json")).reader().readText()
+                    TAB_PATHS.forEach { path -> assertNotNull(zip.getEntry(path), path) }
+                    val font =
+                        zip.getInputStream(zip.getEntry("assets/grounds/font/tab.json"))
+                            .reader()
+                            .readText()
                     assertTrue("\"file\":\"grounds:font/tab_logo.png\"" in font, font)
                     assertTrue("\\uE000" in font || "\uE000" in font, font)
                 }

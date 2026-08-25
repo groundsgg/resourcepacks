@@ -172,7 +172,9 @@ internal object ProductGraph {
             requires,
         )
 
-    private fun PackContribution.withTabArtwork(held: Map<String, HeldSourceFile>): PackContribution {
+    private fun PackContribution.withTabArtwork(
+        held: Map<String, HeldSourceFile>
+    ): PackContribution {
         val extra =
             TAB_PACK_PATHS.map { (relative, packPath) ->
                 PackEntry.bytes(
