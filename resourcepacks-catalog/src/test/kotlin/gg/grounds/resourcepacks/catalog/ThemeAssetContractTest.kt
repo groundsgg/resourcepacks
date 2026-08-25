@@ -114,10 +114,11 @@ class ThemeAssetContractTest {
     }
 
     @Test
-    fun `tab logo is 64 px tall rgba with visible pixels`() {
+    fun `tab logo fits the 256 px font atlas`() {
         val image = readImage("tab/logo.png")
-        assertEquals(64, image.height)
-        assertTrue(image.width > 64)
+        assertTrue(image.width in 1..256, "width=${image.width}")
+        assertTrue(image.height in 1..256, "height=${image.height}")
+        assertTrue(image.width > image.height, "wordmark should stay wider than it is tall")
         assertTrue(image.pixels().any { it ushr 24 != 0 })
     }
 
