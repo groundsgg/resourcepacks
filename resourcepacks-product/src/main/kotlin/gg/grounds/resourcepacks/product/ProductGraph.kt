@@ -66,6 +66,16 @@ internal object ProductGraph {
                 throw java.io.IOException("Product artwork hash mismatch: $PACK_ICON_SOURCE")
             }
             held[PACK_ICON_SOURCE] = packIcon
+            TAB_ARTWORK.forEach { (relative, expected) ->
+                val source = HeldSourceFile.capture(art.resolve(relative), MAX_TAB_ARTWORK_BYTES)
+                if (
+                    source.digests.size != expected.size || source.digests.sha256 != expected.sha256
+                ) {
+                    source.close()
+                    throw java.io.IOException("Product artwork hash mismatch: $relative")
+                }
+                held[relative] = source
+            }
             held[PLATFORM_LICENSE_SOURCE] =
                 HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
             held[CONTENT_LICENSE_SOURCE] =
@@ -74,6 +84,7 @@ internal object ProductGraph {
             val contribution =
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
+                    .withTabArtwork(held)
             val icon =
                 ByteArrayEntrySource(
                     held.getValue(PACK_ICON_SOURCE).readBytes(PACK_ICON_ARTWORK.size)
@@ -161,6 +172,24 @@ internal object ProductGraph {
             requires,
         )
 
+    private fun PackContribution.withTabArtwork(held: Map<String, HeldSourceFile>): PackContribution {
+        val extra =
+            TAB_PACK_PATHS.map { (relative, packPath) ->
+                PackEntry.bytes(
+                    packPath,
+                    held.getValue(relative).readBytes(TAB_ARTWORK.getValue(relative).size),
+                )
+            } + PackEntry.text("assets/grounds/font/tab.json", TabFont.json())
+        return PackContribution(
+            id,
+            supportedFormats,
+            entries + extra,
+            vanillaClaims,
+            provides,
+            requires,
+        )
+    }
+
     private fun PackContribution.withImmutableSources(): PackContribution =
         PackContribution(
             id,
@@ -206,6 +235,7 @@ internal object ProductGraph {
     private data class ArtworkExpectation(val size: Long, val sha256: String)
 
     private const val MAX_ARTWORK_BYTES = 4L * 1024
+    private const val MAX_TAB_ARTWORK_BYTES = 256L * 1024
     private const val MAX_MATERIALIZED_ARTWORK_BYTES = 1024L * 1024
     private const val MAX_LICENSE_BYTES = 16L * 1024
     private const val PACK_ICON_SOURCE = "pack.png"
@@ -218,6 +248,38 @@ internal object ProductGraph {
         ArtworkExpectation(
             32_575,
             "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a",
+        )
+
+    private val TAB_ARTWORK =
+        linkedMapOf(
+            "tab/logo.png" to
+                ArtworkExpectation(
+                    49_762,
+                    "fd94b0febe2eacea34609e00c6b4860f798d05fe9b481597fc5a8553fcc666f1",
+                ),
+            "tab/badge_left.png" to
+                ArtworkExpectation(
+                    85,
+                    "62d9bea27a1ce0452d1308f26ebdb259f8ebdec036a87db4476fe92c72fcce0d",
+                ),
+            "tab/badge_middle.png" to
+                ArtworkExpectation(
+                    81,
+                    "7a2c1ae0457ac9ddfd76a4b9b9ae985c1772ffd1afa5f1ba6ed25428c299e6e8",
+                ),
+            "tab/badge_right.png" to
+                ArtworkExpectation(
+                    90,
+                    "5ce1ffa4f916075b2038951635e8fb700b92df1d0cd4d28abb8123c772754c24",
+                ),
+        )
+
+    private val TAB_PACK_PATHS =
+        linkedMapOf(
+            "tab/logo.png" to "assets/grounds/textures/font/tab_logo.png",
+            "tab/badge_left.png" to "assets/grounds/textures/font/tab_badge_left.png",
+            "tab/badge_middle.png" to "assets/grounds/textures/font/tab_badge_middle.png",
+            "tab/badge_right.png" to "assets/grounds/textures/font/tab_badge_right.png",
         )
 
     private val PLATFORM_ARTWORK =
