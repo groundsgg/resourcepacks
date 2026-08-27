@@ -79,11 +79,14 @@ internal object ProductGraph {
             held[PLATFORM_LICENSE_SOURCE] =
                 HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
             held[CONTENT_LICENSE_SOURCE] =
-                HeldSourceFile.capture(contentArtDirectory().resolve("LICENSE"), MAX_LICENSE_BYTES)
+                HeldSourceFile.capture(
+                    contentArtDirectory(art).resolve("LICENSE"),
+                    MAX_LICENSE_BYTES,
+                )
             ContentContribution.modelSourcePaths.forEach { relative ->
                 held[relative] =
                     HeldSourceFile.capture(
-                        contentArtDirectory().resolve(relative),
+                        contentArtDirectory(art).resolve(relative),
                         MAX_CONTENT_MODEL_BYTES,
                     )
             }
@@ -240,7 +243,7 @@ internal object ProductGraph {
             .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
             .resolve("art/platform")
 
-    private fun contentArtDirectory(): Path = platformArtDirectory().parent.resolve("content")
+    private fun contentArtDirectory(platformArt: Path): Path = platformArt.parent.resolve("content")
 
     private data class ArtworkExpectation(val size: Long, val sha256: String)
 
