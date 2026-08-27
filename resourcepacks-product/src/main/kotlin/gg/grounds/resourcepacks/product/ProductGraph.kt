@@ -79,18 +79,28 @@ internal object ProductGraph {
             held[PLATFORM_LICENSE_SOURCE] =
                 HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
             held[CONTENT_LICENSE_SOURCE] =
-                HeldSourceFile.capture(contentLicenseFile(), MAX_LICENSE_BYTES)
+                HeldSourceFile.capture(contentArtDirectory().resolve("LICENSE"), MAX_LICENSE_BYTES)
+            ContentContribution.modelSourcePaths.forEach { relative ->
+                held[relative] =
+                    HeldSourceFile.capture(
+                        contentArtDirectory().resolve(relative),
+                        MAX_CONTENT_MODEL_BYTES,
+                    )
+            }
             afterSourcesPinned()
             val contribution =
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
                     .withTabArtwork(held)
+            val contentContribution =
+                ContentContribution.withModels(held)
+                    .withLicense(held.getValue(CONTENT_LICENSE_SOURCE), CONTENT_LICENSE_ENTRY)
             val icon =
                 ByteArrayEntrySource(
                     held.getValue(PACK_ICON_SOURCE).readBytes(PACK_ICON_ARTWORK.size)
                 )
             return SecureSourceInputs.captureWithHeld(
-                    createPacks(contribution, icon, held.getValue(CONTENT_LICENSE_SOURCE)),
+                    createPacks(contribution, contentContribution, icon),
                     held.values.toList(),
                 )
                 .also { it.verifyUnchanged() }
@@ -108,8 +118,8 @@ internal object ProductGraph {
 
     private fun createPacks(
         platformContribution: PackContribution,
+        contentContribution: PackContribution,
         packIcon: PackEntrySource,
-        contentLicense: HeldSourceFile,
     ): List<PhysicalPack> =
         listOf(
             PhysicalPack(
@@ -125,8 +135,7 @@ internal object ProductGraph {
                         null,
                         PackPolicy(VanillaPathPolicy.FORBID, PackSetConstants.contentLimits),
                     ),
-                contributions =
-                    listOf(ContentContribution.withLicense(contentLicense, CONTENT_LICENSE_ENTRY)),
+                contributions = listOf(contentContribution),
             ),
             PhysicalPack(
                 order = 1,
@@ -231,8 +240,7 @@ internal object ProductGraph {
             .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
             .resolve("art/platform")
 
-    private fun contentLicenseFile(): Path =
-        platformArtDirectory().parent.resolve("content").resolve("LICENSE")
+    private fun contentArtDirectory(): Path = platformArtDirectory().parent.resolve("content")
 
     private data class ArtworkExpectation(val size: Long, val sha256: String)
 
@@ -240,6 +248,7 @@ internal object ProductGraph {
     private const val MAX_TAB_ARTWORK_BYTES = 256L * 1024
     private const val MAX_MATERIALIZED_ARTWORK_BYTES = 1024L * 1024
     private const val MAX_LICENSE_BYTES = 16L * 1024
+    private const val MAX_CONTENT_MODEL_BYTES = 16L * 1024
     private const val PACK_ICON_SOURCE = "pack.png"
     private const val CONTENT_LICENSE_ENTRY = "assets/grounds/legal/content.txt"
     private const val PLATFORM_LICENSE_ENTRY = "assets/grounds/legal/platform.txt"

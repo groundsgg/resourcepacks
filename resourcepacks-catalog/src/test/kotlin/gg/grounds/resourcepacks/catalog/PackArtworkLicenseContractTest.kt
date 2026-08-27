@@ -86,7 +86,7 @@ class PackArtworkLicenseContractTest {
     }
 
     @Test
-    fun `content art directory ships no image or archive files`() {
+    fun `content art directory ships only licensed authored scene bootstrap JSON`() {
         val contentArt = root.resolve("art/content")
         require(Files.isDirectory(contentArt)) { "Missing art/content directory" }
         val actual = linkedSetOf<String>()
@@ -111,6 +111,7 @@ class PackArtworkLicenseContractTest {
         val license = Files.readString(root.resolve("art/content/LICENSE"))
         assertTrue(license.contains("vendor", ignoreCase = true))
         assertTrue(license.contains("MCModels"))
+        assertTrue(license.contains("Grounds-authored"))
         assertTrue(
             license.contains("not licensed under AGPL", ignoreCase = true) ||
                 license.contains("not sublicensed", ignoreCase = true)
@@ -163,6 +164,12 @@ class PackArtworkLicenseContractTest {
                 "art/platform/tooltips/default_bg.png",
                 "art/platform/tooltips/default_frame.png",
             )
-        val ALLOWED_CONTENT_ART_FILES = setOf(".gitkeep", "LICENSE")
+        val ALLOWED_CONTENT_ART_FILES =
+            setOf(
+                ".gitkeep",
+                "LICENSE",
+                "models/editor/marker.json",
+                "models/npc_bodies/editor/guide.json",
+            )
     }
 }
