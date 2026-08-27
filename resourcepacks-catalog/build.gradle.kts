@@ -36,6 +36,7 @@ val generateCatalogVersionResource by
         from(rootProject.layout.projectDirectory.file("version.txt"))
         into(generatedCatalogResources.map { it.dir("gg/grounds/resourcepacks/catalog") })
         rename { "catalog-version.txt" }
+        filter { rootProject.version.toString() }
     }
 
 kotlin { sourceSets.named("main") { kotlin.srcDir(generatedCatalogSources) } }

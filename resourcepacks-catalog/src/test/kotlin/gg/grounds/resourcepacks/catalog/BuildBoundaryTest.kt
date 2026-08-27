@@ -144,18 +144,29 @@ class BuildBoundaryTest {
                 "resourcepacks-catalog/build/generated/sources/catalog/kotlin/" +
                     "gg/grounds/resourcepacks/catalog/CatalogBuildInfo.kt"
             )
-
-        runGradle(":resourcepacks-catalog:generateCatalogBuildInfo")
-        assertContains(generated.readText(), rootDirectory.resolve("version.txt").readText().trim())
+        val generatedResource =
+            rootDirectory.resolve(
+                "resourcepacks-catalog/build/generated/resources/catalog/" +
+                    "gg/grounds/resourcepacks/catalog/catalog-version.txt"
+            )
 
         runGradle(
             ":resourcepacks-catalog:generateCatalogBuildInfo",
+            ":resourcepacks-catalog:generateCatalogVersionResource",
+        )
+        assertContains(generated.readText(), rootDirectory.resolve("version.txt").readText().trim())
+        assertEquals(rootDirectory.resolve("version.txt").readText(), generatedResource.readText())
+
+        runGradle(
+            ":resourcepacks-catalog:generateCatalogBuildInfo",
+            ":resourcepacks-catalog:generateCatalogVersionResource",
             "-PpackSetVersion=$edgeVersion",
             "-PpublicationType=build",
             "-PpublicationId=$commit",
             "-PprovenanceCommit=$commit",
         )
         assertContains(generated.readText(), edgeVersion)
+        assertEquals("$edgeVersion\n", generatedResource.readText())
     }
 
     private fun assertInvalidVersion(contents: String) {
