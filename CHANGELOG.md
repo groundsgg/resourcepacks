@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/groundsgg/resourcepacks/compare/v0.5.1...v0.6.0) (2026-08-27)
+
+
+### Features
+
+* add scene editor bootstrap assets ([#26](https://github.com/groundsgg/resourcepacks/issues/26)) ([bc69e64](https://github.com/groundsgg/resourcepacks/commit/bc69e647c6111edfa8e6efaf9c2f79715f6d51d6))
+* ship grounds:tab font in the platform pack ([#23](https://github.com/groundsgg/resourcepacks/issues/23)) ([a3e6043](https://github.com/groundsgg/resourcepacks/commit/a3e60438a48910bc7689ba897e6965536f603f84))
+
+
+### Bug Fixes
+
+* scale the tab wordmark to fit Minecraft's 256px font atlas ([#25](https://github.com/groundsgg/resourcepacks/issues/25)) ([9c781fc](https://github.com/groundsgg/resourcepacks/commit/9c781fc290445eafc0720fec4927d4f6a223b55c))
+
 ## [0.5.1](https://github.com/groundsgg/resourcepacks/compare/v0.5.0...v0.5.1) (2026-08-22)
 
 
