@@ -18,7 +18,12 @@ class PackComposerTest {
             val contentEntries = zipEntries(built.first().file)
             val platformEntries = zipEntries(built.last().file)
             assertEquals(
-                listOf("assets/grounds/legal/content.txt", "pack.mcmeta"),
+                listOf(
+                    "assets/grounds/legal/content.txt",
+                    "assets/grounds/models/editor/marker.json",
+                    "assets/grounds/models/npc_bodies/editor/guide.json",
+                    "pack.mcmeta",
+                ),
                 contentEntries.map { it.name },
             )
             assertEquals(

@@ -14,8 +14,15 @@ import kotlin.test.assertTrue
 
 class CatalogParityValidatorTest {
     @Test
-    fun `empty bootstrap catalog and content entries have parity`() {
-        val result = CatalogParityValidator.validate(GroundsAssetCatalog.catalog, emptySet())
+    fun `scene editor bootstrap catalog requires both exact projected model paths`() {
+        val result =
+            CatalogParityValidator.validate(
+                GroundsAssetCatalog.catalog,
+                setOf(
+                    PackPath.of("assets/grounds/models/editor/marker.json"),
+                    PackPath.of("assets/grounds/models/npc_bodies/editor/guide.json"),
+                ),
+            )
 
         assertTrue(result.isValid)
         assertEquals(emptyList(), result.problems)
@@ -26,7 +33,7 @@ class CatalogParityValidatorTest {
         val result =
             CatalogParityValidator.validate(
                 GroundsAssetCatalog.catalog,
-                setOf(PackPath.of("assets/grounds/models/orphan.json")),
+                sceneEditorBootstrapEntries + PackPath.of("assets/grounds/models/orphan.json"),
             )
 
         assertEquals(
@@ -40,7 +47,7 @@ class CatalogParityValidatorTest {
         val result =
             CatalogParityValidator.validate(
                 GroundsAssetCatalog.catalog,
-                setOf(PackPath.of("assets/grounds/lang/en_us.json")),
+                sceneEditorBootstrapEntries + PackPath.of("assets/grounds/lang/en_us.json"),
             )
 
         assertTrue(result.isValid)
@@ -134,4 +141,10 @@ class CatalogParityValidatorTest {
             mapOf(assetKey to AssetDefinition(assetKey, kind, emptySet(), null, emptyMap())),
         )
     }
+
+    private val sceneEditorBootstrapEntries =
+        setOf(
+            PackPath.of("assets/grounds/models/editor/marker.json"),
+            PackPath.of("assets/grounds/models/npc_bodies/editor/guide.json"),
+        )
 }

@@ -267,17 +267,9 @@ class FailClosedTransactionTest {
     fun `product theme materialization never rereads mutable artwork paths`() {
         withRoot("release-theme-source-race") { parent ->
             val sourceArt = repositoryRoot().resolve("art/platform")
-            val copiedArt = parent.resolve("art")
-            Files.walk(sourceArt).use { paths ->
-                paths.forEach { source ->
-                    val target = copiedArt.resolve(sourceArt.relativize(source).toString())
-                    if (Files.isDirectory(source, NOFOLLOW_LINKS)) {
-                        Files.createDirectories(target)
-                    } else {
-                        Files.copy(source, target)
-                    }
-                }
-            }
+            val copiedArt = parent.resolve("art/platform")
+            copyTree(sourceArt, copiedArt)
+            copyTree(repositoryRoot().resolve("art/content"), parent.resolve("art/content"))
             val menu = copiedArt.resolve("panels/menu.png")
             val displaced = copiedArt.resolve("panels/captured-menu.png")
 
@@ -295,6 +287,33 @@ class FailClosedTransactionTest {
                 failure.toString(),
             )
             assertTrue(Files.isRegularFile(menu, NOFOLLOW_LINKS))
+            assertTrue(Files.isRegularFile(displaced, NOFOLLOW_LINKS))
+        }
+    }
+
+    @Test
+    fun `content model materialization uses and pins the sibling of injected platform art`() {
+        withRoot("release-content-source-race") { parent ->
+            val copiedPlatform = parent.resolve("art/platform")
+            val copiedContent = parent.resolve("art/content")
+            copyTree(repositoryRoot().resolve("art/platform"), copiedPlatform)
+            copyTree(repositoryRoot().resolve("art/content"), copiedContent)
+            val marker = copiedContent.resolve("models/editor/marker.json")
+            val displaced = copiedContent.resolve("models/editor/captured-marker.json")
+
+            val failure =
+                assertFailsWith<IOException> {
+                    ProductGraph.secureReleaseInputs(copiedPlatform) {
+                        Files.move(marker, displaced)
+                        Files.writeString(marker, "{}")
+                    }
+                }
+
+            assertTrue(
+                failure.message.orEmpty().contains("Source path identity changed"),
+                failure.toString(),
+            )
+            assertTrue(Files.isRegularFile(marker, NOFOLLOW_LINKS))
             assertTrue(Files.isRegularFile(displaced, NOFOLLOW_LINKS))
         }
     }
@@ -404,6 +423,19 @@ private fun catalogJar(): Path = ReleaseTestContext.catalogJar
 private fun repositoryRoot(): Path =
     generateSequence(Path.of(System.getProperty("user.dir"))) { it.parent }
         .first { it.resolve("settings.gradle.kts").toFile().isFile }
+
+private fun copyTree(sourceRoot: Path, targetRoot: Path) {
+    Files.walk(sourceRoot).use { paths ->
+        paths.forEach { source ->
+            val target = targetRoot.resolve(sourceRoot.relativize(source).toString())
+            if (Files.isDirectory(source, NOFOLLOW_LINKS)) {
+                Files.createDirectories(target)
+            } else {
+                Files.copy(source, target)
+            }
+        }
+    }
+}
 
 private fun deleteTree(root: Path) {
     if (!Files.exists(root, NOFOLLOW_LINKS)) return

@@ -19,6 +19,7 @@ dependencies {
 java { withSourcesJar() }
 
 val generatedCatalogSources = layout.buildDirectory.dir("generated/sources/catalog/kotlin")
+val generatedCatalogResources = layout.buildDirectory.dir("generated/resources/catalog")
 
 val generateCatalogBuildInfo by
     tasks.registering(Copy::class) {
@@ -26,43 +27,38 @@ val generateCatalogBuildInfo by
         from(rootProject.layout.projectDirectory.file("version.txt"))
         into(generatedCatalogSources.map { it.dir("gg/grounds/resourcepacks/catalog") })
         rename { "CatalogBuildInfo.kt" }
-        filter {
-            """
-        package gg.grounds.resourcepacks.catalog
+        filter { "// Catalog version: ${rootProject.version}" }
+    }
 
-        import gg.grounds.scene.format.AssetCatalog
-        import gg.grounds.scene.format.CatalogId
-        import gg.grounds.scene.format.CatalogVersionRange
-        import java.util.Collections
-
-        object GroundsAssetCatalog {
-            private const val CATALOG_VERSION = "${rootProject.version}"
-
-            val catalog: AssetCatalog =
-                AssetCatalog(
-                    CatalogId("grounds:assets"),
-                    CATALOG_VERSION,
-                    CatalogVersionRange(CatalogId("grounds:resourcepacks"), CATALOG_VERSION, CATALOG_VERSION),
-                    Collections.unmodifiableMap(linkedMapOf()),
-                )
-        }
-        """
-                .trimIndent()
-        }
+val generateCatalogVersionResource by
+    tasks.registering(Copy::class) {
+        inputs.property("catalogVersion", provider { rootProject.version.toString() })
+        from(rootProject.layout.projectDirectory.file("version.txt"))
+        into(generatedCatalogResources.map { it.dir("gg/grounds/resourcepacks/catalog") })
+        rename { "catalog-version.txt" }
+        filter { rootProject.version.toString() }
     }
 
 kotlin { sourceSets.named("main") { kotlin.srcDir(generatedCatalogSources) } }
 
+sourceSets.named("main") { resources.srcDir(generatedCatalogResources) }
+
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(generateCatalogBuildInfo)
+    dependsOn(generateCatalogVersionResource)
 }
 
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
     dependsOn(generateCatalogBuildInfo)
+    dependsOn(generateCatalogVersionResource)
     from(rootProject.layout.projectDirectory.file("LICENSES/Apache-2.0.txt")) {
         into("META-INF")
         rename { "LICENSE" }
     }
+}
+
+tasks.withType<org.gradle.language.jvm.tasks.ProcessResources>().configureEach {
+    dependsOn(generateCatalogVersionResource)
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

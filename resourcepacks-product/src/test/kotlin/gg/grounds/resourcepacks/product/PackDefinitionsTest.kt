@@ -1,5 +1,6 @@
 package gg.grounds.resourcepacks.product
 
+import gg.grounds.resourcepack.api.ByteArrayEntrySource
 import gg.grounds.resourcepack.api.PackFormat
 import gg.grounds.resourcepack.api.VanillaPathPolicy
 import java.util.UUID
@@ -40,11 +41,21 @@ class PackDefinitionsTest {
     }
 
     @Test
-    fun `content contribution has no entries claims or capabilities`() {
-        assertEquals(emptyList(), ContentContribution.entries)
-        assertEquals(emptySet(), ContentContribution.vanillaClaims)
-        assertEquals(emptySet(), ContentContribution.requires)
-        assertEquals(emptySet(), ContentContribution.provides)
+    fun `content contribution pins the two scene bootstrap models as byte-backed entries`() {
+        val contribution = ProductGraph.packs.first().contributions.single()
+
+        assertEquals(
+            listOf(
+                "assets/grounds/models/editor/marker.json",
+                "assets/grounds/models/npc_bodies/editor/guide.json",
+                "assets/grounds/legal/content.txt",
+            ),
+            contribution.entries.map { it.path.value },
+        )
+        assertTrue(contribution.entries.all { it.source is ByteArrayEntrySource })
+        assertEquals(emptySet(), contribution.vanillaClaims)
+        assertEquals(emptySet(), contribution.requires)
+        assertEquals(emptySet(), contribution.provides)
     }
 
     @Test
