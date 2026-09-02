@@ -19,7 +19,7 @@ internal object TabFont {
             }
         val bitmaps =
             listOf(
-                bitmap("tab_logo.png", ascent = 26, height = 32, LOGO),
+                bitmap("tab_logo.png", ascent = 21, height = 26, LOGO),
                 bitmap("tab_badge_left.png", ascent = 7, height = 8, BADGE_LEFT),
                 bitmap("tab_badge_middle.png", ascent = 7, height = 8, BADGE_MIDDLE),
                 bitmap("tab_badge_right.png", ascent = 7, height = 8, BADGE_RIGHT),
