@@ -193,7 +193,15 @@ internal object ProductGraph {
                     packPath,
                     held.getValue(relative).readBytes(TAB_ARTWORK.getValue(relative).size),
                 )
-            } + PackEntry.text("assets/grounds/font/tab.json", TabFont.json())
+            } +
+                listOf(
+                    PackEntry.text("assets/grounds/font/tab.json", TabFont.json()),
+                    PackEntry.text("assets/grounds/font/tab_labels.json", TabLabelsFont.json()),
+                    PackEntry.bytes(
+                        "assets/grounds/textures/font/tab_labels.png",
+                        TabLabelsFont.texture(),
+                    ),
+                )
         return PackContribution(
             id,
             supportedFormats,
