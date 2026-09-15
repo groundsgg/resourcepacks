@@ -221,6 +221,67 @@ class PackSetClientLifecycleTest {
         }
     }
 
+    // Break caught: metadata bound to the selected source must not make a well-formed manifest
+    // from a different immutable release READY after an offline restart.
+    @Test
+    fun `mismatched pinned cache cannot make an offline restart ready`() {
+        withDirectory { directory ->
+            val firstPin =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val secondPin =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.4")
+            val documents =
+                clientDocuments(
+                    PackSetSource(firstPin.baseUri, firstPin.packSet, PackSetChannel.STABLE)
+                )
+            val writerScheduler = DeterministicScheduledExecutor()
+            val writer =
+                client(
+                    firstPin,
+                    directory,
+                    ScriptedTransport { uri, _ ->
+                        assertEquals(firstPin.requestUri, uri)
+                        LoopbackPackSetServer.response(200, body = documents.manifest)
+                    },
+                    writerScheduler,
+                )
+            try {
+                val activated = writer.refreshNow()
+                writerScheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(activated.toCompletableFuture().join())
+            } finally {
+                writer.close()
+            }
+
+            val diskCache = PackSetDiskCache(directory)
+            val firstCache = requireNotNull(diskCache.load(firstPin))
+            diskCache.store(secondPin, firstCache.copy(releaseId = "v1.2.4"))
+
+            val scheduler = DeterministicScheduledExecutor()
+            val restarted =
+                client(
+                    secondPin,
+                    directory,
+                    ScriptedTransport { _, _ ->
+                        error("Mismatched cache restart must not become READY.")
+                    },
+                    scheduler,
+                )
+            val states = mutableListOf<PackSetClientState>()
+            restarted.addListener(states::add)
+            try {
+                val failed = restarted.refreshNow()
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Failed>(failed.toCompletableFuture().join())
+                assertEquals(PackSetClientStatus.UNAVAILABLE, restarted.state().status)
+                assertTrue(states.none { it.status == PackSetClientStatus.READY })
+                assertEquals(listOf(Duration.ofMillis(800)), scheduler.pendingDelays())
+            } finally {
+                restarted.close()
+            }
+        }
+    }
+
     // Break caught: a corrupted immutable generation must fail closed rather than exposing a
     // READY snapshot from bytes that no longer match the validated cache record.
     @Test
