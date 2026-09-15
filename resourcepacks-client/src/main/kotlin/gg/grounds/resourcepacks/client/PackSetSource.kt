@@ -8,7 +8,7 @@ import kotlin.ConsistentCopyVisibility
 
 @ConsistentCopyVisibility
 data class PackSetSource
-internal constructor(
+private constructor(
     val baseUri: URI,
     val packSet: String,
     val selection: PackSetSelection,
@@ -70,7 +70,7 @@ internal constructor(
         fun release(baseUri: URI, packSet: String, id: String): PackSetSource =
             PackSetSource(baseUri, packSet, PackSetSelection.Release(id))
 
-        fun sha256(value: String): String =
+        private fun sha256(value: String): String =
             MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString(
                 ""
             ) { byte ->

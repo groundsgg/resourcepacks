@@ -58,19 +58,51 @@ class PackSetDiskCacheTest {
     }
 
     @Test
-    fun `release staging rejects a channel document while channel staging remains recoverable`() {
+    fun `release staging rejects a channel document and recovers an allowed interrupted manifest`() {
         val directory = Files.createTempDirectory("pack-cache-test")
         try {
             val release =
                 PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
             val disk = PackSetDiskCache(directory)
+            val manifest =
+                clientDocuments(
+                        PackSetSource(release.baseUri, release.packSet, PackSetChannel.STABLE)
+                    )
+                    .manifest
+            val resolver =
+                PackSetResolver(
+                    LoopbackPackSetServer(
+                        mapOf(
+                            release.requestUri to
+                                LoopbackPackSetServer.response(200, body = manifest)
+                        )
+                    ),
+                    PackSetClientConfig(release, directory),
+                )
+            val cache =
+                requireNotNull(
+                    resolver.cacheOf(
+                        assertIs<RefreshResult.Activated>(
+                            resolver.refresh(ResolverCache(null, null, null, null, null))
+                        )
+                    )
+                )
+            disk.store(release, cache)
+            assertTrue(disk.load(release) != null)
             val sourceDirectory = directory.resolve(release.cacheKey)
-            Files.createDirectories(sourceDirectory.resolve("generations"))
             val staging = sourceDirectory.resolve("generations/.staging-${UUID.randomUUID()}")
             Files.createDirectory(staging)
             Files.writeString(staging.resolve("channel.json"), "unexpected")
 
             assertNull(disk.load(release))
+            assertFailsWith<IllegalArgumentException> { disk.store(release, cache) }
+            Files.delete(staging.resolve("channel.json"))
+            Files.delete(staging)
+            val allowedStaging =
+                sourceDirectory.resolve("generations/.staging-${UUID.randomUUID()}")
+            Files.createDirectory(allowedStaging)
+            Files.writeString(allowedStaging.resolve("manifest.json"), "interrupted")
+            assertTrue(disk.load(release) != null)
         } finally {
             deleteTree(directory)
         }
