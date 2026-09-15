@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/groundsgg/resourcepacks/compare/v0.6.0...v0.7.0) (2026-09-15)
+
+
+### Features
+
+* add padded tab label font and Bedrock glyph ([#29](https://github.com/groundsgg/resourcepacks/issues/29)) ([08eba35](https://github.com/groundsgg/resourcepacks/commit/08eba354bd19a28f65aea8303643e78c8c105f2c))
+* support immutable resource pack release pins ([#30](https://github.com/groundsgg/resourcepacks/issues/30)) ([55180af](https://github.com/groundsgg/resourcepacks/commit/55180af31b82203b3759d4cb341f7531f8f66f98))
+
+
+### Bug Fixes
+
+* reduce tab logo height for a roomier header ([#27](https://github.com/groundsgg/resourcepacks/issues/27)) ([f2e9fb3](https://github.com/groundsgg/resourcepacks/commit/f2e9fb30e055c11f82b1ff0667cf9fbce78880eb))
+
 ## [0.6.0](https://github.com/groundsgg/resourcepacks/compare/v0.5.1...v0.6.0) (2026-08-27)
 
 
