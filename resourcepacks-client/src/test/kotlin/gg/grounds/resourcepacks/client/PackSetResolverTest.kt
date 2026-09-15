@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // Characterizes legacy channelUri compatibility coverage.
+
 package gg.grounds.resourcepacks.client
 
 import com.sun.net.httpserver.HttpServer

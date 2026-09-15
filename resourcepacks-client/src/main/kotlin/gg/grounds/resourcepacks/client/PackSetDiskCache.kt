@@ -42,7 +42,7 @@ private constructor(
             )
             val generations = sourceDirectory.resolve("generations")
             require(directory(generations))
-            validateGenerationEntries(generations)
+            validateGenerationEntries(generations, source.selection)
             val generation = generations.resolve(fingerprint.trimEnd())
             require(directory(generation))
             val release = source.selection as? PackSetSelection.Release
@@ -135,7 +135,7 @@ private constructor(
             requireSourceEntries(sourceDirectory)
         val generations = sourceDirectory.resolve("generations")
         createDirectory(generations)
-        validateGenerationEntries(generations)
+        validateGenerationEntries(generations, source.selection)
         val target = generations.resolve(fingerprint)
         if (!Files.exists(target, NOFOLLOW_LINKS)) {
             val staging = generations.resolve(".staging-${UUID.randomUUID()}")
@@ -335,13 +335,17 @@ private constructor(
         require(releaseFingerprint(source, manifest) == fingerprint)
     }
 
-    private fun validateGenerationEntries(generations: Path) {
+    private fun validateGenerationEntries(generations: Path, selection: PackSetSelection) {
         Files.newDirectoryStream(generations).use { entries ->
             for (entry in entries) {
                 val fingerprint = entry.fileName.toString()
                 if (PRIVATE_STAGING.matches(fingerprint)) {
                     require(!Files.isSymbolicLink(entry) && directory(entry))
-                    validateStagingEntries(entry)
+                    validateStagingEntries(
+                        entry,
+                        if (selection is PackSetSelection.Release) RELEASE_GENERATION_FILES
+                        else GENERATION_FILES,
+                    )
                     continue
                 }
                 require(FINGERPRINT.matches(fingerprint) && directory(entry))
@@ -349,22 +353,24 @@ private constructor(
         }
     }
 
-    private fun validateStagingEntries(staging: Path) {
+    private fun validateStagingEntries(staging: Path, expected: Set<String>) {
         Files.newDirectoryStream(staging).use { entries ->
             for (entry in entries) {
-                require(entry.fileName.toString() in GENERATION_FILES && regularFile(entry))
+                require(entry.fileName.toString() in expected && regularFile(entry))
             }
         }
     }
 
     private fun metadata(bytes: ByteArray): Map<String, String> {
         val lines = String(bytes, Charsets.US_ASCII).split('\n').filter(String::isNotEmpty)
+        require(lines.size == METADATA_KEYS.size || lines.size == RELEASE_METADATA_KEYS.size)
         val values =
             lines.associate { line ->
                 val split = line.indexOf('=')
                 require(split > 0)
                 line.substring(0, split) to line.substring(split + 1)
             }
+        require(values.size == lines.size)
         require(values.keys == METADATA_KEYS || values.keys == RELEASE_METADATA_KEYS)
         return values
     }

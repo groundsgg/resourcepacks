@@ -35,13 +35,19 @@ internal constructor(
         PackSetValidationPolicy(baseUri, packSet).also {
             require(normalized && it.baseUri == baseUri) { "Base URI must be normalized." }
         }
+    @Deprecated("Use selection instead.")
     val channel: PackSetChannel
         get() =
             (selection as? PackSetSelection.Channel)?.channel
                 ?: throw IllegalStateException("A release source has no channel.")
 
+    @Deprecated("Use requestUri instead.")
     val channelUri: URI
-        get() = policy.channelUri(channel)
+        get() =
+            policy.channelUri(
+                (selection as? PackSetSelection.Channel)?.channel
+                    ?: throw IllegalStateException("A release source has no channel URI.")
+            )
 
     val requestUri: URI =
         when (val selected = selection) {

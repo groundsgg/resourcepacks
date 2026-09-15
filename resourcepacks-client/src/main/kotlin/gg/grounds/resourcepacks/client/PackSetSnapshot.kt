@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.client
 
 import gg.grounds.resourcepacks.contract.ChannelDocument
+import gg.grounds.resourcepacks.contract.ChannelTarget
 import gg.grounds.resourcepacks.contract.PackSetManifest
 import java.net.URI
 import java.security.MessageDigest
@@ -54,8 +55,8 @@ private constructor(
             (target as? ResolvedPackSetTarget.Channel)?.document
                 ?: throw IllegalStateException("A release snapshot has no channel document.")
 
-    val publication
-        get() = manifest.publication
+    val publication: ChannelTarget
+        get() = ChannelTarget(manifest.publication.type, manifest.publication.id)
 
     internal companion object {
         fun fromValidatedBytes(

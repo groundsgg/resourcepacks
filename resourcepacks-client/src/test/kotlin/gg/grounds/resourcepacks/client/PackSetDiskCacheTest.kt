@@ -16,6 +16,67 @@ import kotlin.test.assertTrue
 
 class PackSetDiskCacheTest {
     @Test
+    fun `duplicate metadata fields fail closed for channel and release records`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val channel = source()
+            val release = PackSetSource.release(channel.baseUri, channel.packSet, "v1.2.3")
+            val disk = PackSetDiskCache(directory)
+            disk.store(channel, resolverCache())
+            val channelMetadata = generation(directory, channel).resolve("metadata.properties")
+            Files.writeString(
+                channelMetadata,
+                Files.readString(channelMetadata) + "sourceKey=duplicate\n",
+            )
+            assertNull(disk.load(channel))
+
+            val manifest = clientDocuments(channel).manifest
+            val resolver =
+                PackSetResolver(
+                    LoopbackPackSetServer(
+                        mapOf(
+                            release.requestUri to
+                                LoopbackPackSetServer.response(200, body = manifest)
+                        )
+                    ),
+                    PackSetClientConfig(release, directory),
+                )
+            val activated =
+                assertIs<RefreshResult.Activated>(
+                    resolver.refresh(ResolverCache(null, null, null, null, null))
+                )
+            disk.store(release, requireNotNull(resolver.cacheOf(activated)))
+            val releaseMetadata = generation(directory, release).resolve("metadata.properties")
+            Files.writeString(
+                releaseMetadata,
+                Files.readString(releaseMetadata) + "releaseId=v1.2.3\n",
+            )
+            assertNull(disk.load(release))
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
+    @Test
+    fun `release staging rejects a channel document while channel staging remains recoverable`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val release =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val disk = PackSetDiskCache(directory)
+            val sourceDirectory = directory.resolve(release.cacheKey)
+            Files.createDirectories(sourceDirectory.resolve("generations"))
+            val staging = sourceDirectory.resolve("generations/.staging-${UUID.randomUUID()}")
+            Files.createDirectory(staging)
+            Files.writeString(staging.resolve("channel.json"), "unexpected")
+
+            assertNull(disk.load(release))
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
+    @Test
     fun `release generation stores only manifest and fails closed when metadata or bytes are corrupted`() {
         val directory = Files.createTempDirectory("pack-cache-test")
         try {

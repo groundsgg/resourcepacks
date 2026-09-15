@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // Characterizes legacy channelUri compatibility coverage.
+
 package gg.grounds.resourcepacks.client
 
 import gg.grounds.resourcepacks.contract.ChannelDocument
@@ -21,6 +23,21 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
 class PackSetSourceTest {
+    @Test
+    fun `snapshot publication exposes the validated channel target contract`() {
+        val snapshot =
+            PackSetSnapshot(
+                PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE),
+                channel(),
+                manifest(),
+                listOf(resolvedPack()),
+            )
+
+        val publication: ChannelTarget = snapshot.publication
+
+        assertEquals(ChannelTarget(PublicationType.RELEASE, "v1.2.3"), publication)
+    }
+
     @Test
     fun `release source rejects unsafe IDs and separates cache namespaces`() {
         val base = URI("https://assets.example.test")
