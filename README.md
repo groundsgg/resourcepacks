@@ -46,6 +46,29 @@ Publish and consume the catalog as `gg.grounds:resourcepacks-catalog:<packSetVer
 
 The platform pack uses the approved first-party Grounds brand icon at `art/platform/pack.png` as its visible, square `pack.png`. The artwork is captured through the same held, no-follow source pipeline as the Theme assets and is never reread from an ordinary mutable path during a release build.
 
+## Resolution client
+
+JVM consumers can follow a mutable channel with the existing source form:
+
+```kotlin
+PackSetSource(URI("https://cdn.grounds.gg"), "grounds-global", PackSetChannel.EDGE)
+```
+
+Or they can pin resolution to one immutable release manifest:
+
+```kotlin
+PackSetSource.release(URI("https://cdn.grounds.gg"), "grounds-global", "v0.6.0")
+```
+
+The resulting snapshot exposes the resolved `target` and validated `publication`. The older
+channel-only source getters remain deprecated compatibility APIs; new code should use the explicit
+selection and request URI instead. After a release pin has been validated, its source-bound cache
+can be revalidated offline on restart and it has no periodic network poll; an explicit refresh
+still completes normally. Channel sources retain their normal refresh behavior.
+
+Using these client sources does not mutate Config Service or activate plugin/config/portal
+integration.
+
 ## Release automation
 
 Release Please manages conventional versions from the root and creates tags such as `v0.1.0`. Only pushed `v*` tags start publication. A failed tag workflow is retried by rerunning that same tag: Maven, R2, and GitHub Release assets use create-or-compare semantics, so byte-identical existing output is accepted and different output fails.

@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.client
 
 import gg.grounds.resourcepacks.contract.ChannelDocument
+import gg.grounds.resourcepacks.contract.ChannelTarget
 import gg.grounds.resourcepacks.contract.PackSetManifest
 import java.net.URI
 import java.security.MessageDigest
@@ -24,7 +25,7 @@ data class ResolvedPack(
 data class PackSetSnapshot
 private constructor(
     val source: PackSetSource,
-    val channel: ChannelDocument,
+    val target: ResolvedPackSetTarget,
     val manifest: PackSetManifest,
     val packs: List<ResolvedPack>,
     val fingerprint: String,
@@ -37,7 +38,7 @@ private constructor(
         packs: List<ResolvedPack>,
     ) : this(
         source,
-        channel,
+        ResolvedPackSetTarget.Channel(channel),
         manifest,
         Collections.unmodifiableList(ArrayList(packs)),
         semanticFingerprint(channel, manifest),
@@ -47,6 +48,15 @@ private constructor(
     init {
         require(immutable) { "Packs must be an immutable snapshot." }
     }
+
+    @Deprecated("A release snapshot has no channel document.")
+    val channel: ChannelDocument
+        get() =
+            (target as? ResolvedPackSetTarget.Channel)?.document
+                ?: throw IllegalStateException("A release snapshot has no channel document.")
+
+    val publication: ChannelTarget
+        get() = ChannelTarget(manifest.publication.type, manifest.publication.id)
 
     internal companion object {
         fun fromValidatedBytes(
@@ -59,10 +69,27 @@ private constructor(
         ): PackSetSnapshot =
             PackSetSnapshot(
                 source,
-                channel,
+                ResolvedPackSetTarget.Channel(channel),
                 manifest,
                 Collections.unmodifiableList(ArrayList(packs)),
                 fingerprint(channelBytes + manifestBytes),
+                true,
+            )
+
+        fun fromValidatedReleaseBytes(
+            source: PackSetSource,
+            manifest: PackSetManifest,
+            packs: List<ResolvedPack>,
+            manifestBytes: ByteArray,
+        ): PackSetSnapshot =
+            PackSetSnapshot(
+                source,
+                ResolvedPackSetTarget.Release(manifest.publication.id),
+                manifest,
+                Collections.unmodifiableList(ArrayList(packs)),
+                fingerprint(
+                    "release\u0000${source.cacheKey}\u0000".encodeToByteArray() + manifestBytes
+                ),
                 true,
             )
 

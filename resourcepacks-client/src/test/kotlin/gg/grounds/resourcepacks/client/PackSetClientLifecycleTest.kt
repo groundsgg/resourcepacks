@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // Characterizes legacy channelUri compatibility coverage.
+
 package gg.grounds.resourcepacks.client
 
 import gg.grounds.resourcepacks.contract.PackSetChannel
@@ -24,6 +26,320 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class PackSetClientLifecycleTest {
+    // Break caught: a successfully validated immutable release must not retain a mutable-channel
+    // periodic poll, while an explicit manual refresh remains a normal completion.
+    @Test
+    fun `validated pin does not poll when normal refresh time passes`() {
+        withDirectory { directory ->
+            val source =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val documents =
+                clientDocuments(
+                    PackSetSource(source.baseUri, source.packSet, PackSetChannel.STABLE)
+                )
+            val scheduler = DeterministicScheduledExecutor()
+            val requests = AtomicInteger()
+            val transport = ScriptedTransport { uri, etag ->
+                assertEquals(source.requestUri, uri)
+                assertNull(etag)
+                requests.incrementAndGet()
+                LoopbackPackSetServer.response(200, body = documents.manifest)
+            }
+            val client = client(source, directory, transport, scheduler)
+            try {
+                client.start()
+                scheduler.runCurrent()
+                assertEquals(PackSetClientStatus.READY, client.state().status)
+                assertEquals(source, client.state().source)
+                assertEquals(1, requests.get())
+                // A test-owned wakeup advances time beyond the normal 60s interval.
+                scheduler.schedule(Runnable {}, 120, TimeUnit.SECONDS)
+                assertEquals(Duration.ofSeconds(120), scheduler.advanceToNext())
+                assertEquals(1, requests.get())
+                val manual = client.refreshNow()
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Unchanged>(manual.toCompletableFuture().join())
+                assertEquals(1, requests.get())
+                assertEquals(emptyList(), scheduler.pendingDelays())
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    // Break caught: a source transition must cancel the old selection's work, preserve distinct
+    // immutable pins, and restore the channel's normal polling policy.
+    @Test
+    fun `reconfigure transitions channel pin pin channel with selection-owned scheduling`() {
+        withDirectory { directory ->
+            val channel = source()
+            val firstPin = PackSetSource.release(channel.baseUri, channel.packSet, "v1.2.3")
+            val secondPin = PackSetSource.release(channel.baseUri, channel.packSet, "v1.2.4")
+            val documents = clientDocuments(channel)
+            val secondPinManifest =
+                documents.manifest.decodeToString().replace("1.2.3", "1.2.4").encodeToByteArray()
+            val scheduler = DeterministicScheduledExecutor()
+            val requests = mutableListOf<URI>()
+            val transport = ScriptedTransport { uri, _ ->
+                requests += uri
+                when (uri) {
+                    channel.requestUri ->
+                        LoopbackPackSetServer.response(200, body = documents.channel)
+                    manifestUri(channel),
+                    firstPin.requestUri ->
+                        LoopbackPackSetServer.response(200, body = documents.manifest)
+                    secondPin.requestUri ->
+                        LoopbackPackSetServer.response(200, body = secondPinManifest)
+                    else -> error("Unexpected URI: $uri")
+                }
+            }
+            val client = client(channel, directory, transport, scheduler)
+            try {
+                client.start()
+                scheduler.runCurrent()
+                assertEquals(channel, client.state().source)
+                assertEquals(listOf(Duration.ofSeconds(60)), scheduler.pendingDelays())
+
+                val first = client.reconfigure(firstPin)
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(first.toCompletableFuture().join())
+                assertEquals(firstPin, client.state().source)
+                assertEquals(emptyList(), scheduler.pendingDelays())
+
+                val second = client.reconfigure(secondPin)
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(second.toCompletableFuture().join())
+                assertEquals(secondPin, client.state().source)
+                assertEquals(emptyList(), scheduler.pendingDelays())
+
+                val returned = client.reconfigure(channel)
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(returned.toCompletableFuture().join())
+                assertEquals(channel, client.state().source)
+                assertEquals(listOf(Duration.ofSeconds(60)), scheduler.pendingDelays())
+                assertEquals(
+                    listOf(
+                        channel.requestUri,
+                        manifestUri(channel),
+                        firstPin.requestUri,
+                        secondPin.requestUri,
+                        channel.requestUri,
+                        manifestUri(channel),
+                    ),
+                    requests,
+                )
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    // Break caught: an initial immutable-pin failure remains retryable until a release has first
+    // been validated; it must not become a terminal no-poll state.
+    @Test
+    fun `unvalidated pin failure schedules the normal first retry`() {
+        withDirectory { directory ->
+            val source =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val scheduler = DeterministicScheduledExecutor()
+            val requests = AtomicInteger()
+            val client =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { uri, _ ->
+                        assertEquals(source.requestUri, uri)
+                        requests.incrementAndGet()
+                        LoopbackPackSetServer.response(500)
+                    },
+                    scheduler,
+                )
+            try {
+                val failed = client.refreshNow()
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Failed>(failed.toCompletableFuture().join())
+                assertEquals(PackSetClientStatus.UNAVAILABLE, client.state().status)
+                assertEquals(listOf(Duration.ofMillis(800)), scheduler.pendingDelays())
+
+                assertEquals(Duration.ofMillis(800), scheduler.advanceToNext())
+                assertEquals(2, requests.get())
+            } finally {
+                client.close()
+            }
+        }
+    }
+
+    // Break caught: a validated immutable release must be available from its source-bound disk
+    // cache on restart without consulting the network.
+    @Test
+    fun `offline pinned restart reuses the revalidated disk cache without polling`() {
+        withDirectory { directory ->
+            val source =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val documents =
+                clientDocuments(
+                    PackSetSource(source.baseUri, source.packSet, PackSetChannel.STABLE)
+                )
+            val firstScheduler = DeterministicScheduledExecutor()
+            val first =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { uri, _ ->
+                        assertEquals(source.requestUri, uri)
+                        LoopbackPackSetServer.response(200, body = documents.manifest)
+                    },
+                    firstScheduler,
+                )
+            try {
+                val activated = first.refreshNow()
+                firstScheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(activated.toCompletableFuture().join())
+            } finally {
+                first.close()
+            }
+
+            val restartScheduler = DeterministicScheduledExecutor()
+            val restarted =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { _, _ ->
+                        error("Offline restart must not touch transport.")
+                    },
+                    restartScheduler,
+                )
+            try {
+                val reused = restarted.refreshNow()
+                restartScheduler.runCurrent()
+                assertIs<RefreshResult.Unchanged>(reused.toCompletableFuture().join())
+                assertEquals(PackSetClientStatus.READY, restarted.state().status)
+                assertEquals(emptyList(), restartScheduler.pendingDelays())
+            } finally {
+                restarted.close()
+            }
+        }
+    }
+
+    // Break caught: metadata bound to the selected source must not make a well-formed manifest
+    // from a different immutable release READY after an offline restart.
+    @Test
+    fun `mismatched pinned cache cannot make an offline restart ready`() {
+        withDirectory { directory ->
+            val firstPin =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val secondPin =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.4")
+            val documents =
+                clientDocuments(
+                    PackSetSource(firstPin.baseUri, firstPin.packSet, PackSetChannel.STABLE)
+                )
+            val writerScheduler = DeterministicScheduledExecutor()
+            val writer =
+                client(
+                    firstPin,
+                    directory,
+                    ScriptedTransport { uri, _ ->
+                        assertEquals(firstPin.requestUri, uri)
+                        LoopbackPackSetServer.response(200, body = documents.manifest)
+                    },
+                    writerScheduler,
+                )
+            try {
+                val activated = writer.refreshNow()
+                writerScheduler.runCurrent()
+                assertIs<RefreshResult.Activated>(activated.toCompletableFuture().join())
+            } finally {
+                writer.close()
+            }
+
+            val diskCache = PackSetDiskCache(directory)
+            val firstCache = requireNotNull(diskCache.load(firstPin))
+            diskCache.store(secondPin, firstCache.copy(releaseId = "v1.2.4"))
+
+            val scheduler = DeterministicScheduledExecutor()
+            val restarted =
+                client(
+                    secondPin,
+                    directory,
+                    ScriptedTransport { _, _ ->
+                        error("Mismatched cache restart must not become READY.")
+                    },
+                    scheduler,
+                )
+            val states = mutableListOf<PackSetClientState>()
+            restarted.addListener(states::add)
+            try {
+                val failed = restarted.refreshNow()
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Failed>(failed.toCompletableFuture().join())
+                assertEquals(PackSetClientStatus.UNAVAILABLE, restarted.state().status)
+                assertTrue(states.none { it.status == PackSetClientStatus.READY })
+                assertEquals(listOf(Duration.ofMillis(800)), scheduler.pendingDelays())
+            } finally {
+                restarted.close()
+            }
+        }
+    }
+
+    // Break caught: a corrupted immutable generation must fail closed rather than exposing a
+    // READY snapshot from bytes that no longer match the validated cache record.
+    @Test
+    fun `corrupt pinned cache cannot make an offline restart ready`() {
+        withDirectory { directory ->
+            val source =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val documents =
+                clientDocuments(
+                    PackSetSource(source.baseUri, source.packSet, PackSetChannel.STABLE)
+                )
+            val writerScheduler = DeterministicScheduledExecutor()
+            val writer =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { _, _ ->
+                        LoopbackPackSetServer.response(200, body = documents.manifest)
+                    },
+                    writerScheduler,
+                )
+            try {
+                writer.refreshNow()
+                writerScheduler.runCurrent()
+            } finally {
+                writer.close()
+            }
+            val manifest =
+                Files.walk(directory).use { paths ->
+                    paths
+                        .filter { it.fileName.toString() == "manifest.json" }
+                        .findFirst()
+                        .orElseThrow()
+                }
+            Files.write(manifest, "corrupt".encodeToByteArray())
+
+            val scheduler = DeterministicScheduledExecutor()
+            val restarted =
+                client(
+                    source,
+                    directory,
+                    ScriptedTransport { _, _ ->
+                        error("Corrupt cache restart must not become READY.")
+                    },
+                    scheduler,
+                )
+            try {
+                val failed = restarted.refreshNow()
+                scheduler.runCurrent()
+                assertIs<RefreshResult.Failed>(failed.toCompletableFuture().join())
+                assertEquals(PackSetClientStatus.UNAVAILABLE, restarted.state().status)
+                assertEquals(listOf(Duration.ofMillis(800)), scheduler.pendingDelays())
+            } finally {
+                restarted.close()
+            }
+        }
+    }
+
     // Break caught: CompletableFuture continuations are application callbacks and must not run
     // while close owns the lifecycle lock.
     @Test
@@ -421,27 +737,29 @@ class PackSetClientLifecycleTest {
     @Test
     fun `stale old activation cannot overtake reconfigure starting and new ready`() {
         withDirectory { directory ->
-            val oldSource = source()
+            val oldSource =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
             val newSource =
                 PackSetSource(
                     URI("https://new-assets.example.test"),
                     "global",
                     PackSetChannel.STABLE,
                 )
-            val oldDocuments = clientDocuments(oldSource)
+            val oldDocuments =
+                clientDocuments(
+                    PackSetSource(oldSource.baseUri, oldSource.packSet, PackSetChannel.STABLE)
+                )
             val newDocuments = clientDocuments(newSource)
             val oldEntered = CountDownLatch(1)
             val releaseOld = CountDownLatch(1)
             val delivered = CountDownLatch(2)
             val transport = ScriptedTransport { uri, _ ->
                 when (uri) {
-                    oldSource.channelUri -> {
+                    oldSource.requestUri -> {
                         oldEntered.countDown()
                         assertTrue(releaseOld.await(1, TimeUnit.SECONDS))
-                        LoopbackPackSetServer.response(200, body = oldDocuments.channel)
-                    }
-                    manifestUri(oldSource) ->
                         LoopbackPackSetServer.response(200, body = oldDocuments.manifest)
+                    }
                     newSource.channelUri ->
                         LoopbackPackSetServer.response(200, body = newDocuments.channel)
                     manifestUri(newSource) ->

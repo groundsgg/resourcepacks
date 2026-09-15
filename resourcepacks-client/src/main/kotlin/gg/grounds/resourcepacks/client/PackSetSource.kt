@@ -11,24 +11,66 @@ data class PackSetSource
 private constructor(
     val baseUri: URI,
     val packSet: String,
-    val channel: PackSetChannel,
+    val selection: PackSetSelection,
     private val normalized: Boolean,
 ) {
     constructor(
         baseUri: URI,
         packSet: String,
         channel: PackSetChannel,
-    ) : this(PackSetValidationPolicy(baseUri, packSet).baseUri, packSet, channel, true)
+    ) : this(
+        PackSetValidationPolicy(baseUri, packSet).baseUri,
+        packSet,
+        PackSetSelection.Channel(channel),
+        true,
+    )
+
+    constructor(
+        baseUri: URI,
+        packSet: String,
+        selection: PackSetSelection,
+    ) : this(PackSetValidationPolicy(baseUri, packSet).baseUri, packSet, selection, true)
 
     val policy: PackSetValidationPolicy =
         PackSetValidationPolicy(baseUri, packSet).also {
             require(normalized && it.baseUri == baseUri) { "Base URI must be normalized." }
         }
-    val channelUri: URI = policy.channelUri(channel)
-    val cacheKey: String = sha256("$baseUri\n$packSet\n${channel.name.lowercase()}")
+    @Deprecated("Use selection instead.")
+    val channel: PackSetChannel
+        get() =
+            (selection as? PackSetSelection.Channel)?.channel
+                ?: throw IllegalStateException("A release source has no channel.")
 
-    private companion object {
-        fun sha256(value: String): String =
+    @Deprecated("Use requestUri instead.")
+    val channelUri: URI
+        get() =
+            policy.channelUri(
+                (selection as? PackSetSelection.Channel)?.channel
+                    ?: throw IllegalStateException("A release source has no channel URI.")
+            )
+
+    val requestUri: URI =
+        when (val selected = selection) {
+            is PackSetSelection.Channel -> policy.channelUri(selected.channel)
+            is PackSetSelection.Release ->
+                URI(
+                    "$baseUri/resourcepacks/packsets/$packSet/releases/${selected.id}/manifest.json"
+                )
+        }
+
+    val cacheKey: String =
+        when (val selected = selection) {
+            is PackSetSelection.Channel ->
+                sha256("$baseUri\n$packSet\n${selected.channel.name.lowercase()}")
+            is PackSetSelection.Release -> sha256("release\n$baseUri\n$packSet\n${selected.id}")
+        }
+
+    companion object {
+        @JvmStatic
+        fun release(baseUri: URI, packSet: String, id: String): PackSetSource =
+            PackSetSource(baseUri, packSet, PackSetSelection.Release(id))
+
+        private fun sha256(value: String): String =
             MessageDigest.getInstance("SHA-256").digest(value.encodeToByteArray()).joinToString(
                 ""
             ) { byte ->

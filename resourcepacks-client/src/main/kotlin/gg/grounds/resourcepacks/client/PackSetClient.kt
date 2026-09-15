@@ -520,7 +520,11 @@ class PackSetClient(
                 failures = 0
                 retryTask?.cancel(false)
                 retryTask = null
-                if (!closed && sourceGeneration == generation) {
+                if (
+                    !closed &&
+                        sourceGeneration == generation &&
+                        resultSource.selection is PackSetSelection.Channel
+                ) {
                     periodicTask?.cancel(false)
                     periodicTask =
                         try {
