@@ -20,6 +20,88 @@ import kotlin.test.assertTrue
 
 class PackSetResolverTest {
     @Test
+    fun `release rejects mismatched publication, oversized manifest, foreign cache, and unbound 304`() {
+        val v123 = PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+        val v124 = PackSetSource.release(v123.baseUri, v123.packSet, "v1.2.4")
+        val manifest =
+            clientDocuments(PackSetSource(v123.baseUri, v123.packSet, PackSetChannel.STABLE))
+                .manifest
+
+        assertIs<RefreshResult.Failed>(
+            PackSetResolver(
+                    LoopbackPackSetServer(
+                        mapOf(
+                            v124.requestUri to LoopbackPackSetServer.response(200, body = manifest)
+                        )
+                    ),
+                    config(v124),
+                )
+                .refresh(emptyCache())
+        )
+        assertIs<RefreshResult.Failed>(
+            PackSetResolver(
+                    LoopbackPackSetServer(
+                        mapOf(
+                            v123.requestUri to LoopbackPackSetServer.response(200, body = manifest)
+                        )
+                    ),
+                    PackSetClientConfig(v123, Path.of("cache"), maxManifestBytes = 8),
+                )
+                .refresh(emptyCache())
+        )
+        val first =
+            PackSetResolver(
+                LoopbackPackSetServer(
+                    mapOf(v123.requestUri to LoopbackPackSetServer.response(200, body = manifest))
+                ),
+                config(v123),
+            )
+        val cache = requireNotNull(first.cacheOf(first.refresh(emptyCache())))
+        val foreign =
+            PackSetResolver(
+                LoopbackPackSetServer(
+                    mapOf(v124.requestUri to LoopbackPackSetServer.response(304))
+                ),
+                config(v124),
+            )
+        assertIs<RefreshResult.Failed>(foreign.refresh(cache))
+        assertIs<RefreshResult.Failed>(
+            PackSetResolver(
+                    LoopbackPackSetServer(
+                        mapOf(v123.requestUri to LoopbackPackSetServer.response(304))
+                    ),
+                    config(v123),
+                )
+                .refresh(emptyCache())
+        )
+    }
+
+    @Test
+    fun `release directly resolves a manifest without a channel or ZIP request`() {
+        val source = PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+        val bytes =
+            clientDocuments(PackSetSource(source.baseUri, source.packSet, PackSetChannel.STABLE))
+                .manifest
+        val transport =
+            LoopbackPackSetServer(
+                mapOf(source.requestUri to LoopbackPackSetServer.response(200, body = bytes))
+            )
+        val resolver = PackSetResolver(transport, PackSetClientConfig(source, Path.of("cache")))
+        val result =
+            assertIs<RefreshResult.Activated>(
+                resolver.refresh(ResolverCache(null, null, null, null, null))
+            )
+        assertEquals(ResolvedPackSetTarget.Release("v1.2.3"), result.snapshot.target)
+        assertEquals("v1.2.3", result.snapshot.publication.id)
+        assertEquals(listOf("content", "platform"), result.snapshot.packs.map { it.role })
+        assertEquals(listOf(source.requestUri), transport.requests.map { it.uri })
+        assertIs<RefreshResult.Unchanged>(
+            resolver.refresh(requireNotNull(resolver.cacheOf(result)))
+        )
+        assertEquals(1, transport.requests.size)
+    }
+
+    @Test
     fun `refresh activates an exact stable manifest without downloading ZIPs`() {
         val source =
             PackSetSource(URI("https://assets.example.test"), "global", PackSetChannel.STABLE)

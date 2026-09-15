@@ -114,11 +114,13 @@ class ClientJarBoundaryTest {
             "gg.grounds.resourcepacks.client.PackSetHttpResponse",
             "gg.grounds.resourcepacks.client.PackSetHttpTransport",
             "gg.grounds.resourcepacks.client.PackSetResolver",
+            "gg.grounds.resourcepacks.client.PackSetSelection",
             "gg.grounds.resourcepacks.client.PackSetSnapshot",
             "gg.grounds.resourcepacks.client.PackSetSource",
             "gg.grounds.resourcepacks.client.PackSetStateListener",
             "gg.grounds.resourcepacks.client.RefreshResult",
             "gg.grounds.resourcepacks.client.ResolvedPack",
+            "gg.grounds.resourcepacks.client.ResolvedPackSetTarget",
             "gg.grounds.resourcepacks.client.ResolverCache",
             "gg.grounds.resourcepacks.client.RetryPolicy",
         )

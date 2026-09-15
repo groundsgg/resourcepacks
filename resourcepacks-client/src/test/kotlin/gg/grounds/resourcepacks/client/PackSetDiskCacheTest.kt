@@ -10,10 +10,59 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PackSetDiskCacheTest {
+    @Test
+    fun `release generation stores only manifest and fails closed when metadata or bytes are corrupted`() {
+        val directory = Files.createTempDirectory("pack-cache-test")
+        try {
+            val source =
+                PackSetSource.release(URI("https://assets.example.test"), "global", "v1.2.3")
+            val manifest =
+                clientDocuments(
+                        PackSetSource(source.baseUri, source.packSet, PackSetChannel.STABLE)
+                    )
+                    .manifest
+            val transport =
+                LoopbackPackSetServer(
+                    mapOf(source.requestUri to LoopbackPackSetServer.response(200, body = manifest))
+                )
+            val resolver = PackSetResolver(transport, PackSetClientConfig(source, directory))
+            val activated =
+                assertIs<RefreshResult.Activated>(
+                    resolver.refresh(ResolverCache(null, null, null, null, null))
+                )
+            val disk = PackSetDiskCache(directory)
+            disk.store(source, requireNotNull(resolver.cacheOf(activated)))
+            val generation = generation(directory, source)
+            assertTrue(Files.notExists(generation.resolve("channel.json")))
+            val loaded = requireNotNull(disk.load(source, 65_536, 1_048_576))
+            assertEquals(
+                "v1.2.3",
+                assertIs<RefreshResult.Activated>(resolver.revalidate(loaded))
+                    .snapshot
+                    .publication
+                    .id,
+            )
+            val metadata = generation.resolve("metadata.properties")
+            val originalMetadata = Files.readString(metadata)
+            Files.writeString(
+                metadata,
+                originalMetadata.replace("releaseId=v1.2.3", "releaseId=v1.2.4"),
+            )
+            assertNull(disk.load(source))
+            Files.writeString(metadata, originalMetadata)
+            disk.store(source, requireNotNull(resolver.cacheOf(activated)))
+            Files.write(generation.resolve("manifest.json"), byteArrayOf('{'.code.toByte()))
+            assertNull(disk.load(source))
+        } finally {
+            deleteTree(directory)
+        }
+    }
+
     @Test
     fun `directory synchronization failure has a controlled diagnostic`() {
         val directory = Files.createTempDirectory("pack-cache-test")

@@ -23,6 +23,8 @@ internal class PackSetResolver(
     /** Rebind persisted raw bytes through the same contract checks used for a network response. */
     @JvmSynthetic
     fun revalidate(cache: ResolverCache): RefreshResult {
+        if (config.source.selection is PackSetSelection.Release) return revalidateRelease(cache)
+        val channelSelection = config.source.selection as PackSetSelection.Channel
         val channelBytes = cache.channelBytes ?: return failed("Channel cache was unavailable.")
         val manifestBytes = cache.manifestBytes ?: return failed("Manifest cache was unavailable.")
         val channel =
@@ -31,7 +33,7 @@ internal class PackSetResolver(
                     PackSetContractJson.decodeChannel(
                         channelBytes,
                         config.source.policy,
-                        config.source.channel,
+                        channelSelection.channel,
                     )
             ) {
                 is ChannelDecodeResult.Success -> result.document
@@ -65,47 +67,112 @@ internal class PackSetResolver(
 
     @JvmSynthetic
     fun refresh(cache: ResolverCache): RefreshResult =
-        try {
-            val deadline = deadlineNanos(config.requestTimeout)
-            val channelResponse =
-                transport.get(config.source.channelUri, cache.channelEtag, config.requestTimeout)
-            channelResponse.use { response ->
-                when (response.status) {
-                    304 -> {
-                        val snapshot = cache.snapshot
-                        if (
-                            cache.channelBytes == null ||
-                                snapshot == null ||
-                                snapshot.source != config.source
-                        )
-                            failed("Channel cache was unavailable.")
-                        else cached(RefreshResult.Unchanged(snapshot), cache)
+        if (config.source.selection is PackSetSelection.Release) refreshRelease(cache)
+        else
+            try {
+                val channelSelection = config.source.selection as PackSetSelection.Channel
+                val deadline = deadlineNanos(config.requestTimeout)
+                val channelResponse =
+                    transport.get(
+                        config.source.requestUri,
+                        cache.channelEtag,
+                        config.requestTimeout,
+                    )
+                channelResponse.use { response ->
+                    when (response.status) {
+                        304 -> {
+                            val snapshot = cache.snapshot
+                            if (
+                                cache.channelBytes == null ||
+                                    snapshot == null ||
+                                    snapshot.source != config.source
+                            )
+                                failed("Channel cache was unavailable.")
+                            else cached(RefreshResult.Unchanged(snapshot), cache)
+                        }
+                        200 ->
+                            resolveChannel(
+                                readBounded(response.body, config.maxChannelBytes, deadline),
+                                response.etag,
+                                cache,
+                            )
+                        else -> failed("Channel request failed.")
                     }
-                    200 ->
-                        resolveChannel(
-                            readBounded(response.body, config.maxChannelBytes, deadline),
-                            response.etag,
-                            cache,
-                        )
-                    else -> failed("Channel request failed.")
                 }
+            } catch (_: Throwable) {
+                failed("Channel request failed.")
+            }
+
+    private fun refreshRelease(cache: ResolverCache): RefreshResult {
+        val selected = config.source.selection as PackSetSelection.Release
+        val snapshot = cache.snapshot
+        if (
+            snapshot?.source == config.source &&
+                cache.releaseId == selected.id &&
+                snapshot.publication.type ==
+                    gg.grounds.resourcepacks.contract.PublicationType.RELEASE &&
+                snapshot.publication.id == selected.id
+        )
+            return cached(RefreshResult.Unchanged(snapshot), cache)
+        return try {
+            val deadline = deadlineNanos(config.requestTimeout)
+            transport.get(config.source.requestUri, null, config.requestTimeout).use { response ->
+                if (response.status != 200) return failed("Release manifest request failed.")
+                resolveRelease(readBounded(response.body, config.maxManifestBytes, deadline), cache)
             }
         } catch (_: Throwable) {
-            failed("Channel request failed.")
+            failed("Release manifest request failed.")
         }
+    }
+
+    private fun revalidateRelease(cache: ResolverCache): RefreshResult {
+        val selected = config.source.selection as PackSetSelection.Release
+        if (cache.releaseId != selected.id || cache.channelBytes != null)
+            return failed("Release cache was unavailable.")
+        val bytes = cache.manifestBytes ?: return failed("Release cache was unavailable.")
+        return resolveRelease(bytes, cache)
+    }
+
+    private fun resolveRelease(bytes: ByteArray, cache: ResolverCache): RefreshResult {
+        val selected = config.source.selection as PackSetSelection.Release
+        val manifest =
+            when (val result = PackSetContractJson.decodeManifest(bytes, config.source.policy)) {
+                is ManifestDecodeResult.Success -> result.manifest
+                is ManifestDecodeResult.Failure ->
+                    return failed("Release manifest document was invalid.")
+            }
+        if (
+            manifest.publication.type !=
+                gg.grounds.resourcepacks.contract.PublicationType.RELEASE ||
+                manifest.publication.id != selected.id
+        )
+            return failed("Release manifest target did not match selection.")
+        val snapshot =
+            PackSetSnapshot.fromValidatedReleaseBytes(
+                config.source,
+                manifest,
+                resolvedPacks(manifest),
+                bytes,
+            )
+        return cached(
+            RefreshResult.Activated(snapshot),
+            ResolverCache(null, null, null, bytes, snapshot, selected.id),
+        )
+    }
 
     private fun resolveChannel(
         bytes: ByteArray,
         etag: String?,
         cache: ResolverCache,
     ): RefreshResult {
+        val channelSelection = config.source.selection as PackSetSelection.Channel
         val channel =
             when (
                 val result =
                     PackSetContractJson.decodeChannel(
                         bytes,
                         config.source.policy,
-                        config.source.channel,
+                        channelSelection.channel,
                     )
             ) {
                 is ChannelDecodeResult.Success -> result.document

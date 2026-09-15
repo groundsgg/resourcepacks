@@ -6,6 +6,7 @@ internal data class ResolverCache(
     val manifestEtag: String?,
     val manifestBytes: ByteArray?,
     val snapshot: PackSetSnapshot?,
+    val releaseId: String? = null,
 )
 
 sealed interface RefreshResult {

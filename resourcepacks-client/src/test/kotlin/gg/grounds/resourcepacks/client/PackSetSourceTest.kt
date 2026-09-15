@@ -17,9 +17,28 @@ import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
 class PackSetSourceTest {
+    @Test
+    fun `release source rejects unsafe IDs and separates cache namespaces`() {
+        val base = URI("https://assets.example.test")
+        listOf("1.2.3", "v01.2.3", "v1.2.3/other", "v1.2.3%2fother", "../v1.2.3").forEach { id ->
+            assertFailsWith<IllegalArgumentException> { PackSetSource.release(base, "global", id) }
+        }
+        val pin = PackSetSource.release(base, "global", "v1.2.3")
+        assertEquals(
+            URI(
+                "https://assets.example.test/resourcepacks/packsets/global/releases/v1.2.3/manifest.json"
+            ),
+            pin.requestUri,
+        )
+        assertNotEquals(PackSetSource(base, "global", PackSetChannel.STABLE).cacheKey, pin.cacheKey)
+        assertNotEquals(PackSetSource.release(base, "global", "v1.2.4").cacheKey, pin.cacheKey)
+        assertIs<PackSetSelection.Release>(pin.selection)
+    }
+
     @Test
     fun `source uses policy canonical URI and a stable SHA-256 cache key`() {
         val source =
