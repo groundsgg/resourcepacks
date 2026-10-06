@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/groundsgg/resourcepacks/compare/v1.0.0...v1.0.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **release-tools:** name the reason an R2 call failed ([#33](https://github.com/groundsgg/resourcepacks/issues/33)) ([fe46c5b](https://github.com/groundsgg/resourcepacks/commit/fe46c5b20126cef0289713da444fca6fe0d66d8f))
+
 ## [1.0.0](https://github.com/groundsgg/resourcepacks/compare/v0.7.0...v1.0.0) (2026-10-06)
 
 
