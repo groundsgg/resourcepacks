@@ -213,7 +213,7 @@ class FailClosedTransactionTest {
                             listOf(
                                 PackContribution(
                                     ContributionId.of("grounds:secure-source"),
-                                    PackFormatRange(88, 88),
+                                    PackFormatRange(97, 97),
                                     listOf(
                                         PackEntry.file(
                                             "assets/grounds/secure/source.bin",
@@ -409,7 +409,7 @@ class FailClosedTransactionTest {
                     listOf(
                         PackContribution(
                             ContributionId.of("grounds:secure-source"),
-                            PackFormatRange(88, 88),
+                            PackFormatRange(97, 97),
                             listOf(PackEntry.file("assets/grounds/secure/source.bin", source)),
                         )
                     )

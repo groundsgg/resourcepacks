@@ -327,9 +327,10 @@ internal object PackSetManifestJson {
         if (m.id != "grounds:global") bad("/id", "id must be grounds:global.")
         if (m.version.length > MAX_VERSION || !SEMVER.matches(m.version))
             bad("/version", "version must be strict SemVer.")
+        // Schema v1 only exists as immutable 26.2 publications; new pack sets are schema v2.
         if (m.minecraft.version != "26.2")
             bad("/minecraft/version", "Minecraft version must be 26.2.")
-        if (m.minecraft.resourcePackFormat != PackSetConstants.FORMAT)
+        if (m.minecraft.resourcePackFormat != LEGACY_FORMAT)
             bad("/minecraft/resourcePackFormat", "Resource pack format must be 88.")
         val c = m.catalog
         if (c.id != "grounds:resourcepacks") bad("/catalog/id", "Catalog id mismatch.")
@@ -355,7 +356,7 @@ internal object PackSetManifestJson {
             if (spec == null || pack.id != spec.second) bad("$prefix/id", "Pack id mismatch.")
             if (spec == null || pack.uuid != spec.third) bad("$prefix/uuid", "Pack UUID mismatch.")
             if (!pack.required) bad("$prefix/required", "Pack must be required.")
-            if (pack.resourcePackFormat != PackSetConstants.FORMAT)
+            if (pack.resourcePackFormat != LEGACY_FORMAT)
                 bad("$prefix/resourcePackFormat", "Format must be 88.")
             hash(pack.sha1, 40, "$prefix/sha1", p)
             hash(pack.sha256, 64, "$prefix/sha256", p)
@@ -659,6 +660,7 @@ internal object PackSetManifestJson {
         )
     private val PROVENANCE = setOf("repository", "commit", "tag")
     private const val MAX_VERSION = 256
+    private const val LEGACY_FORMAT = 88
 }
 
 /**

@@ -5,7 +5,7 @@ import gg.grounds.resourcepack.api.PackLimits
 import java.util.UUID
 
 internal object PackSetConstants {
-    const val FORMAT = 88
+    const val FORMAT = 97
     val packFormat = PackFormat(FORMAT)
 
     val contentUuid: UUID = UUID.fromString("44591d5b-71f5-5c2a-a5b2-d3ee7be47e53")

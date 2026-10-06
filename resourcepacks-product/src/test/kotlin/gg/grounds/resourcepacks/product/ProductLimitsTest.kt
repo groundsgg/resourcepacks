@@ -172,7 +172,7 @@ class ProductLimitsTest {
             block(
                 PackContribution(
                     ContributionId.of("grounds:limit-fixture"),
-                    PackFormatRange(88, 88),
+                    PackFormatRange(97, 97),
                     List(entryCount) { index ->
                         PackEntry.file(
                             "assets/grounds/limit-$index.bin",

@@ -136,7 +136,7 @@ class PackSetBuilderTest {
                         listOf(
                             PackContribution(
                                 ContributionId.of("grounds:test-source-read"),
-                                PackFormatRange(88, 88),
+                                PackFormatRange(97, 97),
                                 listOf(
                                     PackEntry.file(
                                         "assets/grounds/test/copied-source.png",
@@ -264,12 +264,12 @@ class PackSetBuilderTest {
             val artifacts = PackSetBuilder.build(ReleaseTestContext.inputs(output), catalogJar())
 
             assertEquals(
-                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§6Grounds Network\n§fPack » §eContent §7(${ReleaseTestContext.version})"}}""" +
+                """{"pack":{"pack_format":97,"min_format":97,"max_format":97,"description":"§6Grounds Network\n§fPack » §eContent §7(${ReleaseTestContext.version})"}}""" +
                     "\n",
                 packMetadata(artifacts.content.file),
             )
             assertEquals(
-                """{"pack":{"pack_format":88,"min_format":88,"max_format":88,"description":"§6Grounds Network\n§fPack » §ePlatform §7(${ReleaseTestContext.version})"}}""" +
+                """{"pack":{"pack_format":97,"min_format":97,"max_format":97,"description":"§6Grounds Network\n§fPack » §ePlatform §7(${ReleaseTestContext.version})"}}""" +
                     "\n",
                 packMetadata(artifacts.platform.file),
             )

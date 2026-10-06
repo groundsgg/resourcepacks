@@ -384,7 +384,7 @@ internal object PackSetBuilder {
                 inputs.publication.id,
             ),
             inputs.version,
-            gg.grounds.resourcepacks.contract.ManifestMinecraft("26.2", PackSetConstants.FORMAT),
+            gg.grounds.resourcepacks.contract.ManifestMinecraft("26.3", PackSetConstants.FORMAT),
             gg.grounds.resourcepacks.contract.ManifestCatalog(
                 "grounds:resourcepacks",
                 inputs.version,
