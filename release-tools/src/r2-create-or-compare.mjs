@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from '@aws-sdk/client-s3';
 import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { sameStreamBytes } from './digests.mjs';
+import { safeReason } from './safe-reason.mjs';
 import { runCli, strictArgs } from './cli.mjs';
 import { assertReleaseArtifactContract, loadRelease, openVerifiedArtifact } from './manifest.mjs';
 import { DEFAULT_NETWORK_TIMEOUT_MS, OperationTimeoutError, withTimeout } from './timeout.mjs';
@@ -41,7 +42,7 @@ export async function createOrCompare({ endpoint, bucket, key, file, artifact, a
       },timeoutMs);
     } catch (error) {
       if(error instanceof OperationTimeoutError)throw error;
-      if (!(error instanceof S3ServiceException) || error.$metadata?.httpStatusCode !== 412) throw new Error('R2 upload failed without exposing credentials');
+      if (!(error instanceof S3ServiceException) || error.$metadata?.httpStatusCode !== 412) throw new Error(`R2 upload failed without exposing credentials${safeReason(error)}`);
     }
     if (put) return { created: true };
     await withTimeout(`R2 request timed out during comparison for ${key}`,async({signal,onTimeout})=>{

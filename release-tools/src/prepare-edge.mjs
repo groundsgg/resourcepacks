@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
+import { safeReason } from './safe-reason.mjs';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -43,7 +44,7 @@ async function request(s3, command, timeoutMs) {
 async function priorEdge(s3, bucket, timeoutMs) {
   let pointer;
   try { pointer = await request(s3, new GetObjectCommand({ Bucket: bucket, Key: CHANNEL_KEY }), timeoutMs); }
-  catch (error) { if (missing(error)) return undefined; if (error instanceof OperationTimeoutError) throw error; fail('Edge channel cannot be read'); }
+  catch (error) { if (missing(error)) return undefined; if (error instanceof OperationTimeoutError) throw error; fail(`Edge channel cannot be read${safeReason(error)}`); }
   if (!pointer.Body || pointer.ContentType !== CHANNEL_TYPE || pointer.CacheControl !== 'public, max-age=30, must-revalidate') fail('Edge channel metadata differs');
   const channel = decodeChannel(await bytes(pointer.Body, MAX, timeoutMs));
   if (channel.channel !== 'edge') fail('Edge channel identity differs');
