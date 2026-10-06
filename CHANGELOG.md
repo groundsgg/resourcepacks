@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/groundsgg/resourcepacks/compare/v0.7.0...v1.0.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* resourcepacks-client and -contract accept 26.3 / format 97 pack sets only.
+
+### Features
+
+* build the pack set for minecraft 26.3 ([#31](https://github.com/groundsgg/resourcepacks/issues/31)) ([379bbe1](https://github.com/groundsgg/resourcepacks/commit/379bbe16b6ae3e0782c6fee27ef8924ec603c875))
+
 ## [0.7.0](https://github.com/groundsgg/resourcepacks/compare/v0.6.0...v0.7.0) (2026-09-15)
 
 
