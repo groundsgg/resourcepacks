@@ -17,6 +17,10 @@ const MAX_MANIFEST_SIZE = 1024 * 1024;
 const CONTENT_SIZE_LIMIT = 128 * 1024 * 1024;
 const PLATFORM_SIZE_LIMIT = 16 * 1024 * 1024;
 const CATALOG_SIZE_LIMIT = 1024 * 1024 * 1024;
+// Minecraft version -> resource pack format. New builds target 26.3 only (the Kotlin build
+// decides that); 26.2 stays readable so a channel still pointing at a 26.2 manifest validates
+// while it moves over.
+const MINECRAFT_TARGETS = Object.freeze({'26.2': 88, '26.3': 97});
 const RELEASE_CONTRACTS = new WeakMap();
 const PRIVATE_ARTIFACT_SNAPSHOTS = new WeakMap();
 const SNAPSHOT_RECORDS = new WeakMap();
@@ -73,7 +77,7 @@ function publicationLayout(manifest) {
 function validatePack(pack, expected, layout) {
   exactKeys(pack, ['id','order','required','resourcePackFormat','role','sha1','sha256','size','url','uuid'], `/packs/${expected.order}`);
   if (pack.order !== expected.order || pack.role !== expected.role || pack.id !== `grounds-${expected.role}` || pack.uuid !== expected.uuid) fail(`pack ${expected.role} identity mismatch`);
-  if (pack.required !== true || pack.resourcePackFormat !== 88) fail(`pack ${expected.role} policy mismatch`);
+  if (pack.required !== true || pack.resourcePackFormat !== expected.resourcePackFormat) fail(`pack ${expected.role} policy mismatch`);
   if (!HEX40.test(pack.sha1) || !HEX64.test(pack.sha256)) fail(`pack ${expected.role} digest mismatch`);
   positiveInteger(pack.size, `/packs/${expected.order}/size`);
   if (pack.size > expected.maximumSize) fail(`pack ${expected.role} size exceeds product limit`);
@@ -97,7 +101,7 @@ export function validateManifest(manifest) {
   exactKeys(manifest, ['catalog','minecraft','packSet','packs','provenance','publication','schemaVersion','version'], '/');
   if (manifest.schemaVersion !== 2 || manifest.packSet !== 'grounds-global' || typeof manifest.version !== 'string' || !SEMVER.test(manifest.version)) fail('root identity mismatch');
   exactKeys(manifest.minecraft, ['resourcePackFormat','version'], '/minecraft');
-  if (manifest.minecraft.version !== '26.2' || manifest.minecraft.resourcePackFormat !== 88) fail('Minecraft target mismatch');
+  if (MINECRAFT_TARGETS[manifest.minecraft.version] !== manifest.minecraft.resourcePackFormat) fail('Minecraft target mismatch');
   exactKeys(manifest.catalog, ['coordinate','file','id','sha256','size','version'], '/catalog');
   exactKeys(manifest.provenance, ['commit','repository'], '/provenance');
   if (manifest.provenance.repository !== 'groundsgg/resourcepacks') fail('provenance mismatch');
@@ -108,8 +112,8 @@ export function validateManifest(manifest) {
   if (manifest.catalog.size > CATALOG_SIZE_LIMIT) fail('catalog size exceeds product limit');
   if (!Array.isArray(manifest.packs) || manifest.packs.length !== 2) fail('packs must contain exactly content and platform');
   const packs = [
-    validatePack(manifest.packs[0], {order:0,role:'content',uuid:CONTENT_UUID,maximumSize:CONTENT_SIZE_LIMIT}, layout),
-    validatePack(manifest.packs[1], {order:1,role:'platform',uuid:PLATFORM_UUID,maximumSize:PLATFORM_SIZE_LIMIT}, layout),
+    validatePack(manifest.packs[0], {order:0,role:'content',uuid:CONTENT_UUID,maximumSize:CONTENT_SIZE_LIMIT,resourcePackFormat:manifest.minecraft.resourcePackFormat}, layout),
+    validatePack(manifest.packs[1], {order:1,role:'platform',uuid:PLATFORM_UUID,maximumSize:PLATFORM_SIZE_LIMIT,resourcePackFormat:manifest.minecraft.resourcePackFormat}, layout),
   ];
   return { manifest, packs, catalogFile, layout };
 }

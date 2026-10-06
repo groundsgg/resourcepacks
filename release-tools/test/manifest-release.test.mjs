@@ -50,6 +50,32 @@ test('loadRelease rejects noncanonical, unknown, duplicate, and semantically dri
   }
 });
 
+test('loadRelease accepts the 26.3 target and still reads a prior 26.2 publication', async () => {
+  const current = await createReleaseFixture();
+  const release = await loadRelease({ manifestFile: join(current.root, 'manifest.json'), releaseDirectory: current.root });
+  assert.deepEqual(release.manifest.minecraft, { resourcePackFormat: 97, version: '26.3' });
+  // A channel can still point at a 26.2 manifest while it moves over; it must stay readable.
+  const prior = await createReleaseFixture({ minecraft: { resourcePackFormat: 88, version: '26.2' } });
+  await loadRelease({ manifestFile: join(prior.root, 'manifest.json'), releaseDirectory: prior.root });
+});
+
+test('loadRelease rejects an unknown Minecraft target and packs that disagree with it', async () => {
+  const cases = [
+    text => text.replace('"version": "26.3"', '"version": "26.4"'),
+    text => text.replace('"resourcePackFormat": 97,\n    "version"', '"resourcePackFormat": 88,\n    "version"'),
+    text => text.replace('"resourcePackFormat": 97,\n      "role": "content"', '"resourcePackFormat": 88,\n      "role": "content"'),
+  ];
+  for (const mutate of cases) {
+    const fixture = await createReleaseFixture();
+    const manifestFile = join(fixture.root, 'manifest.json');
+    const original = canonicalJson(fixture.manifest);
+    const mutated = mutate(original);
+    assert.notEqual(mutated, original);
+    await writeFile(manifestFile, mutated);
+    await assert.rejects(() => loadRelease({ manifestFile, releaseDirectory: fixture.root }), /manifest|mismatch/i);
+  }
+});
+
 test('loadRelease rejects extra, missing, symlinked, and digest-drifted release artifacts', async () => {
   const extra = await createReleaseFixture();
   await writeFile(join(extra.root, 'extra.txt'), 'not releasable');

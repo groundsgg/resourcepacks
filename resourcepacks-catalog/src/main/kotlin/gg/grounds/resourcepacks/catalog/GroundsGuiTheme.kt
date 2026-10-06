@@ -6,7 +6,7 @@ import gg.grounds.gui.theme.theme
 
 object GroundsGuiTheme {
     val theme: Theme =
-        theme(GroundsGuiIds.NAMESPACE, PackFormat(88)) {
+        theme(GroundsGuiIds.NAMESPACE, PackFormat(97)) {
             description = "Grounds platform UI"
             panel(GroundsGuiIds.PANEL_MENU, "panels/menu.png", 176, 168, offsetY = -6)
             icon(GroundsGuiIds.ICON_CLOSE, "icons/close.png")

@@ -155,7 +155,7 @@ class PackSetResolverTest {
             )
 
         assertEquals(
-            "aa8dbcbc939f3943c91f399f0871a82e035aa6059346edeb5dc36a851966ba26",
+            "977c9b342fe13870ece18678a70259089d6145eee6c244e554fc221f42d5ca1c",
             activated.snapshot.fingerprint,
         )
     }
@@ -942,8 +942,8 @@ class PackSetResolverTest {
                 "version": "1.2.3"
               },
               "minecraft": {
-                "resourcePackFormat": 88,
-                "version": "26.2"
+                "resourcePackFormat": 97,
+                "version": "26.3"
               },
               "packSet": "global",
               "packs": [
@@ -951,7 +951,7 @@ class PackSetResolverTest {
                   "id": "grounds-content",
                   "order": 0,
                   "required": true,
-                  "resourcePackFormat": 88,
+                  "resourcePackFormat": 97,
                   "role": "content",
                   "sha1": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                   "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
@@ -963,7 +963,7 @@ class PackSetResolverTest {
                   "id": "grounds-platform",
                   "order": 1,
                   "required": true,
-                  "resourcePackFormat": 88,
+                  "resourcePackFormat": 97,
                   "role": "platform",
                   "sha1": "dddddddddddddddddddddddddddddddddddddddd",
                   "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",

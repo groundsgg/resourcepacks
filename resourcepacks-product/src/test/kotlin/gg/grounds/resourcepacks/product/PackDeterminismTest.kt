@@ -61,7 +61,7 @@ class PackDeterminismTest {
     private fun contribution(id: String, path: String, value: String): PackContribution =
         PackContribution(
             ContributionId.of(id),
-            PackFormatRange(88, 88),
+            PackFormatRange(97, 97),
             listOf(PackEntry.text(path, value)),
         )
 }

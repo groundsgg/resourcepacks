@@ -219,7 +219,7 @@ object PackSetContractJson {
         if (m.schemaVersion != 2) invalid("/schemaVersion", "schemaVersion must be 2.")
         if (m.packSet != policy.packSet) invalid("/packSet", "PackSet mismatch.")
         if (!SEMVER.matches(m.version)) invalid("/version", "version must be strict SemVer.")
-        if (m.minecraft != ManifestMinecraft("26.2", 88))
+        if (m.minecraft != ManifestMinecraft("26.3", 97))
             invalid("/minecraft", "Minecraft metadata mismatch.")
         if (
             m.catalog.id != "grounds:resourcepacks" ||
@@ -252,7 +252,7 @@ object PackSetContractJson {
                     p.id != spec.second ||
                     p.uuid.toString() != spec.third ||
                     !p.required ||
-                    p.resourcePackFormat != 88
+                    p.resourcePackFormat != m.minecraft.resourcePackFormat
             )
                 invalid("/packs/$i", "Pack metadata mismatch.")
             if (!HEX40.matches(p.sha1) || !HEX64.matches(p.sha256) || p.size <= 0)

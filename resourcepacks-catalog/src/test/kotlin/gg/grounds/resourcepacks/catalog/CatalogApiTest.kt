@@ -70,8 +70,8 @@ class CatalogApiTest {
         val theme = GroundsGuiTheme.theme
 
         assertEquals("grounds", theme.namespace)
-        assertEquals(88, theme.packFormat.minInclusive)
-        assertEquals(88, theme.packFormat.maxInclusive)
+        assertEquals(97, theme.packFormat.minInclusive)
+        assertEquals(97, theme.packFormat.maxInclusive)
         assertEquals("Grounds platform UI", theme.description)
         assertEquals(listOf("menu"), theme.panels.map { it.id })
         assertEquals(listOf("close", "back", "next", "blank"), theme.icons.map { it.id })

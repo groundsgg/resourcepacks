@@ -21,7 +21,7 @@ export function canonicalJson(value) {
   return `${JSON.stringify(normalize(value), null, 2)}\n`;
 }
 
-export async function createReleaseFixture({ type = 'release', commit = '0123456789abcdef0123456789abcdef01234567' } = {}) {
+export async function createReleaseFixture({ type = 'release', commit = '0123456789abcdef0123456789abcdef01234567', minecraft = { resourcePackFormat: 97, version: '26.3' } } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'resourcepacks-task8-release-'));
   const content = Buffer.from('content zip fixture');
   const platform = Buffer.from('platform zip fixture');
@@ -44,14 +44,14 @@ export async function createReleaseFixture({ type = 'release', commit = '0123456
       size: catalog.length,
       version,
     },
-    minecraft: { resourcePackFormat: 88, version: '26.2' },
+    minecraft,
     packSet: 'grounds-global',
     packs: [
       {
         id: 'grounds-content',
         order: 0,
         required: true,
-        resourcePackFormat: 88,
+        resourcePackFormat: minecraft.resourcePackFormat,
         role: 'content',
         sha1: contentSha1,
         sha256: digest('sha256', content),
@@ -63,7 +63,7 @@ export async function createReleaseFixture({ type = 'release', commit = '0123456
         id: 'grounds-platform',
         order: 1,
         required: true,
-        resourcePackFormat: 88,
+        resourcePackFormat: minecraft.resourcePackFormat,
         role: 'platform',
         sha1: platformSha1,
         sha256: digest('sha256', platform),

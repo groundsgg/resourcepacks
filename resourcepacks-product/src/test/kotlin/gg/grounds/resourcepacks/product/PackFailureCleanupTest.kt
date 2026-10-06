@@ -116,7 +116,7 @@ class PackFailureCleanupTest {
     private fun fileContribution(id: String, source: Path): PackContribution =
         PackContribution(
             ContributionId.of(id),
-            PackFormatRange(88, 88),
+            PackFormatRange(97, 97),
             listOf(PackEntry.file("assets/grounds/failure/source.bin", source)),
         )
 

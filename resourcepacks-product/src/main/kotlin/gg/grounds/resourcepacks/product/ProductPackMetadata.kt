@@ -5,7 +5,9 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 
-/** One streaming format-88 metadata implementation shared by physical validation and ZIP output. */
+/**
+ * One streaming pack-format metadata implementation shared by physical validation and ZIP output.
+ */
 internal object ProductPackMetadata {
     fun write(definition: PackDefinition, output: OutputStream) {
         val writer = OutputStreamWriter(output, StandardCharsets.UTF_8)
