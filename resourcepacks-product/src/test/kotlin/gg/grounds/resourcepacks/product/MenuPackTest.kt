@@ -64,7 +64,7 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "c302abf799929866caabbe6353592ac844d3e1edac7d832883c1f8e8e03e058a",
+                    "fc23289a3e30fc29638b9d4ac39093fe47bcfcde124de52308a50c8752aa6266",
                 "assets/grounds/font/menu/space.json" to
                     "376ee38fb6e43bd2f193d221272ea5b2235018b1eff0a45c48c5db4e815d1d7a",
                 "assets/grounds/font/menu/text_0.json" to
@@ -91,6 +91,8 @@ class MenuPackTest {
                     "e89e9396dbd5d40192dd9e385f3d30f7357cb9932d829ec53ae84ae332389415",
                 "assets/grounds/textures/font/menu/panel.png" to
                     "0cd2c7f7a70a53701b6ce5e75ec6efe8fed7209701a5ffecd0a4363ba9f545db",
+                "assets/grounds/textures/font/menu/settings_panel.png" to
+                    "98e0568c2203b21a9e86cda8085b2c3be6767378a369d35b8a60aee1898ba983",
                 "assets/grounds/textures/font/menu/row.png" to
                     "e25804d9002924bd2bd1cdfdbb09993c098cfb769540af4bce5aab1effdabdd9",
                 "assets/grounds/textures/font/menu/toggle_off.png" to

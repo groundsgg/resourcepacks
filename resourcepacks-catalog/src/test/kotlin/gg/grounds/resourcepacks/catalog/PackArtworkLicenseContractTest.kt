@@ -160,6 +160,7 @@ class PackArtworkLicenseContractTest {
                 "art/platform/menu/arrow_right.png",
                 "art/platform/menu/panel.png",
                 "art/platform/menu/row.png",
+                "art/platform/menu/settings_panel.png",
                 "art/platform/menu/toggle_off.png",
                 "art/platform/menu/toggle_on.png",
                 "art/platform/panels/menu.png",

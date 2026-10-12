@@ -37,6 +37,9 @@
     "menu/panel.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
+    "menu/settings_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
     "menu/row.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },

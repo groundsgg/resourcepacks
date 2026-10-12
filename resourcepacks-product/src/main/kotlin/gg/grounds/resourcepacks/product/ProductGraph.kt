@@ -368,6 +368,11 @@ internal object ProductGraph {
                     131,
                     "e89e9396dbd5d40192dd9e385f3d30f7357cb9932d829ec53ae84ae332389415",
                 ),
+            "menu/settings_panel.png" to
+                ArtworkExpectation(
+                    562,
+                    "98e0568c2203b21a9e86cda8085b2c3be6767378a369d35b8a60aee1898ba983",
+                ),
         )
 
     private val PLATFORM_ARTWORK =
