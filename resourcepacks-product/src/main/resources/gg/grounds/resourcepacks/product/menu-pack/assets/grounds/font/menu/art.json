@@ -1,0 +1,490 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 7,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 6,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 5,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 4,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 3,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 2,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 1,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": 0,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/panel.png",
+      "ascent": -1,
+      "height": 99,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 7,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 6,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 5,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 4,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 3,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 2,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 1,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": 0,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/row.png",
+      "ascent": -1,
+      "height": 18,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 7,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 6,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 5,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 4,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 3,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 2,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": 0,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_on.png",
+      "ascent": -1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 7,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 6,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 5,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 4,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 3,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 2,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": 0,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/toggle_off.png",
+      "ascent": -1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 7,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 6,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 5,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 4,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 3,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 2,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": 0,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_left.png",
+      "ascent": -1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 7,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 6,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 5,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 4,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 3,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 2,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": 0,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/arrow_right.png",
+      "ascent": -1,
+      "height": 14,
+      "chars": [
+        ""
+      ]
+    }
+  ]
+}
