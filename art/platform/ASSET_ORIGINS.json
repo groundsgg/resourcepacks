@@ -33,6 +33,24 @@
     },
     "tab/badge_right.png": {
       "source": "original"
+    },
+    "menu/panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/toggle_on.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/toggle_off.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/arrow_left.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/arrow_right.png": {
+      "source": "plugin-lobby MenuPack (generated)"
     }
   }
 }

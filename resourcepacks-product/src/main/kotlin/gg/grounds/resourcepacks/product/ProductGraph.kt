@@ -76,6 +76,16 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
+            MENU_ARTWORK.forEach { (relative, expected) ->
+                val source = HeldSourceFile.capture(art.resolve(relative), MAX_ARTWORK_BYTES)
+                if (
+                    source.digests.size != expected.size || source.digests.sha256 != expected.sha256
+                ) {
+                    source.close()
+                    throw java.io.IOException("Product artwork hash mismatch: $relative")
+                }
+                held[relative] = source
+            }
             held[PLATFORM_LICENSE_SOURCE] =
                 HeldSourceFile.capture(art.resolve("LICENSE"), MAX_LICENSE_BYTES)
             held[CONTENT_LICENSE_SOURCE] =
@@ -95,6 +105,7 @@ internal object ProductGraph {
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
                     .withTabArtwork(held)
+                    .withMenu(held)
             val contentContribution =
                 ContentContribution.withModels(held)
                     .withLicense(held.getValue(CONTENT_LICENSE_SOURCE), CONTENT_LICENSE_ENTRY)
@@ -212,6 +223,24 @@ internal object ProductGraph {
         )
     }
 
+    private fun PackContribution.withMenu(held: Map<String, HeldSourceFile>): PackContribution {
+        val sprites =
+            MENU_ARTWORK.map { (relative, expected) ->
+                PackEntry.bytes(
+                    "assets/grounds/textures/font/$relative",
+                    held.getValue(relative).readBytes(expected.size),
+                )
+            }
+        return PackContribution(
+            id,
+            supportedFormats,
+            entries + sprites + MenuPack.entries(),
+            vanillaClaims + MenuPack.vanillaClaims,
+            provides,
+            requires,
+        )
+    }
+
     private fun PackContribution.withImmutableSources(): PackContribution =
         PackContribution(
             id,
@@ -302,6 +331,43 @@ internal object ProductGraph {
             "tab/badge_left.png" to "assets/grounds/textures/font/tab_badge_left.png",
             "tab/badge_middle.png" to "assets/grounds/textures/font/tab_badge_middle.png",
             "tab/badge_right.png" to "assets/grounds/textures/font/tab_badge_right.png",
+        )
+
+    /**
+     * Dialog-body menu sprites; `menu/x.png` ships as `assets/grounds/textures/font/menu/x.png`.
+     */
+    private val MENU_ARTWORK =
+        linkedMapOf(
+            "menu/panel.png" to
+                ArtworkExpectation(
+                    407,
+                    "0cd2c7f7a70a53701b6ce5e75ec6efe8fed7209701a5ffecd0a4363ba9f545db",
+                ),
+            "menu/row.png" to
+                ArtworkExpectation(
+                    147,
+                    "e25804d9002924bd2bd1cdfdbb09993c098cfb769540af4bce5aab1effdabdd9",
+                ),
+            "menu/toggle_on.png" to
+                ArtworkExpectation(
+                    129,
+                    "00874ff90dd9484221fdf5fc739d50d76a6b7cb8eb075637d3ae644cdea0006c",
+                ),
+            "menu/toggle_off.png" to
+                ArtworkExpectation(
+                    126,
+                    "ede564a42b07d0670bdc3a29086cce9a436098cb0df39729c4c1163e292f5fab",
+                ),
+            "menu/arrow_left.png" to
+                ArtworkExpectation(
+                    128,
+                    "197849612738a0ce2f9e96f665ac22c0a757b22678f359f948d7f9e53c068a97",
+                ),
+            "menu/arrow_right.png" to
+                ArtworkExpectation(
+                    131,
+                    "e89e9396dbd5d40192dd9e385f3d30f7357cb9932d829ec53ae84ae332389415",
+                ),
         )
 
     private val PLATFORM_ARTWORK =

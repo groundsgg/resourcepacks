@@ -269,10 +269,17 @@ class ThemeAssetContractTest {
                 "tab/badge_left.png",
                 "tab/badge_middle.png",
                 "tab/badge_right.png",
+                "menu/panel.png",
+                "menu/row.png",
+                "menu/toggle_on.png",
+                "menu/toggle_off.png",
+                "menu/arrow_left.png",
+                "menu/arrow_right.png",
             )
         val EXPECTED_PLATFORM_FILES =
             ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
-        val EXPECTED_PLATFORM_DIRECTORIES = setOf("panels", "icons", "tooltips", "frames", "tab")
+        val EXPECTED_PLATFORM_DIRECTORIES =
+            setOf("panels", "icons", "tooltips", "frames", "tab", "menu")
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
@@ -338,6 +345,24 @@ class ThemeAssetContractTest {
     },
     "tab/badge_right.png": {
       "source": "original"
+    },
+    "menu/panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/toggle_on.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/toggle_off.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/arrow_left.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/arrow_right.png": {
+      "source": "plugin-lobby MenuPack (generated)"
     }
   }
 }
