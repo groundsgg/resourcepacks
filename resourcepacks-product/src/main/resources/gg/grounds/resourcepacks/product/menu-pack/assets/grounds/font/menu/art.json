@@ -485,6 +485,87 @@
       "chars": [
         ""
       ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 7,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 6,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 5,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 4,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 3,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 2,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 1,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": 0,
+      "height": 153,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/settings_panel.png",
+      "ascent": -1,
+      "height": 153,
+      "chars": [
+        ""
+      ]
     }
   ]
 }

@@ -270,6 +270,7 @@ class ThemeAssetContractTest {
                 "tab/badge_middle.png",
                 "tab/badge_right.png",
                 "menu/panel.png",
+                "menu/settings_panel.png",
                 "menu/row.png",
                 "menu/toggle_on.png",
                 "menu/toggle_off.png",
@@ -347,6 +348,9 @@ class ThemeAssetContractTest {
       "source": "original"
     },
     "menu/panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/settings_panel.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/row.png": {
