@@ -43,10 +43,12 @@ internal object MenuPack {
 
     private val FILES: Map<String, Pair<Long, String>> =
         linkedMapOf(
+            "assets/grounds/font/menu/title.json" to
+                (1_504L to "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b"),
             "assets/grounds/font/menu/space.json" to
                 (433L to "376ee38fb6e43bd2f193d221272ea5b2235018b1eff0a45c48c5db4e815d1d7a"),
             "assets/grounds/font/menu/art.json" to
-                (10_362L to "fc23289a3e30fc29638b9d4ac39093fe47bcfcde124de52308a50c8752aa6266"),
+                (26_312L to "5542ae0511c18760a8dc055cce49f0740ef92cbf30cfdce97a08ff110daeb511"),
             "assets/grounds/font/menu/text_0.json" to
                 (16_244L to "513a9830d3e501c2df942d6812216dbb6c98b2297f51ff84e599081e733b1e26"),
             "assets/grounds/font/menu/text_1.json" to

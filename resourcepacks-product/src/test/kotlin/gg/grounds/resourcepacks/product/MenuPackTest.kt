@@ -64,7 +64,9 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "fc23289a3e30fc29638b9d4ac39093fe47bcfcde124de52308a50c8752aa6266",
+                    "5542ae0511c18760a8dc055cce49f0740ef92cbf30cfdce97a08ff110daeb511",
+                "assets/grounds/font/menu/title.json" to
+                    "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b",
                 "assets/grounds/font/menu/space.json" to
                     "376ee38fb6e43bd2f193d221272ea5b2235018b1eff0a45c48c5db4e815d1d7a",
                 "assets/grounds/font/menu/text_0.json" to
@@ -99,6 +101,28 @@ class MenuPackTest {
                     "ede564a42b07d0670bdc3a29086cce9a436098cb0df39729c4c1163e292f5fab",
                 "assets/grounds/textures/font/menu/toggle_on.png" to
                     "00874ff90dd9484221fdf5fc739d50d76a6b7cb8eb075637d3ae644cdea0006c",
+                "assets/grounds/textures/font/menu/divider.png" to
+                    "45cb340e1b031ede8d295e4f2ce4015ef7094ac28b7ef694d36d03c244cf8876",
+                "assets/grounds/textures/font/menu/hit_1.png" to
+                    "d5be3a3ebb8695ea5be637929f38f875fd07926d5b79006fa6bd9884e60c8e56",
+                "assets/grounds/textures/font/menu/hit_128.png" to
+                    "1f6753c42d4032a5ddc4cbd00eabad4227eba82f25515505877dab0658591030",
+                "assets/grounds/textures/font/menu/hit_16.png" to
+                    "88f145d2abf6b9397999173941f154e6b8e07df121ff0d27ef227c181a2153e9",
+                "assets/grounds/textures/font/menu/hit_2.png" to
+                    "469f4de97eb8a644185fa5798cfb77fd67810f5d387c30d62abce9595f6a8333",
+                "assets/grounds/textures/font/menu/hit_256.png" to
+                    "7b7e1383c5df8190b6207869dea266983ba783681ec98c82ae9263e990acb45c",
+                "assets/grounds/textures/font/menu/hit_32.png" to
+                    "1955ee969239908c59c5a2d94bb882b67d31fae7f19fd1620ae3e804cbb49e62",
+                "assets/grounds/textures/font/menu/hit_4.png" to
+                    "4c46856d212d19c456a007df3c5a7ff8d96c7de720ed924f33cec805db6c35bf",
+                "assets/grounds/textures/font/menu/hit_64.png" to
+                    "1d68d2246495c5d023d77627960f2bf1778bc6365c089aff93cf38b8526d7b5d",
+                "assets/grounds/textures/font/menu/hit_8.png" to
+                    "99d24af41f65a9b552ec106494c39d8252442eb556c7f5bbf538f7c57db9378e",
+                "assets/grounds/textures/font/menu/settings_panel_2.png" to
+                    "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
                 "assets/minecraft/shaders/core/gui.fsh" to
                     "f98c3a1a289fcaa9efe8469668fe2975bcfd3de9c1636ac012b4c049c719f061",
                 "assets/minecraft/shaders/core/gui.vsh" to
