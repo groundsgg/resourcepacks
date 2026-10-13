@@ -271,6 +271,17 @@ class ThemeAssetContractTest {
                 "tab/badge_right.png",
                 "menu/panel.png",
                 "menu/settings_panel.png",
+                "menu/divider.png",
+                "menu/hit_1.png",
+                "menu/hit_128.png",
+                "menu/hit_16.png",
+                "menu/hit_2.png",
+                "menu/hit_256.png",
+                "menu/hit_32.png",
+                "menu/hit_4.png",
+                "menu/hit_64.png",
+                "menu/hit_8.png",
+                "menu/settings_panel_2.png",
                 "menu/row.png",
                 "menu/toggle_on.png",
                 "menu/toggle_off.png",
@@ -351,6 +362,39 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/divider.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_1.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_128.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_16.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_256.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_32.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_4.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_64.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_8.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/settings_panel_2.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/row.png": {

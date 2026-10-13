@@ -40,6 +40,39 @@
     "menu/settings_panel.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
+    "menu/divider.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_1.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_128.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_16.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_256.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_32.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_4.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_64.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/hit_8.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
     "menu/row.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },

@@ -373,6 +373,61 @@ internal object ProductGraph {
                     562,
                     "98e0568c2203b21a9e86cda8085b2c3be6767378a369d35b8a60aee1898ba983",
                 ),
+            "menu/divider.png" to
+                ArtworkExpectation(
+                    94,
+                    "45cb340e1b031ede8d295e4f2ce4015ef7094ac28b7ef694d36d03c244cf8876",
+                ),
+            "menu/hit_1.png" to
+                ArtworkExpectation(
+                    73,
+                    "d5be3a3ebb8695ea5be637929f38f875fd07926d5b79006fa6bd9884e60c8e56",
+                ),
+            "menu/hit_128.png" to
+                ArtworkExpectation(
+                    106,
+                    "1f6753c42d4032a5ddc4cbd00eabad4227eba82f25515505877dab0658591030",
+                ),
+            "menu/hit_16.png" to
+                ArtworkExpectation(
+                    82,
+                    "88f145d2abf6b9397999173941f154e6b8e07df121ff0d27ef227c181a2153e9",
+                ),
+            "menu/hit_2.png" to
+                ArtworkExpectation(
+                    75,
+                    "469f4de97eb8a644185fa5798cfb77fd67810f5d387c30d62abce9595f6a8333",
+                ),
+            "menu/hit_256.png" to
+                ArtworkExpectation(
+                    112,
+                    "7b7e1383c5df8190b6207869dea266983ba783681ec98c82ae9263e990acb45c",
+                ),
+            "menu/hit_32.png" to
+                ArtworkExpectation(
+                    87,
+                    "1955ee969239908c59c5a2d94bb882b67d31fae7f19fd1620ae3e804cbb49e62",
+                ),
+            "menu/hit_4.png" to
+                ArtworkExpectation(
+                    75,
+                    "4c46856d212d19c456a007df3c5a7ff8d96c7de720ed924f33cec805db6c35bf",
+                ),
+            "menu/hit_64.png" to
+                ArtworkExpectation(
+                    100,
+                    "1d68d2246495c5d023d77627960f2bf1778bc6365c089aff93cf38b8526d7b5d",
+                ),
+            "menu/hit_8.png" to
+                ArtworkExpectation(
+                    79,
+                    "99d24af41f65a9b552ec106494c39d8252442eb556c7f5bbf538f7c57db9378e",
+                ),
+            "menu/settings_panel_2.png" to
+                ArtworkExpectation(
+                    640,
+                    "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
+                ),
         )
 
     private val PLATFORM_ARTWORK =
