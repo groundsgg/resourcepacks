@@ -213,6 +213,7 @@ class PackArtworkLicenseContractTest {
                 "art/platform/tab/badge_middle.png",
                 "art/platform/tab/badge_right.png",
                 "art/platform/tab/logo.png",
+                "art/platform/chat/logo.png",
                 "art/platform/tooltips/default_bg.png",
                 "art/platform/tooltips/default_frame.png",
             )
