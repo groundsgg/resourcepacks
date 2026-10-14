@@ -282,6 +282,10 @@ class ThemeAssetContractTest {
                 "menu/hit_64.png",
                 "menu/hit_8.png",
                 "menu/settings_panel_2.png",
+                "menu/nav_panel.png",
+                "menu/tabs_content_panel.png",
+                "menu/nav_button.png",
+                "menu/nav_selected.png",
                 "menu/region_panel_l.png",
                 "menu/region_panel_r.png",
                 "menu/map_sea_l.png",
@@ -422,6 +426,18 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/nav_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/tabs_content_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/nav_button.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/nav_selected.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/region_panel_l.png": {
