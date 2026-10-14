@@ -64,7 +64,7 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "5542ae0511c18760a8dc055cce49f0740ef92cbf30cfdce97a08ff110daeb511",
+                    "c79126ae79af0cab9cd6e968d08360a68f51f9a07e17e777262d2fa6bbabd47a",
                 "assets/grounds/font/menu/title.json" to
                     "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b",
                 "assets/grounds/font/menu/space.json" to
@@ -123,6 +123,32 @@ class MenuPackTest {
                     "99d24af41f65a9b552ec106494c39d8252442eb556c7f5bbf538f7c57db9378e",
                 "assets/grounds/textures/font/menu/settings_panel_2.png" to
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
+                "assets/grounds/textures/font/menu/region_panel.png" to
+                    "8e5825f5b397b92f7eaa1099104158d4b15bef043c32420a550b8a4728011675",
+                "assets/grounds/textures/font/menu/map_sea.png" to
+                    "38fb275453a1724d315966f2963bb6beefa6e425fd5ab2d44e1d4ea268de0cd5",
+                "assets/grounds/textures/font/menu/map_na.png" to
+                    "bf03a0f2418b5b966d262f6897a3f792eef2f6b4d9ff6f42bd5e35ae764baf6b",
+                "assets/grounds/textures/font/menu/map_sa.png" to
+                    "4f3b95637701e453eb2e05b334a00bfd2a1f17a131bdbeb4f5ef7f100307d8c5",
+                "assets/grounds/textures/font/menu/map_eu.png" to
+                    "b156b091199e938a8232364163c3c6c36fcffbbd488c84096c7e4e86ce55a74d",
+                "assets/grounds/textures/font/menu/map_af.png" to
+                    "d301eeb129615f9fb6ef3bd1be936cfa5f01a66d539a1cdc5498d41f379cd29a",
+                "assets/grounds/textures/font/menu/map_as.png" to
+                    "52b8935b10cab896175dc4e9b534410be4e1e593b37db9e100224e7fc79ac18b",
+                "assets/grounds/textures/font/menu/map_oc.png" to
+                    "69f44ab1be75c115573a93cc26d44ae649f2d139559e457c183bb6c75030ddeb",
+                "assets/grounds/textures/font/menu/map_na_picked.png" to
+                    "2f81d49dbd2e3dfddac83f618f68feed8860c2fcbfba6d43b5a06936923cf55b",
+                "assets/grounds/textures/font/menu/map_eu_picked.png" to
+                    "1568a685e3b4a02b628ce36e97bf8dc0cb0f8622b0a35bd92085dad8cb385ccd",
+                "assets/grounds/textures/font/menu/map_as_picked.png" to
+                    "00ef35622d34c5c8e1c4a283bf9b08466442d1c2ff5cb84a29cc815cc101b650",
+                "assets/grounds/textures/font/menu/map_oc_picked.png" to
+                    "05cc8de6a4392d796e58d9f9cf46f740ab521a7dc5b5c6851aba1ba55119faa2",
+                "assets/grounds/textures/font/menu/map_zone.png" to
+                    "1d2da3bbcfc5868db44a3b8016075fba0158c0b2fc1eb945a27bd3211171ac12",
                 "assets/minecraft/shaders/core/gui.fsh" to
                     "f98c3a1a289fcaa9efe8469668fe2975bcfd3de9c1636ac012b4c049c719f061",
                 "assets/minecraft/shaders/core/gui.vsh" to

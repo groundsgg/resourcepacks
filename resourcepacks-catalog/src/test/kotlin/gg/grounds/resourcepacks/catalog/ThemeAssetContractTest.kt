@@ -282,6 +282,19 @@ class ThemeAssetContractTest {
                 "menu/hit_64.png",
                 "menu/hit_8.png",
                 "menu/settings_panel_2.png",
+                "menu/region_panel.png",
+                "menu/map_sea.png",
+                "menu/map_na.png",
+                "menu/map_sa.png",
+                "menu/map_eu.png",
+                "menu/map_af.png",
+                "menu/map_as.png",
+                "menu/map_oc.png",
+                "menu/map_na_picked.png",
+                "menu/map_eu_picked.png",
+                "menu/map_as_picked.png",
+                "menu/map_oc_picked.png",
+                "menu/map_zone.png",
                 "menu/row.png",
                 "menu/toggle_on.png",
                 "menu/toggle_off.png",
@@ -395,6 +408,45 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/region_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_na.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sa.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_eu.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_af.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_as.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_oc.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_na_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_eu_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_as_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_oc_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_zone.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/row.png": {

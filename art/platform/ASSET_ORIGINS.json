@@ -73,6 +73,45 @@
     "menu/settings_panel_2.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
+    "menu/region_panel.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_na.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sa.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_eu.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_af.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_as.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_oc.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_na_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_eu_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_as_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_oc_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_zone.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
     "menu/row.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
