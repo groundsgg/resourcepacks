@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.1.0](https://github.com/groundsgg/resourcepacks/compare/v1.0.0...v1.1.0) (2026-10-14)
+
+
+### Features
+
+* add click strips, a title font and section rules for the lobby menu ([#37](https://github.com/groundsgg/resourcepacks/issues/37)) ([b2b23ab](https://github.com/groundsgg/resourcepacks/commit/b2b23aba71b88ad3bb50cbde0e4590b66b94c353))
+* add the taller settings panel sprite for the lobby menu ([#36](https://github.com/groundsgg/resourcepacks/issues/36)) ([46d07dd](https://github.com/groundsgg/resourcepacks/commit/46d07ddf45fbdda2bc60f5bbaa76aaa433d267a3))
+* add the world map sprites for the lobby's /region menu ([#39](https://github.com/groundsgg/resourcepacks/issues/39)) ([bfcd865](https://github.com/groundsgg/resourcepacks/commit/bfcd86549652d5730a5fe067b1b0fc4be62bf085))
+* ship dialog-body menu fonts, sprites and gui shaders ([#35](https://github.com/groundsgg/resourcepacks/issues/35)) ([31e9516](https://github.com/groundsgg/resourcepacks/commit/31e951691fddb4649ebb87200384ce75460336ad))
+
+
+### Bug Fixes
+
+* **release-tools:** name the reason an R2 call failed ([#33](https://github.com/groundsgg/resourcepacks/issues/33)) ([fe46c5b](https://github.com/groundsgg/resourcepacks/commit/fe46c5b20126cef0289713da444fca6fe0d66d8f))
+
 ## [1.0.0](https://github.com/groundsgg/resourcepacks/compare/v0.7.0...v1.0.0) (2026-10-06)
 
 
