@@ -428,6 +428,26 @@ internal object ProductGraph {
                     640,
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
                 ),
+            "menu/nav_button.png" to
+                ArtworkExpectation(
+                    133,
+                    "5bac550c855ad2677ae9bac6f24926fa0305ec6170cbfe0852ec43918f777f42",
+                ),
+            "menu/nav_panel.png" to
+                ArtworkExpectation(
+                    430,
+                    "1a233e1ec812f194a0bbe3d951697a394557d7146d81e75c3cfa60985686ca47",
+                ),
+            "menu/nav_selected.png" to
+                ArtworkExpectation(
+                    139,
+                    "caa178905b842d568fc0a9b3d38918b3fe7a0ff40d28f9c637b845cc7c002b7d",
+                ),
+            "menu/tabs_content_panel.png" to
+                ArtworkExpectation(
+                    562,
+                    "98e0568c2203b21a9e86cda8085b2c3be6767378a369d35b8a60aee1898ba983",
+                ),
         )
 
     private val PLATFORM_ARTWORK =

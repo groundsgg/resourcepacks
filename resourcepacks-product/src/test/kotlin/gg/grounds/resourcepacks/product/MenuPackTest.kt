@@ -64,7 +64,7 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "5542ae0511c18760a8dc055cce49f0740ef92cbf30cfdce97a08ff110daeb511",
+                    "ad7aac0a2932c53a4328fe51cec07536ecf4191a8f12945e69e3de032719fc6b",
                 "assets/grounds/font/menu/title.json" to
                     "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b",
                 "assets/grounds/font/menu/space.json" to
@@ -123,6 +123,14 @@ class MenuPackTest {
                     "99d24af41f65a9b552ec106494c39d8252442eb556c7f5bbf538f7c57db9378e",
                 "assets/grounds/textures/font/menu/settings_panel_2.png" to
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
+                "assets/grounds/textures/font/menu/nav_button.png" to
+                    "5bac550c855ad2677ae9bac6f24926fa0305ec6170cbfe0852ec43918f777f42",
+                "assets/grounds/textures/font/menu/nav_panel.png" to
+                    "1a233e1ec812f194a0bbe3d951697a394557d7146d81e75c3cfa60985686ca47",
+                "assets/grounds/textures/font/menu/nav_selected.png" to
+                    "caa178905b842d568fc0a9b3d38918b3fe7a0ff40d28f9c637b845cc7c002b7d",
+                "assets/grounds/textures/font/menu/tabs_content_panel.png" to
+                    "98e0568c2203b21a9e86cda8085b2c3be6767378a369d35b8a60aee1898ba983",
                 "assets/minecraft/shaders/core/gui.fsh" to
                     "f98c3a1a289fcaa9efe8469668fe2975bcfd3de9c1636ac012b4c049c719f061",
                 "assets/minecraft/shaders/core/gui.vsh" to
