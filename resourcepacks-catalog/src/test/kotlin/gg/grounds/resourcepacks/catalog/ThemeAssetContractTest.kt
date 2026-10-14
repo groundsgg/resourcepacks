@@ -282,6 +282,9 @@ class ThemeAssetContractTest {
                 "menu/hit_64.png",
                 "menu/hit_8.png",
                 "menu/settings_panel_2.png",
+                "menu/nav_panel_2.png",
+                "menu/row_wide_l.png",
+                "menu/row_wide_r.png",
                 "menu/nav_panel.png",
                 "menu/tabs_content_panel.png",
                 "menu/nav_button.png",
@@ -426,6 +429,15 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/nav_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row_wide_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row_wide_r.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/nav_panel.png": {

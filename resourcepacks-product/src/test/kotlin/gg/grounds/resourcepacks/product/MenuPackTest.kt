@@ -64,7 +64,7 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "bc41980e7fbd6170045472413035882cfd060961e41bc22fa1589cfb1986bedf",
+                    "89c5852f07a4a8d6609e0843b1a9aa577cbd557cbd4fa72a45223589cf6ba3cd",
                 "assets/grounds/font/menu/title.json" to
                     "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b",
                 "assets/grounds/font/menu/space.json" to
@@ -123,6 +123,12 @@ class MenuPackTest {
                     "99d24af41f65a9b552ec106494c39d8252442eb556c7f5bbf538f7c57db9378e",
                 "assets/grounds/textures/font/menu/settings_panel_2.png" to
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
+                "assets/grounds/textures/font/menu/nav_panel_2.png" to
+                    "eb6c40c763b40c424fb382a13b88b97d630d77d2188de271f4cae36a212872ab",
+                "assets/grounds/textures/font/menu/row_wide_l.png" to
+                    "bb98a7bbd49a9fbbfba0cef18e13fff08fa61799eb500e460d6f8a8e72ef7c5a",
+                "assets/grounds/textures/font/menu/row_wide_r.png" to
+                    "78dd9707f4a9a3bcfb7815bdff4bd7484f12dee1ba63e2bd65c6eb6269db123f",
                 "assets/grounds/textures/font/menu/region_panel_l.png" to
                     "f5dc182d9d049992c5a87401dac73a4078f8dd3d9f09d6ec4f7349bb24052121",
                 "assets/grounds/textures/font/menu/region_panel_r.png" to

@@ -428,6 +428,21 @@ internal object ProductGraph {
                     640,
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
                 ),
+            "menu/nav_panel_2.png" to
+                ArtworkExpectation(
+                    502,
+                    "eb6c40c763b40c424fb382a13b88b97d630d77d2188de271f4cae36a212872ab",
+                ),
+            "menu/row_wide_l.png" to
+                ArtworkExpectation(
+                    138,
+                    "bb98a7bbd49a9fbbfba0cef18e13fff08fa61799eb500e460d6f8a8e72ef7c5a",
+                ),
+            "menu/row_wide_r.png" to
+                ArtworkExpectation(
+                    141,
+                    "78dd9707f4a9a3bcfb7815bdff4bd7484f12dee1ba63e2bd65c6eb6269db123f",
+                ),
             "menu/region_panel_l.png" to
                 ArtworkExpectation(
                     606,
