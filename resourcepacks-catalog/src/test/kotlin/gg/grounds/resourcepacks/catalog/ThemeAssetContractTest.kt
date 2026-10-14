@@ -282,6 +282,20 @@ class ThemeAssetContractTest {
                 "menu/hit_64.png",
                 "menu/hit_8.png",
                 "menu/settings_panel_2.png",
+                "menu/region_panel_l.png",
+                "menu/region_panel_r.png",
+                "menu/map_sea_l.png",
+                "menu/map_sea_r.png",
+                "menu/map2_na.png",
+                "menu/map2_sa.png",
+                "menu/map2_eu.png",
+                "menu/map2_af.png",
+                "menu/map2_as.png",
+                "menu/map2_oc.png",
+                "menu/map2_na_picked.png",
+                "menu/map2_eu_picked.png",
+                "menu/map2_as_picked.png",
+                "menu/map2_oc_picked.png",
                 "menu/region_panel.png",
                 "menu/map_sea.png",
                 "menu/map_na.png",
@@ -408,6 +422,48 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/region_panel_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/region_panel_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_na.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_sa.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_eu.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_af.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_as.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_oc.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_na_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_eu_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_as_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map2_oc_picked.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/region_panel.png": {

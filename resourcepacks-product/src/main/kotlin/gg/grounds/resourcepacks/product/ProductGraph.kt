@@ -428,6 +428,76 @@ internal object ProductGraph {
                     640,
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
                 ),
+            "menu/region_panel_l.png" to
+                ArtworkExpectation(
+                    606,
+                    "f5dc182d9d049992c5a87401dac73a4078f8dd3d9f09d6ec4f7349bb24052121",
+                ),
+            "menu/region_panel_r.png" to
+                ArtworkExpectation(
+                    608,
+                    "2b71987127d825fc8a0fec62ff993a057c2b6ee429a3a9bd9c8fb2fa506b8673",
+                ),
+            "menu/map_sea_l.png" to
+                ArtworkExpectation(
+                    438,
+                    "fcb9ffb65e4332d9b688f72389424738f5a95bb398445b7dc9e7fd639d0b6a53",
+                ),
+            "menu/map_sea_r.png" to
+                ArtworkExpectation(
+                    441,
+                    "f9d3ad43c342e60c0b7496bfbb8ae757a41983fbcaeab1444fb38f8a4393576d",
+                ),
+            "menu/map2_na.png" to
+                ArtworkExpectation(
+                    1120,
+                    "b197322ee1463745b5b5e55c36c68e35d4e3a0b0ec827da4dec2211d804d91e7",
+                ),
+            "menu/map2_sa.png" to
+                ArtworkExpectation(
+                    399,
+                    "fa11f6c37e22857e78e93773b9b349b73ea7425b569c47300381a7525b6737e2",
+                ),
+            "menu/map2_eu.png" to
+                ArtworkExpectation(
+                    599,
+                    "eceef338db9228c97f82dc0a676038915e5105deae94b8f10df09199ee778d3e",
+                ),
+            "menu/map2_af.png" to
+                ArtworkExpectation(
+                    468,
+                    "09ae3b8c03084041f8943c41ccd173e466bde56121291ac521e0c530344da3ef",
+                ),
+            "menu/map2_as.png" to
+                ArtworkExpectation(
+                    1244,
+                    "d48aff6683609f93b2145bde2cb2e46773d318575bb0844a8073bcf4917e4376",
+                ),
+            "menu/map2_oc.png" to
+                ArtworkExpectation(
+                    395,
+                    "2b706d442983b972d6a9d333611edcd16f8c3574235ffc58236a15530f544d3c",
+                ),
+            "menu/map2_na_picked.png" to
+                ArtworkExpectation(
+                    1120,
+                    "3eff6b9f109ee4897c238450349af2b11bc05949db4ddbf7df5ab5839be5b183",
+                ),
+            "menu/map2_eu_picked.png" to
+                ArtworkExpectation(
+                    599,
+                    "208c9b87d27a4626d1fa8c5e5d202fb53a1b99feba278a062f9adf5dcb361fc5",
+                ),
+            "menu/map2_as_picked.png" to
+                ArtworkExpectation(
+                    1244,
+                    "2115b457c9e8e3f41dff55c00b4239a0bc9fd9cb48977940ed2ddfbc9131f5e9",
+                ),
+            "menu/map2_oc_picked.png" to
+                ArtworkExpectation(
+                    395,
+                    "60e4d1cc774e656c3b9e40aae357f20215d4f66a424ba1682ac1195ab411bc67",
+                ),
             "menu/region_panel.png" to
                 ArtworkExpectation(
                     588,
