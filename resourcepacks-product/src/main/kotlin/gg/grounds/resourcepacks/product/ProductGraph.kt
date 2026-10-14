@@ -428,6 +428,71 @@ internal object ProductGraph {
                     640,
                     "a626782a8f6e625d965224505dbe893016609261cab62d7f84c776c381efc126",
                 ),
+            "menu/region_panel.png" to
+                ArtworkExpectation(
+                    588,
+                    "8e5825f5b397b92f7eaa1099104158d4b15bef043c32420a550b8a4728011675",
+                ),
+            "menu/map_sea.png" to
+                ArtworkExpectation(
+                    348,
+                    "38fb275453a1724d315966f2963bb6beefa6e425fd5ab2d44e1d4ea268de0cd5",
+                ),
+            "menu/map_na.png" to
+                ArtworkExpectation(
+                    670,
+                    "bf03a0f2418b5b966d262f6897a3f792eef2f6b4d9ff6f42bd5e35ae764baf6b",
+                ),
+            "menu/map_sa.png" to
+                ArtworkExpectation(
+                    266,
+                    "4f3b95637701e453eb2e05b334a00bfd2a1f17a131bdbeb4f5ef7f100307d8c5",
+                ),
+            "menu/map_eu.png" to
+                ArtworkExpectation(
+                    365,
+                    "b156b091199e938a8232364163c3c6c36fcffbbd488c84096c7e4e86ce55a74d",
+                ),
+            "menu/map_af.png" to
+                ArtworkExpectation(
+                    321,
+                    "d301eeb129615f9fb6ef3bd1be936cfa5f01a66d539a1cdc5498d41f379cd29a",
+                ),
+            "menu/map_as.png" to
+                ArtworkExpectation(
+                    827,
+                    "52b8935b10cab896175dc4e9b534410be4e1e593b37db9e100224e7fc79ac18b",
+                ),
+            "menu/map_oc.png" to
+                ArtworkExpectation(
+                    262,
+                    "69f44ab1be75c115573a93cc26d44ae649f2d139559e457c183bb6c75030ddeb",
+                ),
+            "menu/map_na_picked.png" to
+                ArtworkExpectation(
+                    670,
+                    "2f81d49dbd2e3dfddac83f618f68feed8860c2fcbfba6d43b5a06936923cf55b",
+                ),
+            "menu/map_eu_picked.png" to
+                ArtworkExpectation(
+                    365,
+                    "1568a685e3b4a02b628ce36e97bf8dc0cb0f8622b0a35bd92085dad8cb385ccd",
+                ),
+            "menu/map_as_picked.png" to
+                ArtworkExpectation(
+                    827,
+                    "00ef35622d34c5c8e1c4a283bf9b08466442d1c2ff5cb84a29cc815cc101b650",
+                ),
+            "menu/map_oc_picked.png" to
+                ArtworkExpectation(
+                    262,
+                    "05cc8de6a4392d796e58d9f9cf46f740ab521a7dc5b5c6851aba1ba55119faa2",
+                ),
+            "menu/map_zone.png" to
+                ArtworkExpectation(
+                    81,
+                    "1d2da3bbcfc5868db44a3b8016075fba0158c0b2fc1eb945a27bd3211171ac12",
+                ),
         )
 
     private val PLATFORM_ARTWORK =
