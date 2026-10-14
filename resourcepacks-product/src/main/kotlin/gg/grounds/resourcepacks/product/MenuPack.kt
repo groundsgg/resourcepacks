@@ -48,7 +48,7 @@ internal object MenuPack {
             "assets/grounds/font/menu/space.json" to
                 (433L to "376ee38fb6e43bd2f193d221272ea5b2235018b1eff0a45c48c5db4e815d1d7a"),
             "assets/grounds/font/menu/art.json" to
-                (45_495L to "c79126ae79af0cab9cd6e968d08360a68f51f9a07e17e777262d2fa6bbabd47a"),
+                (51_538L to "5dcc416ed9f813e08b507966b4cec98eddceaa3f4294cb56659ea07688096814"),
             "assets/grounds/font/menu/text_0.json" to
                 (16_244L to "513a9830d3e501c2df942d6812216dbb6c98b2297f51ff84e599081e733b1e26"),
             "assets/grounds/font/menu/text_1.json" to
