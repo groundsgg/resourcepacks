@@ -282,6 +282,42 @@ class ThemeAssetContractTest {
                 "menu/hit_64.png",
                 "menu/hit_8.png",
                 "menu/settings_panel_2.png",
+                "menu/nav_panel_3.png",
+                "menu/tabs_content_3_l.png",
+                "menu/tabs_content_3_r.png",
+                "menu/map_sea3_l.png",
+                "menu/map_sea3_r.png",
+                "menu/map3_na.png",
+                "menu/map3_sa.png",
+                "menu/map3_eu.png",
+                "menu/map3_af.png",
+                "menu/map3_as.png",
+                "menu/map3_oc.png",
+                "menu/map3_na_picked.png",
+                "menu/map3_eu_picked.png",
+                "menu/map3_as_picked.png",
+                "menu/map3_oc_picked.png",
+                "menu/row_tall_l.png",
+                "menu/row_tall_r.png",
+                "menu/icon_globe.png",
+                "menu/icon_signal.png",
+                "menu/icon_hand.png",
+                "menu/pill_l.png",
+                "menu/pill_r.png",
+                "menu/pill_1.png",
+                "menu/pill_2.png",
+                "menu/pill_4.png",
+                "menu/pill_8.png",
+                "menu/pill_16.png",
+                "menu/pill_32.png",
+                "menu/pill_64.png",
+                "menu/pill_128.png",
+                "menu/card_na.png",
+                "menu/card_sa.png",
+                "menu/card_eu.png",
+                "menu/card_af.png",
+                "menu/card_as.png",
+                "menu/card_oc.png",
                 "menu/nav_panel_2.png",
                 "menu/row_wide_l.png",
                 "menu/row_wide_r.png",
@@ -429,6 +465,114 @@ class ThemeAssetContractTest {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/settings_panel_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/nav_panel_3.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/tabs_content_3_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/tabs_content_3_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea3_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map_sea3_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_na.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_sa.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_eu.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_af.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_as.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_oc.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_na_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_eu_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_as_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_oc_picked.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row_tall_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/row_tall_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/icon_globe.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/icon_signal.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/icon_hand.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_l.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_r.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_1.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_2.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_4.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_8.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_16.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_32.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_64.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/pill_128.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_na.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_sa.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_eu.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_af.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_as.png": {
+      "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/card_oc.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
     "menu/nav_panel_2.png": {
