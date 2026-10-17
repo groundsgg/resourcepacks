@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/groundsgg/resourcepacks/compare/v1.1.0...v1.2.0) (2026-10-17)
+
+
+### Features
+
+* add depth sprites for the /settings region tab ([#46](https://github.com/groundsgg/resourcepacks/issues/46)) ([0f68fd2](https://github.com/groundsgg/resourcepacks/commit/0f68fd295a20371413e8665dae2511e443520ee0))
+* add the bigger /region map sprites for the lobby ([#41](https://github.com/groundsgg/resourcepacks/issues/41)) ([4b829f4](https://github.com/groundsgg/resourcepacks/commit/4b829f4bebc5262927249cbba4a4d59db8a4bfb9))
+* add the sprites for /settings with a region map tab ([#44](https://github.com/groundsgg/resourcepacks/issues/44)) ([0a8a9c6](https://github.com/groundsgg/resourcepacks/commit/0a8a9c6dec275effc83e4979f19cc402fb91cdae))
+* add the tab rail sprites for the lobby settings menu ([#43](https://github.com/groundsgg/resourcepacks/issues/43)) ([9cfcca7](https://github.com/groundsgg/resourcepacks/commit/9cfcca7273e658fc14032e791b795653ee88a22b))
+* **chat:** add branded logo and emoji font assets ([#45](https://github.com/groundsgg/resourcepacks/issues/45)) ([c64f57f](https://github.com/groundsgg/resourcepacks/commit/c64f57f4f652aa06183a4a1ab162b38dda65d54f))
+
+
+### Bug Fixes
+
+* **pack:** remove personal paths from artwork provenance ([#47](https://github.com/groundsgg/resourcepacks/issues/47)) ([a4eb13e](https://github.com/groundsgg/resourcepacks/commit/a4eb13e6e387a2bc55bb80404d65e2ce408daaa1))
+
 ## [1.1.0](https://github.com/groundsgg/resourcepacks/compare/v1.0.0...v1.1.0) (2026-10-14)
 
 
