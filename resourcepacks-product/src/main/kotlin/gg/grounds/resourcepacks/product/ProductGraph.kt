@@ -76,6 +76,16 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
+            CHAT_ARTWORK.forEach { (relative, expected) ->
+                val source = HeldSourceFile.capture(art.resolve(relative), expected.size)
+                if (
+                    source.digests.size != expected.size || source.digests.sha256 != expected.sha256
+                ) {
+                    source.close()
+                    throw java.io.IOException("Product artwork hash mismatch: $relative")
+                }
+                held[relative] = source
+            }
             MENU_ARTWORK.forEach { (relative, expected) ->
                 val source = HeldSourceFile.capture(art.resolve(relative), MAX_ARTWORK_BYTES)
                 if (
@@ -105,6 +115,7 @@ internal object ProductGraph {
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
                     .withTabArtwork(held)
+                    .withChatFont(held)
                     .withMenu(held)
             val contentContribution =
                 ContentContribution.withModels(held)
@@ -241,6 +252,29 @@ internal object ProductGraph {
         )
     }
 
+    private fun PackContribution.withChatFont(held: Map<String, HeldSourceFile>): PackContribution {
+        val logo = CHAT_ARTWORK.getValue(CHAT_LOGO_SOURCE)
+        val entries =
+            listOf(
+                PackEntry.text("assets/grounds/font/chat.json", ChatFont.json()),
+                PackEntry.bytes(
+                    "assets/grounds/textures/font/chat/logo.png",
+                    held.getValue(CHAT_LOGO_SOURCE).readBytes(logo.size),
+                ),
+            ) +
+                ChatFont.emojiTextures().map { (name, bytes) ->
+                    PackEntry.bytes("assets/grounds/textures/font/chat/$name.png", bytes)
+                }
+        return PackContribution(
+            id,
+            supportedFormats,
+            this.entries + entries,
+            vanillaClaims,
+            provides,
+            requires,
+        )
+    }
+
     private fun PackContribution.withImmutableSources(): PackContribution =
         PackContribution(
             id,
@@ -290,6 +324,7 @@ internal object ProductGraph {
     private const val MAX_LICENSE_BYTES = 16L * 1024
     private const val MAX_CONTENT_MODEL_BYTES = 16L * 1024
     private const val PACK_ICON_SOURCE = "pack.png"
+    private const val CHAT_LOGO_SOURCE = "chat/logo.png"
     private const val CONTENT_LICENSE_ENTRY = "assets/grounds/legal/content.txt"
     private const val PLATFORM_LICENSE_ENTRY = "assets/grounds/legal/platform.txt"
     private const val PLATFORM_LICENSE_SOURCE = "platform-license"
@@ -331,6 +366,15 @@ internal object ProductGraph {
             "tab/badge_left.png" to "assets/grounds/textures/font/tab_badge_left.png",
             "tab/badge_middle.png" to "assets/grounds/textures/font/tab_badge_middle.png",
             "tab/badge_right.png" to "assets/grounds/textures/font/tab_badge_right.png",
+        )
+
+    private val CHAT_ARTWORK =
+        linkedMapOf(
+            CHAT_LOGO_SOURCE to
+                ArtworkExpectation(
+                    32_575,
+                    "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a",
+                )
         )
 
     /**

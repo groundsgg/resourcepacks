@@ -43,7 +43,9 @@ class ThemeAssetContractTest {
 
     @Test
     fun `nonblank art has no hidden transparent RGB payload`() {
-        ART_FILES.filterNot { it == "icons/blank.png" }
+        // The approved brand icon is copied byte-for-byte and its transparent RGB is part of that
+        // source. Re-encoding it here would violate the pinned brand-art contract.
+        ART_FILES.filterNot { it == "icons/blank.png" || it == "chat/logo.png" }
             .forEach { path ->
                 readImage(path).pixels().forEach { pixel ->
                     assertTrue(
@@ -120,6 +122,19 @@ class ThemeAssetContractTest {
         assertTrue(image.height in 1..256, "height=${image.height}")
         assertTrue(image.width > image.height, "wordmark should stay wider than it is tall")
         assertTrue(image.pixels().any { it ushr 24 != 0 })
+    }
+
+    @Test
+    fun `chat logo is the approved colorful square source`() {
+        val image = readImage("chat/logo.png")
+        assertEquals(128, image.width)
+        assertEquals(128, image.height)
+        assertTrue(image.pixels().any { it ushr 24 == 0 })
+        assertTrue(image.pixels().any { it ushr 24 != 0 })
+        assertEquals(
+            "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a",
+            sha256(platformArt.resolve("chat/logo.png")),
+        )
     }
 
     @Test
@@ -269,6 +284,7 @@ class ThemeAssetContractTest {
                 "tab/badge_left.png",
                 "tab/badge_middle.png",
                 "tab/badge_right.png",
+                "chat/logo.png",
                 "menu/panel.png",
                 "menu/settings_panel.png",
                 "menu/divider.png",
@@ -361,7 +377,7 @@ class ThemeAssetContractTest {
         val EXPECTED_PLATFORM_FILES =
             ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
         val EXPECTED_PLATFORM_DIRECTORIES =
-            setOf("panels", "icons", "tooltips", "frames", "tab", "menu")
+            setOf("panels", "icons", "tooltips", "frames", "tab", "chat", "menu")
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
@@ -416,6 +432,10 @@ class ThemeAssetContractTest {
     }
   },
   "firstPartyOriginals": {
+    "chat/logo.png": {
+      "source": "OneDrive/Dokumente/70 - Grounds/Logo/logo/icon-128x.png",
+      "sha256": "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a"
+    },
     "tab/logo.png": {
       "source": "brand/logo-text-noglow.png"
     },
