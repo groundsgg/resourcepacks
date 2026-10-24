@@ -116,6 +116,7 @@ internal object ProductGraph {
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
                     .withTabArtwork(held)
                     .withChatFont(held)
+                    .withHud()
                     .withMenu(held)
             val contentContribution =
                 ContentContribution.withModels(held)
@@ -274,6 +275,21 @@ internal object ProductGraph {
             requires,
         )
     }
+
+    private fun PackContribution.withHud(): PackContribution =
+        PackContribution(
+            id,
+            supportedFormats,
+            entries +
+                PackEntry.text("assets/grounds/font/hud.json", HudFont.json()) +
+                HudFont.textures().map { (name, bytes) ->
+                    PackEntry.bytes("assets/grounds/textures/font/$name", bytes)
+                } +
+                HiddenBossBar.entries(),
+            vanillaClaims + HiddenBossBar.vanillaClaims,
+            provides,
+            requires,
+        )
 
     private fun PackContribution.withImmutableSources(): PackContribution =
         PackContribution(
