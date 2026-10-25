@@ -221,6 +221,10 @@ internal object ProductGraph {
                     PackEntry.text("assets/grounds/font/tab.json", TabFont.json()),
                     PackEntry.text("assets/grounds/font/tab_labels.json", TabLabelsFont.json()),
                     PackEntry.bytes(
+                        "assets/grounds/textures/font/tab_icons.png",
+                        TabIcons.texture(),
+                    ),
+                    PackEntry.bytes(
                         "assets/grounds/textures/font/tab_labels.png",
                         TabLabelsFont.texture(),
                     ),
