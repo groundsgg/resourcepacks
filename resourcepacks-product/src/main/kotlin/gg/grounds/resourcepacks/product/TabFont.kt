@@ -6,6 +6,12 @@ internal object TabFont {
     const val BADGE_MIDDLE = 0xE002
     const val BADGE_RIGHT = 0xE003
     const val BEDROCK = 0xE004
+    /** A live voice connection; tinted by the text colour like every white glyph here. */
+    const val VOICE_ON = 0xE005
+    /** Voice switched off in the mod. */
+    const val VOICE_OFF = 0xE006
+    /** In the viewer's party. */
+    const val PARTY = 0xE007
     const val SPACE_BASE = 0xE010
 
     private val STEPS = intArrayOf(1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024)
@@ -25,6 +31,7 @@ internal object TabFont {
                 bitmap("tab_badge_middle.png", ascent = 7, height = 8, BADGE_MIDDLE),
                 bitmap("tab_badge_right.png", ascent = 7, height = 8, BADGE_RIGHT),
                 bitmapFile("minecraft:block/bedrock.png", ascent = 7, height = 8, BEDROCK),
+                TabIcons.provider(),
             )
         return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},${bitmaps.joinToString(",")}]}"""
     }
@@ -36,6 +43,52 @@ internal object TabFont {
         """{"type":"bitmap","file":"$file","ascent":$ascent,"height":$height,"chars":["${u(codepoint)}"]}"""
 
     private fun u(codepoint: Int): String = "\\u%04X".format(codepoint)
+}
+
+/**
+ * Small status icons for the tab list and nametags, drawn into one atlas: 7×7 white pixels in an
+ * 8-pixel cell, so they sit on the text baseline like the rank badge and advance 8 pixels.
+ */
+internal object TabIcons {
+    private const val CELL_WIDTH = 7
+    private const val CELL_HEIGHT = 8
+    private const val WHITE = 0xFFFFFFFF.toInt()
+
+    val icons: List<Pair<Int, List<String>>> =
+        listOf(
+            TabFont.VOICE_ON to
+                listOf("0001000", "0011010", "1111001", "1111001", "1111001", "0011010", "0001000"),
+            TabFont.VOICE_OFF to
+                listOf("0001000", "0011000", "1111101", "1111010", "1111101", "0011000", "0001000"),
+            TabFont.PARTY to
+                listOf("0110110", "0110110", "0000000", "1111111", "1111111", "1111111", "0000000"),
+        )
+
+    fun provider(): String {
+        val chars = icons.joinToString("") { "\\u%04X".format(it.first) }
+        return """{"type":"bitmap","file":"grounds:font/tab_icons.png","ascent":7,"height":$CELL_HEIGHT,"chars":["$chars"]}"""
+    }
+
+    fun texture(): ByteArray {
+        val image =
+            java.awt.image.BufferedImage(
+                icons.size * CELL_WIDTH,
+                CELL_HEIGHT,
+                java.awt.image.BufferedImage.TYPE_INT_ARGB,
+            )
+        icons.forEachIndexed { index, (_, pattern) ->
+            pattern.forEachIndexed { row, pixels ->
+                pixels.forEachIndexed { column, pixel ->
+                    // One empty row on top keeps the 7 drawn rows level with the badge glyphs.
+                    if (pixel == '1') image.setRGB(index * CELL_WIDTH + column, row + 1, WHITE)
+                }
+            }
+        }
+        return java.io.ByteArrayOutputStream().use { output ->
+            check(javax.imageio.ImageIO.write(image, "png", output))
+            output.toByteArray()
+        }
+    }
 }
 
 /** Compact uppercase tab labels drawn directly into a Minecraft bitmap-font atlas. */
