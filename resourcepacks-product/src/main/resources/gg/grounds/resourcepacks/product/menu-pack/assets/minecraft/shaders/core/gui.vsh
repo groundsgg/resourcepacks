@@ -25,6 +25,8 @@ layout(location = 1) in vec4 Color;
 layout(location = 0) out vec4 vertexColor;
 layout(location = 1) out vec2 quadCorner;
 layout(location = 2) out vec2 guiPos;
+layout(location = 3) out vec2 screenPos;
+layout(location = 4) flat out vec2 guiSize;
 
 #ifdef VULKAN
     #define CORNER (gl_VertexIndex % 4)
@@ -41,4 +43,6 @@ void main() {
     vertexColor = Color;
     quadCorner = CORNERS[CORNER];
     guiPos = Position.xy;
+    guiSize = round(abs(vec2(2.0 / ProjMat[0][0], 2.0 / ProjMat[1][1])));
+    screenPos = (vec2(gl_Position.x, -gl_Position.y) / gl_Position.w * 0.5 + 0.5) * guiSize;
 }

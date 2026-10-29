@@ -25,11 +25,24 @@ internal object SidebarFont {
     /** The logo is read from the already held, hash-verified first-party tab artwork. */
     fun textures(logo: BufferedImage): Map<String, ByteArray> {
         val cap = BufferedImage(114, 37, BufferedImage.TYPE_INT_ARGB)
-        for (y in 0 until 29) for (x in 0 until 114) {
-            if (y >= 3 || x in 3..110) cap.setRGB(x, y, 0x66000000)
-        }
         cap.createGraphics().let { g ->
             try {
+                g.setRenderingHint(
+                    RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON,
+                )
+                g.color = java.awt.Color(0, 0, 0, 102)
+                val outline =
+                    java.awt.geom.Path2D.Double().apply {
+                        moveTo(0.0, 4.0)
+                        curveTo(0.0, 1.79, 1.79, 0.0, 4.0, 0.0)
+                        lineTo(110.0, 0.0)
+                        curveTo(112.21, 0.0, 114.0, 1.79, 114.0, 4.0)
+                        lineTo(114.0, 29.0)
+                        lineTo(0.0, 29.0)
+                        closePath()
+                    }
+                g.fill(outline)
                 g.setRenderingHint(
                     RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BICUBIC,
