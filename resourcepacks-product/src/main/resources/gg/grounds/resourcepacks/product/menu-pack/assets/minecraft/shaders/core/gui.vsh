@@ -43,6 +43,9 @@ void main() {
     vertexColor = Color;
     quadCorner = CORNERS[CORNER];
     guiPos = Position.xy;
-    guiSize = round(abs(vec2(2.0 / ProjMat[0][0], 2.0 / ProjMat[1][1])));
-    screenPos = (vec2(gl_Position.x, -gl_Position.y) / gl_Position.w * 0.5 + 0.5) * guiSize;
+    vec2 projectedGuiSize = abs(vec2(2.0 / ProjMat[0][0], 2.0 / ProjMat[1][1]));
+    // Minecraft rounds logical GUI dimensions up; projection extents may stay fractional.
+    // Use the raw extent for positions, otherwise scale 3 shifts the measured right anchor.
+    guiSize = ceil(projectedGuiSize - vec2(0.001));
+    screenPos = (vec2(gl_Position.x, -gl_Position.y) / gl_Position.w * 0.5 + 0.5) * projectedGuiSize;
 }
