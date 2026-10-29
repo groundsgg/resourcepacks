@@ -42,7 +42,7 @@ bool is_focus_outline(vec4 color) {
 
 // Native 26.3 branded sidebar: 106px content, thirteen 9px rows, blank score numbers.
 // Match width, height, right anchor AND vertical bounds, never black/alpha alone.
-// Legacy GroundsSidebar has at most twelve rows and does not match these bounds.
+// Other rectangles must match all of these geometric conditions to enter this path.
 float sidebar_corner_coverage(vec4 color) {
     if (any(greaterThan(abs(color.rgb), vec3(0.5 / 255.0)))) return 1.0;
     vec2 size = quad_size();
@@ -63,12 +63,11 @@ float sidebar_corner_coverage(vec4 color) {
     if (any(greaterThan(abs(center - wantedCenter), vec2(0.05)))) return 1.0;
     // No caption is shown: the cap reaches the body, replacing the empty native title band.
     if (title) return 0.0;
-    // Keep the unique thirteen-row native signature, but trim its two unused tail rows.
-    // The eleven visible rows have one spacer between the three information pairs.
-    float visibleBottom = bottom - 18.0;
+    // All thirteen rows are used by separators, the three icon groups and the optional footer.
+    float visibleBottom = bottom;
     if (screenPos.y >= visibleBottom) return 0.0;
     float dx = min(screenPos.x - left, right - screenPos.x);
-    float dy = min(screenPos.y - top, visibleBottom - screenPos.y);
+    float dy = visibleBottom - screenPos.y;
     const float radius = 4.0;
     if (dx >= radius || dy >= radius) return 1.0;
     float distance = length(vec2(radius - dx, radius - dy)) - radius;

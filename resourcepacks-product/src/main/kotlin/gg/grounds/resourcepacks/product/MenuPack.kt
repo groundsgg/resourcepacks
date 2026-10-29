@@ -68,7 +68,7 @@ internal object MenuPack {
             "assets/grounds/font/menu/text_8.json" to
                 (16_245L to "ef68e198654f53d962325a192e4aa4b4d3c57051e5bb60a5f7189c11a428c767"),
             "assets/minecraft/shaders/core/gui.fsh" to
-                (3_720L to "2d52a45b0e9b4e2f52d06077d08c3a6459fa9cb3a3dbb90c4e17296df1f45e0f"),
+                (3_615L to "9ef932a78ed72e30cfc568e5f86b32e4f0aab725ae80c3094221a05685f5dbc3"),
             "assets/minecraft/shaders/core/gui.vsh" to
                 (1_876L to "5439d066d8f4bbf0acd3704cc71cba5bbc82e2ce072d7e844ec5451a18a5fa2c"),
         )

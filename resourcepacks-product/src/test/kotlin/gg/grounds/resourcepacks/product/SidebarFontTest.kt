@@ -12,12 +12,12 @@ class SidebarFontTest {
         val logo = java.awt.image.BufferedImage(96, 19, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val textures = SidebarFont.textures(logo)
         val cap = ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_cap.png")))
-        assertEquals(180, cap.width)
+        assertEquals(220, cap.width)
         assertEquals(64, cap.height)
         assertEquals(0, cap.getRGB(0, 0))
         assertEquals(0x66000000, cap.getRGB(10, 0))
         assertEquals(0x66000000, cap.getRGB(0, 47))
-        for (y in 48 until 64) for (x in 0 until 180) assertEquals(0, cap.getRGB(x, y))
+        for (y in 48 until 64) for (x in 0 until 220) assertEquals(0, cap.getRGB(x, y))
         val logoTexture = ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_logo.png")))
         assertEquals(216, logoTexture.width)
         assertEquals(78, logoTexture.height)
@@ -25,6 +25,17 @@ class SidebarFontTest {
         assertEquals(1, bar.width)
         assertEquals(18, bar.height)
         assertTrue((0 until 18).all { bar.getRGB(0, it) == -1 })
+        listOf("crown", "coin", "friends").forEach { name ->
+            val icon = ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_$name.png")))
+            assertEquals(30, icon.width)
+            assertEquals(30, icon.height)
+            assertTrue((0 until 30).any { y -> icon.getRGB(29, y) ushr 24 != 0 })
+        }
+        val separator =
+            ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_separator.png")))
+        assertEquals(180, separator.width)
+        assertEquals(18, separator.height)
+        assertEquals(-1, separator.getRGB(0, 8))
         val font = SidebarFont.json()
         assertTrue("\"ascent\":23" in font)
         assertTrue("\"height\":26,\"ascent\":18" in font)
@@ -45,6 +56,6 @@ class SidebarFontTest {
         assertEquals(0, cap.getRGB(0, 0))
         assertTrue((cap.getRGB(0, 5) ushr 24) in 1..101)
         assertEquals(cap.getRGB(0, 5), cap.getRGB(5, 0))
-        assertEquals(cap.getRGB(0, 5), cap.getRGB(179, 5))
+        assertEquals(cap.getRGB(0, 5), cap.getRGB(219, 5))
     }
 }
