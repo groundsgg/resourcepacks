@@ -40,14 +40,14 @@ bool is_focus_outline(vec4 color) {
     return min(size.x, size.y) <= MAX_THICKNESS;
 }
 
-// Native 26.3 branded sidebar: 134px content, thirteen 9px rows, blank score numbers.
+// Native 26.3 branded sidebar: 106px content, thirteen 9px rows, blank score numbers.
 // Match width, height, right anchor AND vertical bounds, never black/alpha alone.
 // Legacy GroundsSidebar has at most twelve rows and does not match these bounds.
 float sidebar_corner_coverage(vec4 color) {
     if (any(greaterThan(abs(color.rgb), vec3(0.5 / 255.0)))) return 1.0;
     vec2 size = quad_size();
-    if (abs(size.x - 138.0) > 0.05) return 1.0;
-    float left = guiSize.x - 139.0;
+    if (abs(size.x - 110.0) > 0.05) return 1.0;
+    float left = guiSize.x - 111.0;
     float right = guiSize.x - 1.0;
     float middle = floor(guiSize.y / 2.0);
     bool title = abs(size.y - 9.0) < 0.05;
