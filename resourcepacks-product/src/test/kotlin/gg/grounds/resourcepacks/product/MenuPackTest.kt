@@ -264,7 +264,7 @@ class MenuPackTest {
                 "assets/grounds/textures/font/menu/nav_selected.png" to
                     "caa178905b842d568fc0a9b3d38918b3fe7a0ff40d28f9c637b845cc7c002b7d",
                 "assets/minecraft/shaders/core/gui.fsh" to
-                    "618d3f9e49c39707d6f8844443bf34f8dde342db526a7782d4048753a2311cfa",
+                    "2d52a45b0e9b4e2f52d06077d08c3a6459fa9cb3a3dbb90c4e17296df1f45e0f",
                 "assets/minecraft/shaders/core/gui.vsh" to
                     "160a6d39e776581e3d7eae6fc4778ecb06baccf137868141bfd000bcb88d0388",
             )

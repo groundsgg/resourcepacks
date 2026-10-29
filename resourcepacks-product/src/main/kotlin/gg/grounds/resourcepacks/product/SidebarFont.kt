@@ -12,6 +12,7 @@ internal object SidebarFont {
     const val LOGO = 0xE302
     const val SPACE_BASE = 0xE310
 
+    // The native title is empty. The cap joins the first body row, with 5px around the logo.
     fun json(): String {
         val advances =
             (0..10).flatMap { i ->
@@ -20,7 +21,7 @@ internal object SidebarFont {
                     "\"${u(SPACE_BASE + 2 * i + 1)}\":${-(1 shl i)}",
                 )
             }
-        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":32,"ascent":32,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_logo.png","height":26,"ascent":26,"chars":["${u(LOGO)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]}]}"""
+        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":32,"ascent":23,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_logo.png","height":26,"ascent":18,"chars":["${u(LOGO)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]}]}"""
     }
 
     /**
