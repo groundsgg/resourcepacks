@@ -281,15 +281,27 @@ internal object ProductGraph {
         )
     }
 
-    private fun PackContribution.withSidebarFont(held: Map<String, HeldSourceFile>): PackContribution {
-        val logo = javax.imageio.ImageIO.read(
-            held.getValue("tab/logo.png").readBytes(TAB_ARTWORK.getValue("tab/logo.png").size).inputStream()
-        ) ?: throw java.io.IOException("Cannot decode verified sidebar wordmark")
+    private fun PackContribution.withSidebarFont(
+        held: Map<String, HeldSourceFile>
+    ): PackContribution {
+        val logo =
+            javax.imageio.ImageIO.read(
+                held
+                    .getValue("tab/logo.png")
+                    .readBytes(TAB_ARTWORK.getValue("tab/logo.png").size)
+                    .inputStream()
+            ) ?: throw java.io.IOException("Cannot decode verified sidebar wordmark")
         return PackContribution(
-            id, supportedFormats,
-            entries + PackEntry.text("assets/grounds/font/sidebar.json", SidebarFont.json()) +
-                SidebarFont.textures(logo).map { (file, bytes) -> PackEntry.bytes("assets/grounds/textures/font/$file", bytes) },
-            vanillaClaims, provides, requires,
+            id,
+            supportedFormats,
+            entries +
+                PackEntry.text("assets/grounds/font/sidebar.json", SidebarFont.json()) +
+                SidebarFont.textures(logo).map { (file, bytes) ->
+                    PackEntry.bytes("assets/grounds/textures/font/$file", bytes)
+                },
+            vanillaClaims,
+            provides,
+            requires,
         )
     }
 

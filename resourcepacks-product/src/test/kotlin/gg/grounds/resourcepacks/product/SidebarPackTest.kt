@@ -16,11 +16,19 @@ class SidebarPackTest {
                 val built = ReleasePackComposer.build(secured.packs, scratch, PackComposerHooks())
                 val platform = built.single { it.pack.role == PackRole.PLATFORM }
                 ZipFile(scratch.stablePath.resolve(platform.scratchFile).toFile()).use { zip ->
-                    listOf("assets/grounds/font/sidebar.json", "assets/grounds/textures/font/sidebar_cap.png", "assets/grounds/textures/font/sidebar_bar.png").forEach {
-                        assertNotNull(zip.getEntry(it), it)
-                    }
+                    listOf(
+                            "assets/grounds/font/sidebar.json",
+                            "assets/grounds/textures/font/sidebar_cap.png",
+                            "assets/grounds/textures/font/sidebar_bar.png",
+                        )
+                        .forEach { assertNotNull(zip.getEntry(it), it) }
                     listOf("gui.vsh", "gui.fsh", "text.vsh").forEach { file ->
-                        assertEquals(1, zip.entries().asSequence().count { it.name == "assets/minecraft/shaders/core/$file" })
+                        assertEquals(
+                            1,
+                            zip.entries().asSequence().count {
+                                it.name == "assets/minecraft/shaders/core/$file"
+                            },
+                        )
                     }
                 }
             } finally {
