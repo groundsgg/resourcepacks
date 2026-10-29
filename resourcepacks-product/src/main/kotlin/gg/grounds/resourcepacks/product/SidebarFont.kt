@@ -9,6 +9,7 @@ import javax.imageio.ImageIO
 internal object SidebarFont {
     const val CAP = 0xE300
     const val BAR = 0xE301
+    const val LOGO = 0xE302
     const val SPACE_BASE = 0xE310
 
     fun json(): String {
@@ -19,14 +20,17 @@ internal object SidebarFont {
                     "\"${u(SPACE_BASE + 2 * i + 1)}\":${-(1 shl i)}",
                 )
             }
-        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":37,"ascent":37,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]}]}"""
+        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":32,"ascent":32,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_logo.png","height":26,"ascent":26,"chars":["${u(LOGO)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]}]}"""
     }
 
-    /** The logo is read from the already held, hash-verified first-party tab artwork. */
+    /**
+     * Separate textures keep the wordmark at 3x resolution within Minecraft's 256px glyph atlas.
+     */
     fun textures(logo: BufferedImage): Map<String, ByteArray> {
-        val cap = BufferedImage(114, 37, BufferedImage.TYPE_INT_ARGB)
+        val cap = BufferedImage(180, 64, BufferedImage.TYPE_INT_ARGB)
         cap.createGraphics().let { g ->
             try {
+                g.scale(2.0, 2.0)
                 g.setRenderingHint(
                     RenderingHints.KEY_ANTIALIASING,
                     RenderingHints.VALUE_ANTIALIAS_ON,
@@ -36,25 +40,36 @@ internal object SidebarFont {
                     java.awt.geom.Path2D.Double().apply {
                         moveTo(0.0, 4.0)
                         curveTo(0.0, 1.79, 1.79, 0.0, 4.0, 0.0)
-                        lineTo(110.0, 0.0)
-                        curveTo(112.21, 0.0, 114.0, 1.79, 114.0, 4.0)
-                        lineTo(114.0, 29.0)
-                        lineTo(0.0, 29.0)
+                        lineTo(86.0, 0.0)
+                        curveTo(88.21, 0.0, 90.0, 1.79, 90.0, 4.0)
+                        lineTo(90.0, 24.0)
+                        lineTo(0.0, 24.0)
                         closePath()
                     }
                 g.fill(outline)
+            } finally {
+                g.dispose()
+            }
+        }
+        val wordmark = BufferedImage(216, 78, BufferedImage.TYPE_INT_ARGB)
+        wordmark.createGraphics().let { g ->
+            try {
                 g.setRenderingHint(
                     RenderingHints.KEY_INTERPOLATION,
                     RenderingHints.VALUE_INTERPOLATION_BICUBIC,
                 )
-                g.drawImage(logo, 9, 6, 96, 19, null)
+                g.drawImage(logo, 0, 0, 216, 42, null)
             } finally {
                 g.dispose()
             }
         }
         val bar = BufferedImage(1, 18, BufferedImage.TYPE_INT_ARGB)
         repeat(18) { bar.setRGB(0, it, -1) }
-        return mapOf("sidebar_cap.png" to png(cap), "sidebar_bar.png" to png(bar))
+        return mapOf(
+            "sidebar_cap.png" to png(cap),
+            "sidebar_logo.png" to png(wordmark),
+            "sidebar_bar.png" to png(bar),
+        )
     }
 
     private fun png(image: BufferedImage): ByteArray =

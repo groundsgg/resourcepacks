@@ -61,8 +61,12 @@ float sidebar_corner_coverage(vec4 color) {
     vec2 center = screenPos - quadCorner * vec2(dFdx(screenPos.x), dFdy(screenPos.y)) / span;
     vec2 wantedCenter = vec2((left + right) * 0.5, (top + bottom) * 0.5);
     if (any(greaterThan(abs(center - wantedCenter), vec2(0.05)))) return 1.0;
+    // Keep the unique thirteen-row native signature, but trim its two unused tail rows.
+    // The eleven visible rows have one spacer between the three information pairs.
+    float visibleBottom = body ? bottom - 18.0 : bottom;
+    if (body && screenPos.y >= visibleBottom) return 0.0;
     float dx = min(screenPos.x - left, right - screenPos.x);
-    float dy = title ? screenPos.y - top : bottom - screenPos.y;
+    float dy = title ? screenPos.y - top : visibleBottom - screenPos.y;
     const float radius = 4.0;
     if (dx >= radius || dy >= radius) return 1.0;
     float distance = length(vec2(radius - dx, radius - dy)) - radius;
