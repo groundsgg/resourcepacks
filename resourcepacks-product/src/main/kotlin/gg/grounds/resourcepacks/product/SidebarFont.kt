@@ -14,6 +14,7 @@ internal object SidebarFont {
     const val COIN = 0xE304
     const val FRIENDS = 0xE305
     const val SEPARATOR = 0xE306
+    const val FOOTER_SEPARATOR = 0xE307
     const val SPACE_BASE = 0xE310
 
     // The native title is empty. The cap joins the first body row, with 5px around the logo.
@@ -30,7 +31,7 @@ internal object SidebarFont {
                 (char, name) ->
                 """{"type":"bitmap","file":"grounds:font/sidebar_$name.png","height":10,"ascent":4,"chars":["${u(char)}"]}"""
             }
-        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":32,"ascent":23,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_logo.png","height":26,"ascent":18,"chars":["${u(LOGO)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]},$icons,{"type":"bitmap","file":"grounds:font/sidebar_separator.png","height":9,"ascent":8,"chars":["${u(SEPARATOR)}"]}]}"""
+        return """{"providers":[{"type":"space","advances":{${advances.joinToString(",")}}},{"type":"bitmap","file":"grounds:font/sidebar_cap.png","height":32,"ascent":23,"chars":["${u(CAP)}"]},{"type":"bitmap","file":"grounds:font/sidebar_logo.png","height":26,"ascent":18,"chars":["${u(LOGO)}"]},{"type":"bitmap","file":"grounds:font/sidebar_bar.png","height":18,"ascent":7,"chars":["${u(BAR)}"]},$icons,{"type":"bitmap","file":"grounds:font/sidebar_separator.png","height":15,"ascent":10,"chars":["${u(SEPARATOR)}"]},{"type":"bitmap","file":"grounds:font/sidebar_separator.png","height":15,"ascent":15,"chars":["${u(FOOTER_SEPARATOR)}"]}]}"""
     }
 
     /**
@@ -50,8 +51,7 @@ internal object SidebarFont {
                     java.awt.geom.Path2D.Double().apply {
                         moveTo(0.0, 4.0)
                         curveTo(0.0, 1.79, 1.79, 0.0, 4.0, 0.0)
-                        lineTo(106.0, 0.0)
-                        curveTo(108.21, 0.0, 110.0, 1.79, 110.0, 4.0)
+                        lineTo(110.0, 0.0)
                         lineTo(110.0, 24.0)
                         lineTo(0.0, 24.0)
                         closePath()
@@ -75,7 +75,7 @@ internal object SidebarFont {
         }
         val bar = BufferedImage(1, 18, BufferedImage.TYPE_INT_ARGB)
         repeat(18) { bar.setRGB(0, it, -1) }
-        val separator = BufferedImage(180, 18, BufferedImage.TYPE_INT_ARGB)
+        val separator = BufferedImage(180, 30, BufferedImage.TYPE_INT_ARGB)
         separator.createGraphics().let { g ->
             try {
                 g.color = java.awt.Color.WHITE

@@ -66,7 +66,8 @@ float sidebar_corner_coverage(vec4 color) {
     // All thirteen rows are used by separators, the three icon groups and the optional footer.
     float visibleBottom = bottom;
     if (screenPos.y >= visibleBottom) return 0.0;
-    float dx = min(screenPos.x - left, right - screenPos.x);
+    // The native sidebar meets the right edge; only its left corners are rounded.
+    float dx = screenPos.x - left;
     float dy = visibleBottom - screenPos.y;
     const float radius = 4.0;
     if (dx >= radius || dy >= radius) return 1.0;

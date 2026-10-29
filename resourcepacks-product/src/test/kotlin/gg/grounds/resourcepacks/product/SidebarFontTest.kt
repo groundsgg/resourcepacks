@@ -34,7 +34,7 @@ class SidebarFontTest {
         val separator =
             ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_separator.png")))
         assertEquals(180, separator.width)
-        assertEquals(18, separator.height)
+        assertEquals(30, separator.height)
         assertEquals(-1, separator.getRGB(0, 8))
         val font = SidebarFont.json()
         assertTrue("\"ascent\":23" in font)
@@ -47,7 +47,7 @@ class SidebarFontTest {
     }
 
     @Test
-    fun `logo cap has one antialiased round corner instead of a three pixel step`() {
+    fun `logo cap rounds the left corner and leaves the right edge square`() {
         val logo = java.awt.image.BufferedImage(96, 19, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val cap =
             ImageIO.read(
@@ -56,6 +56,7 @@ class SidebarFontTest {
         assertEquals(0, cap.getRGB(0, 0))
         assertTrue((cap.getRGB(0, 5) ushr 24) in 1..101)
         assertEquals(cap.getRGB(0, 5), cap.getRGB(5, 0))
-        assertEquals(cap.getRGB(0, 5), cap.getRGB(219, 5))
+        assertEquals(0x66000000, cap.getRGB(219, 0))
+        assertEquals(0x66000000, cap.getRGB(219, 5))
     }
 }
