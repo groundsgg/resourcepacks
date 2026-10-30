@@ -156,20 +156,24 @@ internal object ChatFont {
 
     /** Keeps the signed alias text intact while drawing its first colon as the graphic. */
     fun signedAliasFonts(): List<Pair<String, String>> {
-        val aliases = glyphs.map { glyph ->
-            "assets/grounds/font/chat/alias/${glyph.name}.json" to
-                """{"providers":[{"type":"bitmap","file":"grounds:font/chat/${glyph.name}.png","ascent":7,"height":8,"chars":[":"]}]}"""
-        }
-        val advances = (32..126).joinToString(",") { codepoint ->
-            val character = when (val value = codepoint.toChar()) {
-                '\\' -> "\\\\"
-                '"' -> "\\\""
-                else -> value.toString()
+        val aliases =
+            glyphs.map { glyph ->
+                "assets/grounds/font/chat/alias/${glyph.name}.json" to
+                    """{"providers":[{"type":"bitmap","file":"grounds:font/chat/${glyph.name}.png","ascent":7,"height":8,"chars":[":"]}]}"""
             }
-            "\"$character\":0"
-        }
-        return aliases + ("assets/grounds/font/chat/alias/control.json" to
-            """{"providers":[{"type":"space","advances":{$advances}}]}""")
+        val advances =
+            (32..126).joinToString(",") { codepoint ->
+                val character =
+                    when (val value = codepoint.toChar()) {
+                        '\\' -> "\\\\"
+                        '"' -> "\\\""
+                        else -> value.toString()
+                    }
+                "\"$character\":0"
+            }
+        return aliases +
+            ("assets/grounds/font/chat/alias/control.json" to
+                """{"providers":[{"type":"space","advances":{$advances}}]}""")
     }
 
     private fun bitmap(name: String, codepoint: Int): String =

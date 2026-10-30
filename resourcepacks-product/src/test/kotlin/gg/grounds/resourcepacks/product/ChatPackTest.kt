@@ -14,20 +14,35 @@ class ChatPackTest {
     fun `signed emoji aliases keep their original colon and have a shared zero width token font`() {
         val definitions = ChatFont.signedAliasFonts().toMap()
         val names = listOf("heart", "smile", "laugh", "thumbsup", "gg", "fire", "creeper", "wrench")
-        assertEquals(names.map { "assets/grounds/font/chat/alias/$it.json" }.toSet() + "assets/grounds/font/chat/alias/control.json", definitions.keys)
+        assertEquals(
+            names.map { "assets/grounds/font/chat/alias/$it.json" }.toSet() +
+                "assets/grounds/font/chat/alias/control.json",
+            definitions.keys,
+        )
         names.forEach { name ->
             val value = definitions.getValue("assets/grounds/font/chat/alias/$name.json")
             assertTrue("\"file\":\"grounds:font/chat/$name.png\"" in value, value)
             assertTrue("\"chars\":[\":\"]" in value, value)
             assertTrue("\"ascent\":7" in value && "\"height\":8" in value, value)
-            assertTrue("reference" !in value, "Alias fonts must not render additional token characters")
+            assertTrue(
+                "reference" !in value,
+                "Alias fonts must not render additional token characters",
+            )
         }
-        val control = tools.jackson.databind.json.JsonMapper().readTree(definitions.getValue("assets/grounds/font/chat/alias/control.json"))
+        val control =
+            tools.jackson.databind.json
+                .JsonMapper()
+                .readTree(definitions.getValue("assets/grounds/font/chat/alias/control.json"))
         val provider = control["providers"][0]
         assertEquals("space", provider["type"].asString())
         val advances = provider["advances"]
-        assertEquals((32..126).map { it.toChar().toString() }.toSet(), advances.properties().map { it.key }.toSet())
-        advances.properties().forEach { (character, width) -> assertEquals(0, width.intValue(), character) }
+        assertEquals(
+            (32..126).map { it.toChar().toString() }.toSet(),
+            advances.properties().map { it.key }.toSet(),
+        )
+        advances.properties().forEach { (character, width) ->
+            assertEquals(0, width.intValue(), character)
+        }
     }
 
     @Test
@@ -49,12 +64,30 @@ class ChatPackTest {
                 ZipFile(content.toFile()).use { zip ->
                     assertTrue(zip.getEntry(CHAT_FONT) == null)
                     CHAT_TEXTURES.forEach { assertTrue(zip.getEntry(it) == null, it) }
-                    assertTrue(zip.entries().asSequence().none { it.name.startsWith("assets/grounds/font/chat/alias/") })
+                    assertTrue(
+                        zip.entries().asSequence().none {
+                            it.name.startsWith("assets/grounds/font/chat/alias/")
+                        }
+                    )
                 }
                 ZipFile(platform.toFile()).use { zip ->
-                    listOf("heart", "smile", "laugh", "thumbsup", "gg", "fire", "creeper", "wrench", "control").forEach { name ->
-                        assertNotNull(zip.getEntry("assets/grounds/font/chat/alias/$name.json"), name)
-                    }
+                    listOf(
+                            "heart",
+                            "smile",
+                            "laugh",
+                            "thumbsup",
+                            "gg",
+                            "fire",
+                            "creeper",
+                            "wrench",
+                            "control",
+                        )
+                        .forEach { name ->
+                            assertNotNull(
+                                zip.getEntry("assets/grounds/font/chat/alias/$name.json"),
+                                name,
+                            )
+                        }
                     assertTrue(zip.entries().asSequence().none { it.name == VANILLA_DEFAULT_FONT })
                     val font =
                         zip.getInputStream(assertNotNull(zip.getEntry(CHAT_FONT)))
