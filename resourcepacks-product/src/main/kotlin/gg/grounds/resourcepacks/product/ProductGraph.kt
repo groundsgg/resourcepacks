@@ -86,6 +86,16 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
+            SIDEBAR_ARTWORK.forEach { (relative, expected) ->
+                val source = HeldSourceFile.capture(art.resolve(relative), expected.size)
+                if (
+                    source.digests.size != expected.size || source.digests.sha256 != expected.sha256
+                ) {
+                    source.close()
+                    throw java.io.IOException("Product artwork hash mismatch: $relative")
+                }
+                held[relative] = source
+            }
             MENU_ARTWORK.forEach { (relative, expected) ->
                 val source = HeldSourceFile.capture(art.resolve(relative), MAX_ARTWORK_BYTES)
                 if (
@@ -117,6 +127,7 @@ internal object ProductGraph {
                     .withTabArtwork(held)
                     .withChatFont(held)
                     .withHud()
+                    .withSidebarFont(held)
                     .withMenu(held)
             val contentContribution =
                 ContentContribution.withModels(held)
@@ -280,6 +291,55 @@ internal object ProductGraph {
         )
     }
 
+    private fun PackContribution.withSidebarFont(
+        held: Map<String, HeldSourceFile>
+    ): PackContribution {
+        val bytes =
+            held
+                .getValue("sidebar/wordmark-source.png")
+                .readBytes(SIDEBAR_ARTWORK.getValue("sidebar/wordmark-source.png").size)
+        // Retain the original artwork, but avoid allocating its full 4K raster in small-heap
+        // builds.
+        val logo =
+            javax.imageio.stream.MemoryCacheImageInputStream(bytes.inputStream()).use { input ->
+                val readers = javax.imageio.ImageIO.getImageReaders(input)
+                if (!readers.hasNext())
+                    throw java.io.IOException("Cannot decode verified original sidebar wordmark")
+                val reader = readers.next()
+                try {
+                    reader.setInput(input, false, true)
+                    val params = reader.defaultReadParam
+                    params.sourceRegion = java.awt.Rectangle(156, 721, 3555, 702)
+                    params.setSourceSubsampling(4, 4, 0, 0)
+                    reader.read(0, params)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        return PackContribution(
+            id,
+            supportedFormats,
+            entries.map { entry ->
+                if (entry.path.value == "assets/minecraft/shaders/core/text.vsh") {
+                    val shader =
+                        entry.source.openStream().use { it.reader(Charsets.UTF_8).readText() }
+                    PackEntry.text(entry.path.value, SidebarHeadShader.extend(shader))
+                } else entry
+            } +
+                PackEntry.text("assets/grounds/font/sidebar.json", SidebarFont.json()) +
+                PackEntry.text(
+                    "assets/grounds/font/sidebar_footer.json",
+                    SidebarFont.footerJson(),
+                ) +
+                SidebarFont.textures(logo).map { (file, bytes) ->
+                    PackEntry.bytes("assets/grounds/textures/font/$file", bytes)
+                },
+            vanillaClaims,
+            provides,
+            requires,
+        )
+    }
+
     private fun PackContribution.withHud(): PackContribution =
         PackContribution(
             id,
@@ -400,6 +460,15 @@ internal object ProductGraph {
     /**
      * Dialog-body menu sprites; `menu/x.png` ships as `assets/grounds/textures/font/menu/x.png`.
      */
+    private val SIDEBAR_ARTWORK =
+        linkedMapOf(
+            "sidebar/wordmark-source.png" to
+                ArtworkExpectation(
+                    3_488_286,
+                    "8c355d4adf2295259242b22264f8b47ccb01e14972b5892fa01f31219ca3fafb",
+                )
+        )
+
     private val MENU_ARTWORK =
         linkedMapOf(
             "menu/panel.png" to

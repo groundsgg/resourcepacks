@@ -20,6 +20,10 @@ layout(std140) uniform DynamicTransforms {
 layout(location = 0) in vec4 vertexColor;
 layout(location = 1) in vec2 quadCorner;
 layout(location = 2) in vec2 guiPos;
+layout(location = 3) in vec2 screenPos;
+layout(location = 4) flat in vec2 guiSize;
+layout(location = 5) flat in vec4 sidebarBounds;
+layout(location = 6) flat in float sidebarKind;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -38,10 +42,30 @@ bool is_focus_outline(vec4 color) {
     return min(size.x, size.y) <= MAX_THICKNESS;
 }
 
+// The body quad is the sole background, extended by gui.vsh over the logo and to the edge.
+float sidebar_corner_coverage() {
+    if (sidebarKind > 1.5) return 0.0;
+    // The title's bottom vertices coincide with the body's top vertices. Recover the
+    // original height independent of the batched base-vertex phase and drop that fill.
+    float originalHeight = 2.0 * abs(dFdy(guiPos.y)) /
+        max(max(abs(dFdy(quadCorner.x)), abs(dFdy(quadCorner.y))), 1e-6);
+    if (sidebarKind > 0.5 && abs(originalHeight - 9.0) < 0.05) return 0.0;
+    if (sidebarKind < 0.5) return 1.0;
+    float dx = screenPos.x - sidebarBounds.x;
+    float dy = min(screenPos.y - sidebarBounds.y, sidebarBounds.w - screenPos.y);
+    const float radius = 4.0;
+    if (dx >= radius || dy >= radius) return 1.0;
+    float distance = length(vec2(radius - dx, radius - dy)) - radius;
+    float aa = max(fwidth(distance) * 0.5, 0.001);
+    return 1.0 - smoothstep(-aa, aa, distance);
+}
+
 void main() {
     vec4 color = vertexColor;
     if (color.a == 0.0 || is_focus_outline(color)) {
         discard;
     }
+    color.a *= sidebar_corner_coverage();
+    if (color.a == 0.0) discard;
     fragColor = color * ColorModulator;
 }

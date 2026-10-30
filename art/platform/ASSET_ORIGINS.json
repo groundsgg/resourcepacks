@@ -307,6 +307,16 @@
     },
     "menu/arrow_right.png": {
       "source": "plugin-lobby MenuPack (generated)"
+    },
+    "sidebar/wordmark-source.png": {
+      "source": "Grounds original brand artwork: logo/logo-text-noglow.png",
+      "sha256": "8c355d4adf2295259242b22264f8b47ccb01e14972b5892fa01f31219ca3fafb",
+      "crop": [
+        156,
+        721,
+        3555,
+        702
+      ]
     }
   }
 }
