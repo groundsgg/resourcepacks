@@ -22,6 +22,8 @@ layout(location = 1) in vec2 quadCorner;
 layout(location = 2) in vec2 guiPos;
 layout(location = 3) in vec2 screenPos;
 layout(location = 4) flat in vec2 guiSize;
+layout(location = 5) flat in vec4 sidebarBounds;
+layout(location = 6) flat in float sidebarKind;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -40,35 +42,12 @@ bool is_focus_outline(vec4 color) {
     return min(size.x, size.y) <= MAX_THICKNESS;
 }
 
-// Native 26.3 branded sidebar: 106px content, thirteen 9px rows, blank score numbers.
-// Match width, height, right anchor AND vertical bounds, never black/alpha alone.
-// Other rectangles must match all of these geometric conditions to enter this path.
-float sidebar_corner_coverage(vec4 color) {
-    if (any(greaterThan(abs(color.rgb), vec3(0.5 / 255.0)))) return 1.0;
-    vec2 size = quad_size();
-    if (abs(size.x - 110.0) > 0.05) return 1.0;
-    float left = guiSize.x - 111.0;
-    float right = guiSize.x - 1.0;
-    float middle = floor(guiSize.y / 2.0);
-    bool title = abs(size.y - 9.0) < 0.05;
-    bool body = abs(size.y - 118.0) < 0.05;
-    if (!title && !body) return 1.0;
-    float top = middle - (title ? 88.0 : 79.0);
-    float bottom = middle + (title ? -79.0 : 39.0);
-    // Screen-space derivatives recover the actual quad bounds, including GUI pose transforms.
-    vec2 span = vec2(dFdx(quadCorner.x), dFdy(quadCorner.y));
-    if (any(lessThan(abs(span), vec2(1e-6)))) return 1.0;
-    vec2 center = screenPos - quadCorner * vec2(dFdx(screenPos.x), dFdy(screenPos.y)) / span;
-    vec2 wantedCenter = vec2((left + right) * 0.5, (top + bottom) * 0.5);
-    if (any(greaterThan(abs(center - wantedCenter), vec2(0.05)))) return 1.0;
-    // No caption is shown: the cap reaches the body, replacing the empty native title band.
-    if (title) return 0.0;
-    // All thirteen rows are used by separators, the three icon groups and the optional footer.
-    float visibleBottom = bottom;
-    if (screenPos.y >= visibleBottom) return 0.0;
-    // The native sidebar meets the right edge; only its left corners are rounded.
-    float dx = screenPos.x - left;
-    float dy = visibleBottom - screenPos.y;
+// The body quad is the sole background, extended by gui.vsh over the logo and to the edge.
+float sidebar_corner_coverage() {
+    if (sidebarKind > 1.5) return 0.0;
+    if (sidebarKind < 0.5) return 1.0;
+    float dx = screenPos.x - sidebarBounds.x;
+    float dy = min(screenPos.y - sidebarBounds.y, sidebarBounds.w - screenPos.y);
     const float radius = 4.0;
     if (dx >= radius || dy >= radius) return 1.0;
     float distance = length(vec2(radius - dx, radius - dy)) - radius;
@@ -81,7 +60,7 @@ void main() {
     if (color.a == 0.0 || is_focus_outline(color)) {
         discard;
     }
-    color.a *= sidebar_corner_coverage(color);
+    color.a *= sidebar_corner_coverage();
     if (color.a == 0.0) discard;
     fragColor = color * ColorModulator;
 }

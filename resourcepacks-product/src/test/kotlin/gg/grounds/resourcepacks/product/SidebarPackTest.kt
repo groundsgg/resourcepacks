@@ -18,7 +18,8 @@ class SidebarPackTest {
                 ZipFile(scratch.stablePath.resolve(platform.scratchFile).toFile()).use { zip ->
                     listOf(
                             "assets/grounds/font/sidebar.json",
-                            "assets/grounds/textures/font/sidebar_cap.png",
+                            "assets/grounds/font/sidebar_footer.json",
+                            "assets/grounds/textures/font/sidebar_logo.png",
                             "assets/grounds/textures/font/sidebar_bar.png",
                         )
                         .forEach { assertNotNull(zip.getEntry(it), it) }

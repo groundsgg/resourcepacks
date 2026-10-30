@@ -11,13 +11,7 @@ class SidebarFontTest {
     fun `cap stays above the native title and bar spans the two native text lines`() {
         val logo = java.awt.image.BufferedImage(96, 19, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val textures = SidebarFont.textures(logo)
-        val cap = ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_cap.png")))
-        assertEquals(220, cap.width)
-        assertEquals(64, cap.height)
-        assertEquals(0, cap.getRGB(0, 0))
-        assertEquals(0x66000000, cap.getRGB(10, 0))
-        assertEquals(0x66000000, cap.getRGB(0, 47))
-        for (y in 48 until 64) for (x in 0 until 220) assertEquals(0, cap.getRGB(x, y))
+        assertTrue("sidebar_cap.png" !in textures)
         val logoTexture = ImageIO.read(ByteArrayInputStream(textures.getValue("sidebar_logo.png")))
         assertEquals(216, logoTexture.width)
         assertEquals(78, logoTexture.height)
@@ -37,7 +31,7 @@ class SidebarFontTest {
         assertEquals(30, separator.height)
         assertEquals(-1, separator.getRGB(0, 8))
         val font = SidebarFont.json()
-        assertTrue("\"ascent\":23" in font)
+        assertTrue("\"\\uE300\":111" in font)
         assertTrue("\"height\":26,\"ascent\":18" in font)
         assertTrue("sidebar_logo.png" in font)
         assertTrue("\\uE300" in font)
@@ -47,16 +41,9 @@ class SidebarFontTest {
     }
 
     @Test
-    fun `logo cap rounds the left corner and leaves the right edge square`() {
-        val logo = java.awt.image.BufferedImage(96, 19, java.awt.image.BufferedImage.TYPE_INT_ARGB)
-        val cap =
-            ImageIO.read(
-                ByteArrayInputStream(SidebarFont.textures(logo).getValue("sidebar_cap.png"))
-            )
-        assertEquals(0, cap.getRGB(0, 0))
-        assertTrue((cap.getRGB(0, 5) ushr 24) in 1..101)
-        assertEquals(cap.getRGB(0, 5), cap.getRGB(5, 0))
-        assertEquals(0x66000000, cap.getRGB(219, 0))
-        assertEquals(0x66000000, cap.getRGB(219, 5))
+    fun `footer references vanilla ascii with a four pixel vertical offset`() {
+        val footer = SidebarFont.footerJson()
+        assertTrue("minecraft:font/ascii.png" in footer)
+        assertTrue("\"height\":8,\"ascent\":3" in footer)
     }
 }

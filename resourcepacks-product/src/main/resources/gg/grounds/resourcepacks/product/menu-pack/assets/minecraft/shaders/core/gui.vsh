@@ -27,6 +27,8 @@ layout(location = 1) out vec2 quadCorner;
 layout(location = 2) out vec2 guiPos;
 layout(location = 3) out vec2 screenPos;
 layout(location = 4) flat out vec2 guiSize;
+layout(location = 5) flat out vec4 sidebarBounds;
+layout(location = 6) flat out float sidebarKind;
 
 #ifdef VULKAN
     #define CORNER (gl_VertexIndex % 4)
@@ -48,4 +50,35 @@ void main() {
     // Use the raw extent for positions, otherwise scale 3 shifts the measured right anchor.
     guiSize = ceil(projectedGuiSize - vec2(0.001));
     screenPos = (vec2(gl_Position.x, -gl_Position.y) / gl_Position.w * 0.5 + 0.5) * projectedGuiSize;
+    sidebarBounds = vec4(0.0);
+    sidebarKind = 0.0;
+    // Exact native 26.3 sidebar corners: 106px content and eleven/twelve actual rows.
+    // Expand the original body once, so logo and contents share the user's native opacity.
+    if (all(lessThanEqual(abs(Color.rgb), vec3(0.5 / 255.0)))) {
+        float left = guiSize.x - 111.0;
+        float right = guiSize.x - 1.0;
+        float middle = floor(guiSize.y / 2.0);
+        for (int rows = 11; rows <= 12; rows++) {
+            float top = middle - 6.0 * rows - 1.0;
+            float bottom = middle + 3.0 * rows;
+            vec2 bodyCorner = vec2(CORNERS[CORNER].x < 0.0 ? left : right,
+                                   CORNERS[CORNER].y < 0.0 ? top : bottom);
+            vec2 titleCorner = vec2(bodyCorner.x, CORNERS[CORNER].y < 0.0 ? top - 9.0 : top);
+            if (all(lessThan(abs(screenPos - bodyCorner), vec2(0.05)))) {
+                sidebarKind = 1.0;
+                sidebarBounds = vec4(left, top - 24.0, projectedGuiSize.x, bottom + 4.0);
+                vec2 target = vec2(CORNERS[CORNER].x < 0.0 ? left : projectedGuiSize.x,
+                                   CORNERS[CORNER].y < 0.0 ? top - 24.0 : bottom + 4.0);
+                vec2 delta = target - screenPos;
+                gl_Position.xy += vec2(2.0 * delta.x / projectedGuiSize.x,
+                                       -2.0 * delta.y / projectedGuiSize.y) * gl_Position.w;
+                screenPos = target;
+                break;
+            }
+            if (all(lessThan(abs(screenPos - titleCorner), vec2(0.05)))) {
+                sidebarKind = 2.0;
+                break;
+            }
+        }
+    }
 }
