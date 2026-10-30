@@ -266,7 +266,7 @@ class MenuPackTest {
                 "assets/minecraft/shaders/core/gui.fsh" to
                     "1506b3752a3cfb99e02cf3c6c5e349d5dca70e09d2ea97fe8db1eca3f201522f",
                 "assets/minecraft/shaders/core/gui.vsh" to
-                    "8efab80b27c66419da1939bd3ba2f3defd5cda07e4818fb27b3cd4fc904684a5",
+                    "be1cacd587abd7e2bb3dccefc9fbdb484cc83300079958bffbd0215bd05086c8",
             )
     }
 }
