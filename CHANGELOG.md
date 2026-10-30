@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.0](https://github.com/groundsgg/resourcepacks/compare/v1.1.0...v1.2.0) (2026-10-30)
+
+
+### Features
+
+* add depth sprites for the /settings region tab ([#46](https://github.com/groundsgg/resourcepacks/issues/46)) ([0f68fd2](https://github.com/groundsgg/resourcepacks/commit/0f68fd295a20371413e8665dae2511e443520ee0))
+* add the bigger /region map sprites for the lobby ([#41](https://github.com/groundsgg/resourcepacks/issues/41)) ([4b829f4](https://github.com/groundsgg/resourcepacks/commit/4b829f4bebc5262927249cbba4a4d59db8a4bfb9))
+* add the sprites for /settings with a region map tab ([#44](https://github.com/groundsgg/resourcepacks/issues/44)) ([0a8a9c6](https://github.com/groundsgg/resourcepacks/commit/0a8a9c6dec275effc83e4979f19cc402fb91cdae))
+* add the tab rail sprites for the lobby settings menu ([#43](https://github.com/groundsgg/resourcepacks/issues/43)) ([9cfcca7](https://github.com/groundsgg/resourcepacks/commit/9cfcca7273e658fc14032e791b795653ee88a22b))
+* **chat:** add branded logo and emoji font assets ([#45](https://github.com/groundsgg/resourcepacks/issues/45)) ([c64f57f](https://github.com/groundsgg/resourcepacks/commit/c64f57f4f652aa06183a4a1ab162b38dda65d54f))
+* **chat:** add lossless signed emoji alias fonts ([#53](https://github.com/groundsgg/resourcepacks/issues/53)) ([3ebf7ab](https://github.com/groundsgg/resourcepacks/commit/3ebf7abdf3ecb06a3c562ae60f5e3df921d8d9d6))
+* **platform:** add hud pills and hide the pink boss bar graphic ([#48](https://github.com/groundsgg/resourcepacks/issues/48)) ([11f5b40](https://github.com/groundsgg/resourcepacks/commit/11f5b404aa391b31c6a9014df46970aa206d3cdd))
+* **platform:** add voice and party icons to the tab font ([#49](https://github.com/groundsgg/resourcepacks/issues/49)) ([47f0bbb](https://github.com/groundsgg/resourcepacks/commit/47f0bbb1564e941c2682707c5ca19f963b832144))
+* **platform:** picked South America and Africa for the region map ([#50](https://github.com/groundsgg/resourcepacks/issues/50)) ([972af7c](https://github.com/groundsgg/resourcepacks/commit/972af7c8c7d76841d2d492c389a2b76d783c437d))
+* **sidebar:** add compact Grounds frame with native player head ([#51](https://github.com/groundsgg/resourcepacks/issues/51)) ([f342d69](https://github.com/groundsgg/resourcepacks/commit/f342d699bf0e15d16f8041856e9472d63dcc596e))
+* **sidebar:** extend compact frame to game information rows ([#52](https://github.com/groundsgg/resourcepacks/issues/52)) ([cd20060](https://github.com/groundsgg/resourcepacks/commit/cd200608e50378b7d0d5c7a3bfaee299f07a9a88))
+
+
+### Bug Fixes
+
+* **pack:** remove personal paths from artwork provenance ([#47](https://github.com/groundsgg/resourcepacks/issues/47)) ([a4eb13e](https://github.com/groundsgg/resourcepacks/commit/a4eb13e6e387a2bc55bb80404d65e2ce408daaa1))
+
 ## [1.1.0](https://github.com/groundsgg/resourcepacks/compare/v1.0.0...v1.1.0) (2026-10-14)
 
 
