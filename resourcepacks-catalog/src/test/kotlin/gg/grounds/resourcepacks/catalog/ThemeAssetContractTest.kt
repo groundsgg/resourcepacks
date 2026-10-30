@@ -43,9 +43,13 @@ class ThemeAssetContractTest {
 
     @Test
     fun `nonblank art has no hidden transparent RGB payload`() {
-        // The approved brand icon is copied byte-for-byte and its transparent RGB is part of that
-        // source. Re-encoding it here would violate the pinned brand-art contract.
-        ART_FILES.filterNot { it == "icons/blank.png" || it == "chat/logo.png" }
+        // Approved original brand sources are copied byte-for-byte, including transparent RGB.
+        // The generated font atlas sanitizes transparent texels; source hashes stay pinned.
+        ART_FILES.filterNot {
+                it == "icons/blank.png" ||
+                    it == "chat/logo.png" ||
+                    it == "sidebar/wordmark-source.png"
+            }
             .forEach { path ->
                 readImage(path).pixels().forEach { pixel ->
                     assertTrue(
@@ -134,6 +138,15 @@ class ThemeAssetContractTest {
         assertEquals(
             "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a",
             sha256(platformArt.resolve("chat/logo.png")),
+        )
+    }
+
+    @Test
+    fun `sidebar wordmark retains the approved high resolution original`() {
+        assertImage("sidebar/wordmark-source.png", 3840, 2160, hasOpaquePixel = true)
+        assertEquals(
+            "8c355d4adf2295259242b22264f8b47ccb01e14972b5892fa01f31219ca3fafb",
+            sha256(platformArt.resolve("sidebar/wordmark-source.png")),
         )
     }
 
@@ -286,6 +299,7 @@ class ThemeAssetContractTest {
                 "tab/badge_middle.png",
                 "tab/badge_right.png",
                 "chat/logo.png",
+                "sidebar/wordmark-source.png",
                 "menu/panel.png",
                 "menu/settings_panel.png",
                 "menu/divider.png",
@@ -380,7 +394,7 @@ class ThemeAssetContractTest {
         val EXPECTED_PLATFORM_FILES =
             ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
         val EXPECTED_PLATFORM_DIRECTORIES =
-            setOf("panels", "icons", "tooltips", "frames", "tab", "chat", "menu")
+            setOf("panels", "icons", "tooltips", "frames", "tab", "chat", "menu", "sidebar")
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
@@ -720,6 +734,16 @@ class ThemeAssetContractTest {
     },
     "menu/arrow_right.png": {
       "source": "plugin-lobby MenuPack (generated)"
+    },
+    "sidebar/wordmark-source.png": {
+      "source": "Grounds original brand artwork: logo/logo-text-noglow.png",
+      "sha256": "8c355d4adf2295259242b22264f8b47ccb01e14972b5892fa01f31219ca3fafb",
+      "crop": [
+        156,
+        721,
+        3555,
+        702
+      ]
     }
   }
 }
