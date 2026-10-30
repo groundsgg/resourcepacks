@@ -327,6 +327,10 @@ internal object ProductGraph {
                 } else entry
             } +
                 PackEntry.text("assets/grounds/font/sidebar.json", SidebarFont.json()) +
+                PackEntry.text("assets/grounds/font/game_sidebar.json", GameSidebarFont.json()) +
+                GameSidebarFont.textures().map { (file, bytes) ->
+                    PackEntry.bytes("assets/grounds/textures/font/$file", bytes)
+                } +
                 PackEntry.text(
                     "assets/grounds/font/sidebar_footer.json",
                     SidebarFont.footerJson(),

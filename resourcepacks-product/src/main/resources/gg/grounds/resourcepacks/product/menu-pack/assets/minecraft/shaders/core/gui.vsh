@@ -52,13 +52,15 @@ void main() {
     screenPos = (vec2(gl_Position.x, -gl_Position.y) / gl_Position.w * 0.5 + 0.5) * projectedGuiSize;
     sidebarBounds = vec4(0.0);
     sidebarKind = 0.0;
-    // Exact native 26.3 sidebar corners: 106px content and eleven/twelve actual rows.
+    // Exact native 26.3 sidebar corners: 106px content and six through thirteen actual rows.
+    // Compact games vary in height; the accepted lobby stays at eleven/twelve.
+    // Plain fallback uses fourteen/fifteen rows and remains outside this classifier.
     // Expand the original body once, so logo and contents share the user's native opacity.
     if (all(lessThanEqual(abs(Color.rgb), vec3(0.5 / 255.0)))) {
         float left = guiSize.x - 111.0;
         float right = guiSize.x - 1.0;
         float middle = floor(guiSize.y / 2.0);
-        for (int rows = 11; rows <= 12; rows++) {
+        for (int rows = 6; rows <= 13; rows++) {
             float top = middle - 6.0 * rows - 1.0;
             float bottom = middle + 3.0 * rows;
             bool onLeft = abs(screenPos.x - left) < 0.05;
