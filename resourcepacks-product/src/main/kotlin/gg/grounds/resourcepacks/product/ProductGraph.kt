@@ -280,7 +280,7 @@ internal object ProductGraph {
             ) +
                 ChatFont.emojiTextures().map { (name, bytes) ->
                     PackEntry.bytes("assets/grounds/textures/font/chat/$name.png", bytes)
-                }
+                } + ChatFont.signedAliasFonts().map { (path, json) -> PackEntry.text(path, json) }
         return PackContribution(
             id,
             supportedFormats,

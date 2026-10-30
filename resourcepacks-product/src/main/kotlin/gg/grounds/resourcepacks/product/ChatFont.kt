@@ -154,6 +154,24 @@ internal object ChatFont {
     fun emojiTextures(): List<Pair<String, ByteArray>> =
         glyphs.map { glyph -> glyph.name to texture(glyph) }
 
+    /** Keeps the signed alias text intact while drawing its first colon as the graphic. */
+    fun signedAliasFonts(): List<Pair<String, String>> {
+        val aliases = glyphs.map { glyph ->
+            "assets/grounds/font/chat/alias/${glyph.name}.json" to
+                """{"providers":[{"type":"bitmap","file":"grounds:font/chat/${glyph.name}.png","ascent":7,"height":8,"chars":[":"]}]}"""
+        }
+        val advances = (32..126).joinToString(",") { codepoint ->
+            val character = when (val value = codepoint.toChar()) {
+                '\\' -> "\\\\"
+                '"' -> "\\\""
+                else -> value.toString()
+            }
+            "\"$character\":0"
+        }
+        return aliases + ("assets/grounds/font/chat/alias/control.json" to
+            """{"providers":[{"type":"space","advances":{$advances}}]}""")
+    }
+
     private fun bitmap(name: String, codepoint: Int): String =
         """{"type":"bitmap","file":"grounds:font/chat/$name.png","ascent":7,"height":8,"chars":["${u(codepoint)}"]}"""
 
