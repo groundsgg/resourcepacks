@@ -61,21 +61,24 @@ void main() {
         for (int rows = 11; rows <= 12; rows++) {
             float top = middle - 6.0 * rows - 1.0;
             float bottom = middle + 3.0 * rows;
-            vec2 bodyCorner = vec2(CORNERS[CORNER].x < 0.0 ? left : right,
-                                   CORNERS[CORNER].y < 0.0 ? top : bottom);
-            vec2 titleCorner = vec2(bodyCorner.x, CORNERS[CORNER].y < 0.0 ? top - 9.0 : top);
-            if (all(lessThan(abs(screenPos - bodyCorner), vec2(0.05)))) {
+            bool onLeft = abs(screenPos.x - left) < 0.05;
+            bool onRight = abs(screenPos.x - right) < 0.05;
+            bool onTop = abs(screenPos.y - top) < 0.05;
+            bool onBottom = abs(screenPos.y - bottom) < 0.05;
+            // Batched draw base vertices are not necessarily multiples of four.
+            // Classify by actual positions instead of assuming a gl_VertexID corner order.
+            if ((onLeft || onRight) && (onTop || onBottom)) {
                 sidebarKind = 1.0;
                 sidebarBounds = vec4(left, top - 24.0, projectedGuiSize.x, bottom + 4.0);
-                vec2 target = vec2(CORNERS[CORNER].x < 0.0 ? left : projectedGuiSize.x,
-                                   CORNERS[CORNER].y < 0.0 ? top - 24.0 : bottom + 4.0);
+                vec2 target = vec2(onLeft ? left : projectedGuiSize.x,
+                                   onTop ? top - 24.0 : bottom + 4.0);
                 vec2 delta = target - screenPos;
                 gl_Position.xy += vec2(2.0 * delta.x / projectedGuiSize.x,
                                        -2.0 * delta.y / projectedGuiSize.y) * gl_Position.w;
                 screenPos = target;
                 break;
             }
-            if (all(lessThan(abs(screenPos - titleCorner), vec2(0.05)))) {
+            if ((onLeft || onRight) && (abs(screenPos.y - (top - 9.0)) < 0.05 || onTop)) {
                 sidebarKind = 2.0;
                 break;
             }

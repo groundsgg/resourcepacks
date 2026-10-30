@@ -319,7 +319,13 @@ internal object ProductGraph {
         return PackContribution(
             id,
             supportedFormats,
-            entries +
+            entries.map { entry ->
+                if (entry.path.value == "assets/minecraft/shaders/core/text.vsh") {
+                    val shader =
+                        entry.source.openStream().use { it.reader(Charsets.UTF_8).readText() }
+                    PackEntry.text(entry.path.value, SidebarHeadShader.extend(shader))
+                } else entry
+            } +
                 PackEntry.text("assets/grounds/font/sidebar.json", SidebarFont.json()) +
                 PackEntry.text(
                     "assets/grounds/font/sidebar_footer.json",

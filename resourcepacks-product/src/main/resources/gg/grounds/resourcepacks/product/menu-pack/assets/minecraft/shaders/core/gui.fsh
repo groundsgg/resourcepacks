@@ -45,6 +45,11 @@ bool is_focus_outline(vec4 color) {
 // The body quad is the sole background, extended by gui.vsh over the logo and to the edge.
 float sidebar_corner_coverage() {
     if (sidebarKind > 1.5) return 0.0;
+    // The title's bottom vertices coincide with the body's top vertices. Recover the
+    // original height independent of the batched base-vertex phase and drop that fill.
+    float originalHeight = 2.0 * abs(dFdy(guiPos.y)) /
+        max(max(abs(dFdy(quadCorner.x)), abs(dFdy(quadCorner.y))), 1e-6);
+    if (sidebarKind > 0.5 && abs(originalHeight - 9.0) < 0.05) return 0.0;
     if (sidebarKind < 0.5) return 1.0;
     float dx = screenPos.x - sidebarBounds.x;
     float dy = min(screenPos.y - sidebarBounds.y, sidebarBounds.w - screenPos.y);
