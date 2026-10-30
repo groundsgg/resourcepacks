@@ -196,6 +196,8 @@ class PackArtworkLicenseContractTest {
                 "art/platform/menu/map3_na_picked.png",
                 "art/platform/menu/map3_oc.png",
                 "art/platform/menu/map3_oc_picked.png",
+                "art/platform/menu/map3_sa_picked.png",
+                "art/platform/menu/map3_af_picked.png",
                 "art/platform/menu/map3_sa.png",
                 "art/platform/menu/map_af.png",
                 "art/platform/menu/map_as.png",

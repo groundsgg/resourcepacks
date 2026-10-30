@@ -314,6 +314,8 @@ class ThemeAssetContractTest {
                 "menu/map3_eu_picked.png",
                 "menu/map3_as_picked.png",
                 "menu/map3_oc_picked.png",
+                "menu/map3_sa_picked.png",
+                "menu/map3_af_picked.png",
                 "menu/row_tall_l.png",
                 "menu/row_tall_r.png",
                 "menu/icon_globe.png",
@@ -532,6 +534,12 @@ class ThemeAssetContractTest {
     },
     "menu/map3_oc_picked.png": {
       "source": "plugin-lobby MenuPack (generated)"
+    },
+    "menu/map3_sa_picked.png": {
+      "source": "plugin-player MenuPack (generated)"
+    },
+    "menu/map3_af_picked.png": {
+      "source": "plugin-player MenuPack (generated)"
     },
     "menu/row_tall_l.png": {
       "source": "plugin-lobby MenuPack (generated)"
