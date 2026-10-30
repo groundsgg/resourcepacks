@@ -7127,6 +7127,168 @@
       "chars": [
         ""
       ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 7,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 6,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 5,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 4,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 3,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 2,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 1,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": 0,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_sa_picked.png",
+      "ascent": -1,
+      "height": 64,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 7,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 6,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 5,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 4,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 3,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 2,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 1,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": 0,
+      "height": 68,
+      "chars": [
+        ""
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "grounds:font/menu/map3_af_picked.png",
+      "ascent": -1,
+      "height": 68,
+      "chars": [
+        ""
+      ]
     }
   ]
 }

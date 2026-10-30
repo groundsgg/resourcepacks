@@ -636,6 +636,16 @@ internal object ProductGraph {
                     593,
                     "69862c37ce001e16be508105844eb5d320e051047962d7c313501e7f8b1ae1ac",
                 ),
+            "menu/map3_sa_picked.png" to
+                ArtworkExpectation(
+                    563,
+                    "56da1577570d293392f7fa6f46816f0aa77988af436812d61e37f9db3e871115",
+                ),
+            "menu/map3_af_picked.png" to
+                ArtworkExpectation(
+                    685,
+                    "3b3a423862206cd080de51d7d16c774530ddcff84ef980e4ef947fd8de316303",
+                ),
             "menu/row_tall_l.png" to
                 ArtworkExpectation(
                     162,
