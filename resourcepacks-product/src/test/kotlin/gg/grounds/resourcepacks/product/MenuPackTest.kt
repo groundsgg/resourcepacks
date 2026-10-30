@@ -64,7 +64,7 @@ class MenuPackTest {
         val MENU_DIGESTS =
             mapOf(
                 "assets/grounds/font/menu/art.json" to
-                    "ae2abc9be242c6d2f8705d679dbafb08ed2eca2b1675b183804c7e95d1824c27",
+                    "f05ea648eecb81da20386febcf400bb017b98679c9ca0b4866070496c48f067b",
                 "assets/grounds/font/menu/title.json" to
                     "1be154bf46c2532cf33c58ac5f80e48c96380263403f6454e039233e5135620b",
                 "assets/grounds/font/menu/space.json" to

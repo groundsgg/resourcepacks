@@ -122,6 +122,12 @@
     "menu/map3_oc_picked.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
+    "menu/map3_sa_picked.png": {
+      "source": "plugin-player MenuPack (generated)"
+    },
+    "menu/map3_af_picked.png": {
+      "source": "plugin-player MenuPack (generated)"
+    },
     "menu/row_tall_l.png": {
       "source": "plugin-lobby MenuPack (generated)"
     },
