@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/groundsgg/resourcepacks/compare/v1.2.0...v1.2.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **sidebar:** area-filter the original logo without subsampling ([#54](https://github.com/groundsgg/resourcepacks/issues/54)) ([ce9fb5e](https://github.com/groundsgg/resourcepacks/commit/ce9fb5e5e2ffa767289412ec39e34c8b62984d72))
+
 ## [1.2.0](https://github.com/groundsgg/resourcepacks/compare/v1.1.0...v1.2.0) (2026-10-30)
 
 
