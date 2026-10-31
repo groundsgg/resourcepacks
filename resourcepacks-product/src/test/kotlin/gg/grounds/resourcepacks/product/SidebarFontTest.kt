@@ -8,6 +8,39 @@ import kotlin.test.assertTrue
 
 class SidebarFontTest {
     @Test
+    fun `fine opaque detail contributes its full area instead of selected samples`() {
+        val source =
+            java.awt.image.BufferedImage(648, 126, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        repeat(source.height) { y ->
+            repeat(source.width) { x ->
+                source.setRGB(x, y, if (x % 3 == 1) -1 else 0xFF000000.toInt())
+            }
+        }
+        val logo =
+            ImageIO.read(SidebarFont.textures(source).getValue("sidebar_logo.png").inputStream())
+        assertEquals(0xFF555555.toInt(), logo.getRGB(100, 20))
+        assertTrue((42 until 78).all { y -> (0 until 216).all { x -> logo.getRGB(x, y) == 0 } })
+    }
+
+    @Test
+    fun `transparent colors cannot bleed into filtered logo edges`() {
+        val source =
+            java.awt.image.BufferedImage(648, 126, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        repeat(source.height) { y ->
+            repeat(source.width) { x ->
+                source.setRGB(
+                    x,
+                    y,
+                    if (x % 3 == 1 && y % 3 == 1) 0xFFFF0000.toInt() else 0x000000FF,
+                )
+            }
+        }
+        val logo =
+            ImageIO.read(SidebarFont.textures(source).getValue("sidebar_logo.png").inputStream())
+        assertEquals(0x1CFF0000, logo.getRGB(100, 20))
+    }
+
+    @Test
     fun `cap stays above the native title and bar spans the two native text lines`() {
         val logo = java.awt.image.BufferedImage(96, 19, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val textures = SidebarFont.textures(logo)

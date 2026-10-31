@@ -1,9 +1,12 @@
 package gg.grounds.resourcepacks.product
 
-import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** Native sidebar title overlays. Coordinates are measured with the Minecraft 26.3 renderer. */
 internal object SidebarFont {
@@ -52,18 +55,7 @@ internal object SidebarFont {
      * Separate textures keep the wordmark at 3x resolution within Minecraft's 256px glyph atlas.
      */
     fun textures(logo: BufferedImage): Map<String, ByteArray> {
-        val wordmark = BufferedImage(216, 78, BufferedImage.TYPE_INT_ARGB)
-        wordmark.createGraphics().let { g ->
-            try {
-                g.setRenderingHint(
-                    RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BICUBIC,
-                )
-                g.drawImage(logo, 0, 0, 216, 42, null)
-            } finally {
-                g.dispose()
-            }
-        }
+        val wordmark = wordmark(logo)
         val bar = BufferedImage(1, 18, BufferedImage.TYPE_INT_ARGB)
         repeat(18) { bar.setRGB(0, it, -1) }
         val separator = BufferedImage(180, 30, BufferedImage.TYPE_INT_ARGB)
@@ -129,6 +121,48 @@ internal object SidebarFont {
                     )
                 ),
         )
+    }
+
+    /**
+     * Average source-pixel coverage in premultiplied alpha. Fine stone/gem detail must contribute
+     * its area rather than alias into bright specks, and transparent RGB must not tint the edges.
+     * Keep the native-tested 3x raster and transparent glyph padding.
+     */
+    private fun wordmark(source: BufferedImage): BufferedImage {
+        val texture = BufferedImage(216, 78, BufferedImage.TYPE_INT_ARGB)
+        val scaleX = source.width / 216.0
+        val scaleY = source.height / 42.0
+        repeat(42) { y ->
+            val top = y * scaleY
+            val bottom = (y + 1) * scaleY
+            repeat(216) { x ->
+                val left = x * scaleX
+                val right = (x + 1) * scaleX
+                var alpha = 0.0
+                var red = 0.0
+                var green = 0.0
+                var blue = 0.0
+                for (sy in top.toInt() until min(source.height, ceil(bottom).toInt())) {
+                    for (sx in left.toInt() until min(source.width, ceil(right).toInt())) {
+                        val coverage =
+                            (min(right, sx + 1.0) - max(left, sx.toDouble())) *
+                                (min(bottom, sy + 1.0) - max(top, sy.toDouble()))
+                        val pixel = source.getRGB(sx, sy)
+                        val weight = coverage * ((pixel ushr 24) / 255.0)
+                        alpha += weight
+                        red += weight * ((pixel ushr 16) and 255)
+                        green += weight * ((pixel ushr 8) and 255)
+                        blue += weight * (pixel and 255)
+                    }
+                }
+                val a = (255 * alpha / (scaleX * scaleY)).roundToInt()
+                val r = if (alpha > 0) (red / alpha).roundToInt() else 0
+                val g = if (alpha > 0) (green / alpha).roundToInt() else 0
+                val b = if (alpha > 0) (blue / alpha).roundToInt() else 0
+                texture.setRGB(x, y, (a shl 24) or (r shl 16) or (g shl 8) or b)
+            }
+        }
+        return texture
     }
 
     /** First-party ten-pixel symbols, kept crisp at three texture pixels per GUI pixel. */

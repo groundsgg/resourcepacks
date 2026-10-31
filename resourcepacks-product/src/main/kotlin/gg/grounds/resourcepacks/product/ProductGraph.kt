@@ -299,8 +299,8 @@ internal object ProductGraph {
             held
                 .getValue("sidebar/wordmark-source.png")
                 .readBytes(SIDEBAR_ARTWORK.getValue("sidebar/wordmark-source.png").size)
-        // Retain the original artwork, but avoid allocating its full 4K raster in small-heap
-        // builds.
+        // Decode every pixel of the original wordmark crop for area filtering. The crop
+        // avoids allocating the surrounding transparent 4K canvas in small-heap builds.
         val logo =
             javax.imageio.stream.MemoryCacheImageInputStream(bytes.inputStream()).use { input ->
                 val readers = javax.imageio.ImageIO.getImageReaders(input)
@@ -311,7 +311,6 @@ internal object ProductGraph {
                     reader.setInput(input, false, true)
                     val params = reader.defaultReadParam
                     params.sourceRegion = java.awt.Rectangle(156, 721, 3555, 702)
-                    params.setSourceSubsampling(4, 4, 0, 0)
                     reader.read(0, params)
                 } finally {
                     reader.dispose()
