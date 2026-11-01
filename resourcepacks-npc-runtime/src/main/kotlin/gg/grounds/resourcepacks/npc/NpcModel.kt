@@ -47,8 +47,28 @@ data class NpcModel(
     val animations: Map<String, NpcClip>,
     val sounds: Map<String, NpcClipSound>,
 ) {
-    val headBone: NpcBone?
-        get() = bones.singleOrNull { it.name.equals("head", ignoreCase = true) }
+    val headBone: NpcBone? = bones.singleOrNull { it.name.equals("head", ignoreCase = true) }
+    private val boneIndices = bones.mapIndexed { index, bone -> bone.id to index }.toMap()
+    private val origins = bones.associate { it.id to it.origin }
+    private val parents = IntArray(bones.size) { bones[it].parent?.let(boneIndices::get) ?: -1 }
+    private val headIndex = headBone?.id?.let(boneIndices::get) ?: -1
+    private val bindBones =
+        bones.map { bone ->
+            NpcMatrix.translation(bone.origin - (bone.parent?.let(origins::get) ?: ZERO)) *
+                NpcMatrix.rotation(bone.rotation)
+        }
+    private val partBones = IntArray(parts.size) { parts[it].bone?.let(boneIndices::get) ?: -1 }
+    private val bindParts =
+        parts.map { part ->
+            NpcMatrix.translation(part.pivot - (part.bone?.let(origins::get) ?: ZERO)) *
+                NpcMatrix.rotation(part.rotation) *
+                NpcMatrix.translation(part.center - part.pivot) *
+                NpcMatrix.scale(part.scale)
+        }
+    private val displayParts =
+        NpcMatrix.rotation(Vec3(0.0, 180.0, 0.0)).let { correction ->
+            bindParts.map { it * correction }
+        }
 
     /** Minecraft rotates each ItemDisplay mesh by pi after its entity transformation. */
     @JvmOverloads
@@ -57,18 +77,32 @@ data class NpcModel(
         seconds: Double,
         headLook: Vec3? = null,
     ): List<NpcMatrix> {
-        val inverseClientRotation = NpcMatrix.rotation(Vec3(0.0, 180.0, 0.0))
-        return pose(animation, seconds, headLook).map { it * inverseClientRotation }
+        return samplePose(animation, seconds, headLook, displayParts)
     }
 
     @JvmOverloads
-    fun pose(animation: String?, seconds: Double, headLook: Vec3? = null): List<NpcMatrix> {
+    fun pose(animation: String?, seconds: Double, headLook: Vec3? = null): List<NpcMatrix> =
+        samplePose(animation, seconds, headLook, bindParts)
+
+    private fun samplePose(
+        animation: String?,
+        seconds: Double,
+        headLook: Vec3?,
+        localParts: List<NpcMatrix>,
+    ): List<NpcMatrix> {
         val clip = animation?.let(animations::get)
         val time = if (clip?.loop == "loop") seconds % clip.length else seconds
-        val world = mutableMapOf<String, NpcMatrix>()
-        val origins = bones.associate { it.id to it.origin }
-        for (bone in bones) {
+        val world = arrayOfNulls<NpcMatrix>(bones.size)
+        val look = headLook?.takeUnless { it == ZERO }?.let(NpcMatrix::rotation)
+        for ((index, bone) in bones.withIndex()) {
             val channels = clip?.tracks?.get(bone.id).orEmpty()
+            if (channels.values.all { it.isEmpty() }) {
+                val local =
+                    if (index == headIndex && look != null) bindBones[index] * look
+                    else bindBones[index]
+                world[index] = (world.getOrNull(parents[index]) ?: NpcMatrix.IDENTITY) * local
+                continue
+            }
             val position =
                 sampleNpcTrack(channels["position"].orEmpty(), time, ZERO, clip?.loop == "loop")
             val rotation =
@@ -80,17 +114,13 @@ data class NpcModel(
                     bone.origin - (bone.parent?.let(origins::get) ?: ZERO) + position
                 ) *
                     NpcMatrix.rotation(rotation) *
-                    (if (headLook != null && bone.id == headBone?.id) NpcMatrix.rotation(headLook)
-                    else NpcMatrix.IDENTITY) *
+                    (if (index == headIndex && look != null) look else NpcMatrix.IDENTITY) *
                     NpcMatrix.scale(scale)
-            world[bone.id] = (bone.parent?.let(world::get) ?: NpcMatrix.IDENTITY) * local
+            world[index] = (world.getOrNull(parents[index]) ?: NpcMatrix.IDENTITY) * local
         }
-        return parts.map { part ->
-            (part.bone?.let(world::get) ?: NpcMatrix.IDENTITY) *
-                NpcMatrix.translation(part.pivot - (part.bone?.let(origins::get) ?: ZERO)) *
-                NpcMatrix.rotation(part.rotation) *
-                NpcMatrix.translation(part.center - part.pivot) *
-                NpcMatrix.scale(part.scale)
+        return localParts.mapIndexed { index, local ->
+            // Always return owned matrices: callers may mutate NpcMatrix.values.
+            (world.getOrNull(partBones[index]) ?: NpcMatrix.IDENTITY) * local
         }
     }
 
