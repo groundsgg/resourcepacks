@@ -91,6 +91,22 @@ def group_rigid_parts(parts, output):
     return result
 
 
+def isolate_part_models(parts, output):
+    """Bind item/native model IDs to content so legacy packs cannot shadow grouped meshes."""
+    result = []
+    for part in parts:
+        suffix = part['model'].split(':', 1)[1]
+        old_model = output / f'pack/assets/grounds/models/{suffix}.json'
+        fingerprint = hashlib.sha256(old_model.read_bytes()).hexdigest()
+        isolated = f'{suffix}_{fingerprint}'
+        old_model.replace(output / f'pack/assets/grounds/models/{isolated}.json')
+        write_json(output / f'pack/assets/grounds/items/{isolated}.json',
+                   {'model': {'type': 'minecraft:model', 'model': f'grounds:{isolated}'}})
+        (output / f'pack/assets/grounds/items/{suffix}.json').unlink()
+        result.append(dict(part, model=f'grounds:{isolated}'))
+    return result
+
+
 def compile_model(data, collection, character, output):
     output = Path(output); prefix = f'{collection}/{character}'
     asset = f'grounds:npc/{prefix}'
@@ -105,8 +121,9 @@ def compile_model(data, collection, character, output):
         try: png = base64.b64decode(source.split(',', 1)[1], validate=True)
         except Exception as e: raise ValueError('invalid PNG base64') from e
         if not png.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid PNG')
-        texture_ids.append(f'grounds:item/npc/{prefix}/texture_{i:03d}')
-        path = output / f'pack/assets/grounds/textures/item/npc/{prefix}/texture_{i:03d}.png'
+        texture_name = f'texture_{i:03d}_{hashlib.sha256(png).hexdigest()}'
+        texture_ids.append(f'grounds:item/npc/{prefix}/{texture_name}')
+        path = output / f'pack/assets/grounds/textures/item/npc/{prefix}/{texture_name}.png'
         path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(png)
     bones, parts, hitboxes, seen, bone_ids = [], [], [], set(), set()
     resolution = data['resolution']; uvw, uvh = number(resolution['width']), number(resolution['height'])
@@ -184,7 +201,7 @@ def compile_model(data, collection, character, output):
         lo, hi = [0,0,0], [0,0,0]
     bounds = {'center': [(a+b)/32 for a,b in zip(lo,hi)], 'size': [(b-a)/16 for a,b in zip(lo,hi)]}
     write_json(output / f'pack/assets/grounds/models/npc_bodies/npc/{prefix}.json', {'elements': []})
-    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': group_rigid_parts(parts, output), 'animations': animations, 'sounds': {}}
+    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': isolate_part_models(group_rigid_parts(parts, output), output), 'animations': animations, 'sounds': {}}
 
 
 def remap_sound_event(event, character, clip):

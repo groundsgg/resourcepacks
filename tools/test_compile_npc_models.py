@@ -1,6 +1,7 @@
 import base64
 import copy
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -19,7 +20,57 @@ def fixture():
         'animations': [{'name': 'wave', 'loop': 'once', 'length': 1, 'animators': {'child': {'type': 'bone', 'keyframes': [{'channel': 'position', 'time': 0.5, 'interpolation': 'linear', 'data_points': [{'x': '4', 'y': '8', 'z': '-16'}]}]}}}]}
 
 
+def native_part(output, part):
+    suffix = part['model'].split(':', 1)[1] + '.json'
+    return json.loads((Path(output) / 'pack/assets/grounds/models' / suffix).read_text())
+
+
 class CompilerTest(unittest.TestCase):
+    def test_legacy_global_pack_cannot_replace_grouped_meshes_or_materials_in_either_order(self):
+        data = fixture()
+        data['elements'][0]['rotation'] = [0, 0, 0]
+        second = copy.deepcopy(data['elements'][0])
+        second.update(uuid='second', **{'from': [8, 16, 0], 'to': [12, 24, 2]})
+        data['elements'].append(second)
+        data['outliner'][0]['children'][0]['children'].append('second')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+            generated = {str(p.relative_to(Path(tmp) / 'pack')): p.read_bytes()
+                         for p in (Path(tmp) / 'pack').rglob('*') if p.is_file()}
+            legacy_model = 'grounds:npc_parts/townfolk/builder/part_000'
+            legacy = {
+                'assets/grounds/items/npc_parts/townfolk/builder/part_000.json': json.dumps({'model': {'type': 'minecraft:model', 'model': legacy_model}}).encode(),
+                'assets/grounds/models/npc_parts/townfolk/builder/part_000.json': json.dumps({'elements': [{}]}).encode(),
+                'assets/grounds/textures/item/npc/townfolk/builder/texture_000.png': b'old-png',
+            }
+            for packs in [(legacy, generated), (generated, legacy)]:
+                effective = dict(packs[0]); effective.update(packs[1])
+                for part in result['parts']:
+                    suffix = part['model'].split(':', 1)[1] + '.json'
+                    item = json.loads(effective['assets/grounds/items/' + suffix])
+                    native_suffix = item['model']['model'].split(':', 1)[1] + '.json'
+                    native = json.loads(effective['assets/grounds/models/' + native_suffix])
+                    self.assertEqual(len(native['elements']), 2, 'legacy single cube replaced the grouped mesh')
+                    sprite = native['textures']['0'].split(':', 1)[1]
+                    expected_png = base64.b64decode(data['textures'][0]['source'].split(',', 1)[1])
+                    self.assertEqual(effective['assets/grounds/textures/' + sprite + '.png'], expected_png)
+
+    def test_mesh_and_material_changes_receive_new_resource_identities(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            original = fixture()
+            changed_mesh = copy.deepcopy(original)
+            changed_mesh['elements'][0]['to'][0] += 2
+            changed_texture = copy.deepcopy(original)
+            png = b'\x89PNG\r\n\x1a\nchanged'
+            changed_texture['textures'][0]['source'] = 'data:image/png;base64,' + base64.b64encode(png).decode()
+            variants = [compiler.compile_model(data, 'townfolk', 'builder', Path(tmp) / str(i))
+                        for i, data in enumerate([original, changed_mesh, changed_texture])]
+            self.assertEqual(len({v['parts'][0]['model'] for v in variants}), 3)
+            for i, model in enumerate(variants):
+                key = model['parts'][0]['model']
+                path = Path(tmp) / str(i) / ('pack/assets/grounds/models/' + key.split(':', 1)[1] + '.json')
+                self.assertTrue(key.endswith(hashlib.sha256(path.read_bytes()).hexdigest()))
+
     def test_rigid_cubes_share_one_bone_display_without_moving_geometry(self):
         data = fixture()
         first = data['elements'][0]
@@ -32,7 +83,7 @@ class CompilerTest(unittest.TestCase):
             result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
             self.assertEqual(len(result['parts']), 1)
             self.assertEqual(result['parts'][0]['center'], [0.375, 1.25, 0.0625])
-            native = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            native = native_part(tmp, result['parts'][0])
             self.assertEqual([e['from'] for e in native['elements']], [[2, 4, 7], [10, 4, 7]])
             self.assertEqual([e['to'] for e in native['elements']], [[6, 12, 9], [14, 12, 9]])
             self.assertFalse((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_001.json').exists())
@@ -59,7 +110,7 @@ class CompilerTest(unittest.TestCase):
             result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
             self.assertEqual(len(result['parts']), 1)
             self.assertEqual(result['parts'][0]['scale'], [-1, -1, -1])
-            native = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            native = native_part(tmp, result['parts'][0])
             self.assertEqual([e['from'] for e in native['elements']], [[10, 4, 7], [2, 4, 7]])
             self.assertEqual(native['elements'][0]['faces']['north']['uv'], [0, 2, 8, 6])
 
@@ -97,8 +148,8 @@ class CompilerTest(unittest.TestCase):
         # Minecraft 26.x stitches block/ and item/ directories, not arbitrary texture folders.
         atlas_directories = ('block/', 'item/')
         with tempfile.TemporaryDirectory() as tmp:
-            compiler.compile_model(fixture(), 'townfolk', 'builder', Path(tmp))
-            model = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            result = compiler.compile_model(fixture(), 'townfolk', 'builder', Path(tmp))
+            model = native_part(tmp, result['parts'][0])
             for sprite in model['textures'].values():
                 if sprite.startswith('#'): continue
                 namespace, path = sprite.split(':', 1)
@@ -107,8 +158,8 @@ class CompilerTest(unittest.TestCase):
 
     def test_native_model_defines_a_resolvable_particle_material(self):
         with tempfile.TemporaryDirectory() as tmp:
-            compiler.compile_model(fixture(), 'townfolk', 'builder', Path(tmp))
-            model = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            result = compiler.compile_model(fixture(), 'townfolk', 'builder', Path(tmp))
+            model = native_part(tmp, result['parts'][0])
             reference = model['textures'].get('particle')
             self.assertIsNotNone(reference, 'Minecraft resolves the particle slot while baking every model')
             self.assertTrue(reference.startswith('#'))
@@ -122,7 +173,7 @@ class CompilerTest(unittest.TestCase):
             self.assertEqual(result['parts'][0]['pivot'], [0.0625, 1.125, 0.0625])
             self.assertEqual(result['parts'][0]['rotation'], [0, 30, 0])
             self.assertEqual(result['animations']['wave']['tracks']['child']['position'][0]['value'], [0.25, 0.5, -1])
-            model = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            model = native_part(tmp, result['parts'][0])
             self.assertEqual(model['elements'][0]['from'], [6, 4, 7])
             self.assertEqual(model['elements'][0]['faces']['north']['uv'], [0, 2, 8, 6])
             self.assertEqual(model['elements'][0]['faces']['north']['rotation'], 90)

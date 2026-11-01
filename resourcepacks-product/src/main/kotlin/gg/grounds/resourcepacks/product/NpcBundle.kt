@@ -30,7 +30,13 @@ internal object NpcBundle {
             }
             node.get("parts").forEach { part ->
                 val model = part.get("model").asString()
-                check(model.matches(Regex("grounds:npc_parts/[a-z0-9_]+/[a-z0-9_]+/part_[0-9]+"))) {
+                check(
+                    model.matches(
+                        Regex(
+                            "grounds:npc_parts/[a-z0-9_]+/[a-z0-9_]+/part_[0-9]+(?:_[0-9a-f]{64})?"
+                        )
+                    )
+                ) {
                     "Invalid NPC part: $model"
                 }
                 check(
