@@ -120,6 +120,7 @@ internal object ProductGraph {
                         MAX_CONTENT_MODEL_BYTES,
                     )
             }
+            val npc = NpcBundle.capture(npcOutputDirectory(), held)
             afterSourcesPinned()
             val contribution =
                 immutableThemeContribution(held.filterKeys { it in PLATFORM_ARTWORK })
@@ -137,7 +138,7 @@ internal object ProductGraph {
                     held.getValue(PACK_ICON_SOURCE).readBytes(PACK_ICON_ARTWORK.size)
                 )
             return SecureSourceInputs.captureWithHeld(
-                    createPacks(contribution, contentContribution, icon),
+                    createPacks(contribution, contentContribution, npc.contribution, icon),
                     held.values.toList(),
                 )
                 .also { it.verifyUnchanged() }
@@ -156,6 +157,7 @@ internal object ProductGraph {
     private fun createPacks(
         platformContribution: PackContribution,
         contentContribution: PackContribution,
+        npcContribution: PackContribution,
         packIcon: PackEntrySource,
     ): List<PhysicalPack> =
         listOf(
@@ -172,7 +174,7 @@ internal object ProductGraph {
                         null,
                         PackPolicy(VanillaPathPolicy.FORBID, PackSetConstants.contentLimits),
                     ),
-                contributions = listOf(contentContribution),
+                contributions = listOf(contentContribution, npcContribution),
             ),
             PhysicalPack(
                 order = 1,
@@ -399,6 +401,11 @@ internal object ProductGraph {
             .resolve("art/platform")
 
     private fun contentArtDirectory(platformArt: Path): Path = platformArt.parent.resolve("content")
+
+    private fun npcOutputDirectory(): Path =
+        generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
+            .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
+            .resolve("build/generated/npc-models")
 
     private data class ArtworkExpectation(val size: Long, val sha256: String)
 

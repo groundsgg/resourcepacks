@@ -8,6 +8,18 @@ import kotlin.test.assertTrue
 
 class CatalogJarBoundaryTest {
     @Test
+    fun `public catalog never distributes purchased bone geometry or animation tracks`() {
+        JarFile(catalogJar().toFile()).use { jar ->
+            assertFalse(
+                jar.entries().asSequence().any {
+                    it.name.startsWith("gg/grounds/resourcepacks/npc/")
+                },
+                "NPC runtime resources belong in the private renderer artifact, not the public catalogue",
+            )
+        }
+    }
+
+    @Test
     fun `catalog JAR carries the Apache license terms`() {
         JarFile(catalogJar().toFile()).use { archive ->
             val entry = assertNotNull(archive.getJarEntry("META-INF/LICENSE"))
@@ -30,7 +42,8 @@ class CatalogJarBoundaryTest {
                 it == "META-INF/MANIFEST.MF" ||
                     it == "META-INF/LICENSE" ||
                     it == "META-INF/resourcepacks-catalog.kotlin_module" ||
-                    it.startsWith("gg/grounds/resourcepacks/catalog/")
+                    it.startsWith("gg/grounds/resourcepacks/catalog/") ||
+                    it.startsWith("gg/grounds/resourcepacks/npc/")
             }
         )
         assertFalse(

@@ -13,3 +13,5 @@ pluginManagement {
 
 rootProject.name = "resourcepacks"
 include("resourcepacks-catalog", "resourcepacks-client", "resourcepacks-contract", "resourcepacks-product")
+
+include("resourcepacks-npc-runtime")

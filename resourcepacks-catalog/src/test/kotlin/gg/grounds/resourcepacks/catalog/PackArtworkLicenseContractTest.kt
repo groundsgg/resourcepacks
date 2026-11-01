@@ -262,6 +262,7 @@ class PackArtworkLicenseContractTest {
                 "LICENSE",
                 "models/editor/marker.json",
                 "models/npc_bodies/editor/guide.json",
+                "particles/scene/happy_villager.json",
             )
     }
 }

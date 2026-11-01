@@ -15,6 +15,7 @@ internal fun validatedProductPacks(packs: List<PhysicalPack>): List<PhysicalPack
                 .flatMap { it.entries }
                 .map { it.path }
                 .toSet(),
+            NpcBundle.partPaths(),
         )
         .also { result -> if (!result.isValid) throw ProductValidationException(result) }
     return orderedPacks

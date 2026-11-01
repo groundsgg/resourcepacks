@@ -36,18 +36,23 @@ class PackDefinitionsTest {
         )
         assertTrue(packs.all { it.required })
         assertTrue(packs.all { it.definition.format == PackFormat(97) })
-        assertEquals(ContentContribution.id, packs.first().contributions.single().id)
+        assertEquals(
+            listOf(ContentContribution.id.toString(), "grounds:npc-models"),
+            packs.first().contributions.map { it.id.toString() },
+        )
         assertEquals(1, packs.last().contributions.size)
     }
 
     @Test
     fun `content contribution pins the two scene bootstrap models as byte-backed entries`() {
-        val contribution = ProductGraph.packs.first().contributions.single()
+        val contribution =
+            ProductGraph.packs.first().contributions.first { it.id == ContentContribution.id }
 
         assertEquals(
             listOf(
                 "assets/grounds/models/editor/marker.json",
                 "assets/grounds/models/npc_bodies/editor/guide.json",
+                "assets/grounds/particles/scene/happy_villager.json",
                 "assets/grounds/legal/content.txt",
             ),
             contribution.entries.map { it.path.value },

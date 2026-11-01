@@ -17,7 +17,7 @@ class CatalogParityValidatorTest {
     fun `scene editor bootstrap catalog requires both exact projected model paths`() {
         val result =
             CatalogParityValidator.validate(
-                GroundsAssetCatalog.catalog,
+                bootstrapCatalog,
                 setOf(
                     PackPath.of("assets/grounds/models/editor/marker.json"),
                     PackPath.of("assets/grounds/models/npc_bodies/editor/guide.json"),
@@ -32,7 +32,7 @@ class CatalogParityValidatorTest {
     fun `unmapped content entry fails catalog parity`() {
         val result =
             CatalogParityValidator.validate(
-                GroundsAssetCatalog.catalog,
+                bootstrapCatalog,
                 sceneEditorBootstrapEntries + PackPath.of("assets/grounds/models/orphan.json"),
             )
 
@@ -46,7 +46,7 @@ class CatalogParityValidatorTest {
     fun `legitimate non asset content paths are outside catalog parity projection`() {
         val result =
             CatalogParityValidator.validate(
-                GroundsAssetCatalog.catalog,
+                bootstrapCatalog,
                 sceneEditorBootstrapEntries + PackPath.of("assets/grounds/lang/en_us.json"),
             )
 
@@ -132,6 +132,29 @@ class CatalogParityValidatorTest {
         )
     }
 
+    @Test
+    fun `only explicitly referenced part models bypass catalogue parity`() {
+        val allowed = PackPath.of("assets/grounds/models/npc_parts/townfolk/builder/part_000.json")
+        val extra = PackPath.of("assets/grounds/models/npc_parts/townfolk/builder/part_001.json")
+        val catalog = catalogWith("grounds:guide", AssetKind.NPC_BODY)
+        val root = PackPath.of("assets/grounds/models/npc_bodies/guide.json")
+        assertTrue(
+            CatalogParityValidator.validate(catalog, setOf(root, allowed), setOf(allowed)).isValid
+        )
+        assertEquals(
+            listOf(ProductProblemCode.CATALOG_EXTRA_CONTENT),
+            CatalogParityValidator.validate(catalog, setOf(root, allowed, extra), setOf(allowed))
+                .problems
+                .map { it.code },
+        )
+        assertEquals(
+            listOf(ProductProblemCode.CATALOG_MISSING_CONTENT),
+            CatalogParityValidator.validate(catalog, setOf(root), setOf(allowed)).problems.map {
+                it.code
+            },
+        )
+    }
+
     private fun catalogWith(key: String, kind: AssetKind): AssetCatalog {
         val assetKey = AssetKey(key)
         return AssetCatalog(
@@ -141,6 +164,17 @@ class CatalogParityValidatorTest {
             mapOf(assetKey to AssetDefinition(assetKey, kind, emptySet(), null, emptyMap())),
         )
     }
+
+    private val bootstrapCatalog: AssetCatalog
+        get() =
+            GroundsAssetCatalog.catalog.let { catalog ->
+                AssetCatalog(
+                    catalog.id,
+                    catalog.version,
+                    catalog.resourcePackCompatibility,
+                    catalog.assets.filterKeys { it.value.startsWith("grounds:editor/") },
+                )
+            }
 
     private val sceneEditorBootstrapEntries =
         setOf(

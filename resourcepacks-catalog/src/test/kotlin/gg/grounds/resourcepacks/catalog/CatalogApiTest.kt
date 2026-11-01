@@ -38,8 +38,27 @@ class CatalogApiTest {
         val expectedKeys =
             listOf(AssetKey("grounds:editor/marker"), AssetKey("grounds:editor/guide"))
 
-        assertEquals(expectedKeys, GroundsAssets.all.toList())
-        assertEquals(expectedKeys, catalog.assets.keys.toList())
+        assertEquals(expectedKeys, GroundsAssets.all.take(2))
+        assertEquals(expectedKeys, catalog.assets.keys.take(2))
+        assertEquals(catalog.assets.keys, GroundsAssets.all)
+        assertEquals(
+            catalog.assets.keys - expectedKeys.toSet() - AssetKey("grounds:scene/happy_villager"),
+            GroundsNpcModels.definitions.keys,
+        )
+        assertEquals(
+            AssetKind.PARTICLE,
+            catalog.assets.getValue(AssetKey("grounds:scene/happy_villager")).kind,
+        )
+        assertEquals(
+            GroundsNpcModels.definitions.filterValues { it.kind == AssetKind.NPC_BODY }.keys,
+            GroundsNpcModels.modelResources.keys,
+        )
+        assertFailsWith<UnsupportedOperationException> {
+            (GroundsNpcModels.definitions as MutableMap<Any?, Any?>).clear()
+        }
+        assertFailsWith<UnsupportedOperationException> {
+            (GroundsNpcModels.modelResources as MutableMap<Any?, Any?>).clear()
+        }
         assertEquals(AssetKind.PROP, catalog.assets.getValue(expectedKeys[0]).kind)
         assertEquals(
             LocalBounds(Vec3(0.0, 0.5, 0.0), Vec3(1.0, 1.0, 1.0)),

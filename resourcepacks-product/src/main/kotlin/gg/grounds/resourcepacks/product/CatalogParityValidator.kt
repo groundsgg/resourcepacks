@@ -9,7 +9,20 @@ import gg.grounds.scene.format.AssetKind
  * paths is a product concern, not a scene-format API concern.
  */
 internal object CatalogParityValidator {
-    fun validate(catalog: AssetCatalog, contentEntries: Set<PackPath>): ProductValidationResult {
+    fun validate(
+        catalog: AssetCatalog,
+        contentEntries: Set<PackPath>,
+        implementationPaths: Set<PackPath> = emptySet(),
+    ): ProductValidationResult {
+        require(
+            implementationPaths.all {
+                it.value.matches(
+                    Regex(
+                        "assets/grounds/models/npc_parts/[a-z0-9_]+/[a-z0-9_]+/part_[0-9]+\\.json"
+                    )
+                )
+            }
+        )
         val expected =
             catalog.assets
                 .map { (key, definition) ->
@@ -21,6 +34,13 @@ internal object CatalogParityValidator {
         // other legitimate content remain product-owned and deliberately do not require catalog
         // entries. Future asset kinds must add one projection here and its corresponding test.
         val projectedEntries = contentEntries.filter(::isProjectedAssetPath).toSet()
+        implementationPaths
+            .filter { it !in contentEntries }
+            .sorted()
+            .forEach { path ->
+                problems +=
+                    ProductProblem(ProductProblemCode.CATALOG_MISSING_CONTENT, path = path.value)
+            }
         val wrongKindEntries =
             projectedEntries
                 .filter { actual ->
@@ -46,10 +66,15 @@ internal object CatalogParityValidator {
         wrongKindEntries.sorted().forEach { path ->
             problems += ProductProblem(ProductProblemCode.CATALOG_WRONG_KIND, path = path.value)
         }
-        projectedEntries.subtract(expected.keys).subtract(wrongKindEntries).sorted().forEach { path
-            ->
-            problems += ProductProblem(ProductProblemCode.CATALOG_EXTRA_CONTENT, path = path.value)
-        }
+        projectedEntries
+            .subtract(expected.keys)
+            .subtract(wrongKindEntries)
+            .subtract(implementationPaths)
+            .sorted()
+            .forEach { path ->
+                problems +=
+                    ProductProblem(ProductProblemCode.CATALOG_EXTRA_CONTENT, path = path.value)
+            }
         return ProductValidationResult(problems)
     }
 

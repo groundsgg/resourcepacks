@@ -18,6 +18,14 @@ dependencies {
 
 java { withSourcesJar() }
 
+val generatedNpcSources = layout.buildDirectory.dir("generated/sources/npc/kotlin")
+val syncNpcSources by
+    tasks.registering(Sync::class) {
+        dependsOn(rootProject.tasks.named("compileNpcModels"))
+        from(rootProject.layout.buildDirectory.dir("generated/npc-models/catalog-kotlin"))
+        into(generatedNpcSources)
+    }
+
 val generatedCatalogSources = layout.buildDirectory.dir("generated/sources/catalog/kotlin")
 val generatedCatalogResources = layout.buildDirectory.dir("generated/resources/catalog")
 
@@ -39,16 +47,23 @@ val generateCatalogVersionResource by
         filter { rootProject.version.toString() }
     }
 
-kotlin { sourceSets.named("main") { kotlin.srcDir(generatedCatalogSources) } }
+kotlin {
+    sourceSets.named("main") {
+        kotlin.srcDir(generatedCatalogSources)
+        kotlin.srcDir(generatedNpcSources)
+    }
+}
 
 sourceSets.named("main") { resources.srcDir(generatedCatalogResources) }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(syncNpcSources)
     dependsOn(generateCatalogBuildInfo)
     dependsOn(generateCatalogVersionResource)
 }
 
 tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
+    dependsOn(syncNpcSources)
     dependsOn(generateCatalogBuildInfo)
     dependsOn(generateCatalogVersionResource)
     from(rootProject.layout.projectDirectory.file("LICENSES/Apache-2.0.txt")) {
@@ -58,6 +73,7 @@ tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
 }
 
 tasks.withType<org.gradle.language.jvm.tasks.ProcessResources>().configureEach {
+    dependsOn(rootProject.tasks.named("compileNpcModels"))
     dependsOn(generateCatalogVersionResource)
 }
 
@@ -197,3 +213,7 @@ val stageExactMavenPublication by
             }
         }
     }
+
+tasks.matching { it.name == "spotlessKotlin" }.configureEach { dependsOn(syncNpcSources) }
+
+spotless { kotlin { targetExclude("build/generated/**") } }

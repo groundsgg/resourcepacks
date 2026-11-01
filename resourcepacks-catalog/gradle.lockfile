@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :queue-scene-resourcepacks:resourcepacks-catalog:dependencies --write-locks
 com.fasterxml.jackson.core:jackson-annotations:2.21=runtimeClasspath,testRuntimeClasspath
 com.google.code.gson:gson:2.8.0=runtimeClasspath,testRuntimeClasspath
 gg.grounds:library-gui:1.0.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
