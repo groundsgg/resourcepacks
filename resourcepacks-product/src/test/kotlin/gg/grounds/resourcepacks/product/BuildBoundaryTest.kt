@@ -18,7 +18,7 @@ class BuildBoundaryTest {
             runGradle(":resourcepacks-product:dependencies", "--configuration", "runtimeClasspath")
         val tasks = runGradle(":resourcepacks-product:tasks", "--all")
 
-        assertContains(dependencies, "project :resourcepacks-catalog")
+        assertContains(dependencies.replace("'", ""), "project :resourcepacks-catalog")
         assertFalse(tasks.contains("publishToMavenLocal"), "product must not be published")
         assertFalse(tasks.contains("generatePomFileFor"), "product must not create a Maven POM")
     }
