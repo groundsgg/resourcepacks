@@ -22,6 +22,12 @@ sourceSets.named("main") {
 
 tasks.named("processResources") { dependsOn(rootProject.tasks.named("compileNpcModels")) }
 
+tasks.named<org.gradle.jvm.tasks.Jar>("sourcesJar") {
+    dependsOn(rootProject.tasks.named("compileNpcModels"))
+    // Sources archives contain our renderer code, never purchased generated model data.
+    exclude("**/*.json")
+}
+
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
