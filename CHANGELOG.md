@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.0](https://github.com/groundsgg/resourcepacks/compare/v1.2.1...v1.3.0) (2026-11-01)
+
+
+### Features
+
+* **npc:** import animated scene models with a neutral catalogue ([#56](https://github.com/groundsgg/resourcepacks/issues/56)) ([206fcc4](https://github.com/groundsgg/resourcepacks/commit/206fcc4768b40ba62e4d23d71f5ed9efde23c196))
+
+
+### Bug Fixes
+
+* **npc:** publish the renderer runtime and preserve head animation ([#58](https://github.com/groundsgg/resourcepacks/issues/58)) ([7048b33](https://github.com/groundsgg/resourcepacks/commit/7048b334c7bfca43ced2ee4a490c33db968f8691))
+
+
+### Performance Improvements
+
+* **npc:** group rigid model geometry and cache bind transforms ([#59](https://github.com/groundsgg/resourcepacks/issues/59)) ([3eebbbf](https://github.com/groundsgg/resourcepacks/commit/3eebbbfb42516594ed94c4a1796e7587535e0e11))
+
 ## [1.2.1](https://github.com/groundsgg/resourcepacks/compare/v1.2.0...v1.2.1) (2026-10-31)
 
 
