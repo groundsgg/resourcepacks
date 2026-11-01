@@ -133,6 +133,29 @@ class CatalogParityValidatorTest {
     }
 
     @Test
+    fun `content addressed NPC parts are allowed only when explicitly referenced`() {
+        val hashed =
+            PackPath.of(
+                "assets/grounds/models/npc_parts/townfolk/builder/part_000_${"a".repeat(64)}.json"
+            )
+        val extra =
+            PackPath.of(
+                "assets/grounds/models/npc_parts/townfolk/builder/part_001_${"b".repeat(64)}.json"
+            )
+        val catalog = catalogWith("grounds:guide", AssetKind.NPC_BODY)
+        val root = PackPath.of("assets/grounds/models/npc_bodies/guide.json")
+        assertTrue(
+            CatalogParityValidator.validate(catalog, setOf(root, hashed), setOf(hashed)).isValid
+        )
+        assertEquals(
+            listOf(ProductProblemCode.CATALOG_EXTRA_CONTENT),
+            CatalogParityValidator.validate(catalog, setOf(root, hashed, extra), setOf(hashed))
+                .problems
+                .map { it.code },
+        )
+    }
+
+    @Test
     fun `only explicitly referenced part models bypass catalogue parity`() {
         val allowed = PackPath.of("assets/grounds/models/npc_parts/townfolk/builder/part_000.json")
         val extra = PackPath.of("assets/grounds/models/npc_parts/townfolk/builder/part_001.json")

@@ -18,7 +18,7 @@ internal object CatalogParityValidator {
             implementationPaths.all {
                 it.value.matches(
                     Regex(
-                        "assets/grounds/models/npc_parts/[a-z0-9_]+/[a-z0-9_]+/part_[0-9]+\\.json"
+                        "assets/grounds/models/npc_parts/[a-z0-9_]+/[a-z0-9_]+/part_[0-9]+(?:_[0-9a-f]{64})?\\.json"
                     )
                 )
             }
