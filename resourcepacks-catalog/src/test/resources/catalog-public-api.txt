@@ -4,6 +4,10 @@ gg.grounds.resourcepacks.catalog.GroundsAssetCatalog|METHOD|getCatalog()|gg.grou
 OWNER|gg.grounds.resourcepacks.catalog.GroundsAssets
 gg.grounds.resourcepacks.catalog.GroundsAssets|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsAssets
 gg.grounds.resourcepacks.catalog.GroundsAssets|METHOD|getAll()|java.util.Set
+OWNER|gg.grounds.resourcepacks.catalog.GroundsNpcModels
+gg.grounds.resourcepacks.catalog.GroundsNpcModels|FIELD|INSTANCE|gg.grounds.resourcepacks.catalog.GroundsNpcModels
+gg.grounds.resourcepacks.catalog.GroundsNpcModels|METHOD|getDefinitions()|java.util.Map
+gg.grounds.resourcepacks.catalog.GroundsNpcModels|METHOD|getModelResources()|java.util.Map
 OWNER|gg.grounds.resourcepacks.catalog.GroundsGuiIds
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|FRAME_HOVER|java.lang.String
 gg.grounds.resourcepacks.catalog.GroundsGuiIds|FIELD|ICON_BACK|java.lang.String

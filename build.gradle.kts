@@ -98,3 +98,18 @@ subprojects {
 subprojects {
     tasks.named("check") { dependsOn(rootProject.tasks.named("verifyDependencyLocks")) }
 }
+
+val npcSourceDirectory = providers.systemProperty("grounds.npc.sources")
+    .orElse(providers.gradleProperty("npcSourceDirectory"))
+val npcOutput = layout.buildDirectory.dir("generated/npc-models")
+tasks.register<Exec>("compileNpcModels") {
+    inputs.file(layout.projectDirectory.file("tools/compile_npc_models.py"))
+    inputs.property("npcSourceDirectory", npcSourceDirectory.orElse(""))
+    npcSourceDirectory.orNull?.let { inputs.dir(file(it)) }
+    outputs.dir(npcOutput)
+    doFirst {
+        val arguments = mutableListOf("python3", layout.projectDirectory.file("tools/compile_npc_models.py").asFile.absolutePath, "--output", npcOutput.get().asFile.absolutePath)
+        npcSourceDirectory.orNull?.let { arguments.addAll(listOf("--sources", it)) }
+        commandLine(arguments)
+    }
+}

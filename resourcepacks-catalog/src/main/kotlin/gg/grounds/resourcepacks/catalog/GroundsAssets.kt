@@ -20,7 +20,7 @@ object GroundsAssets {
 object GroundsAssetCatalog {
     private val definitions: Map<AssetKey, AssetDefinition> =
         Collections.unmodifiableMap(
-            linkedMapOf(
+            (linkedMapOf(
                 AssetKey("grounds:editor/marker") to
                     AssetDefinition(
                         AssetKey("grounds:editor/marker"),
@@ -37,7 +37,15 @@ object GroundsAssetCatalog {
                         LocalBounds(Vec3(0.0, 0.9, 0.0), Vec3(0.6, 1.8, 0.6)),
                         emptyMap(),
                     ),
-            )
+                AssetKey("grounds:scene/happy_villager") to
+                    AssetDefinition(
+                        AssetKey("grounds:scene/happy_villager"),
+                        AssetKind.PARTICLE,
+                        emptySet(),
+                        null,
+                        emptyMap(),
+                    ),
+            ) + GroundsNpcModels.definitions)
         )
     private val catalogVersion: String =
         checkNotNull(

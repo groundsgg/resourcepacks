@@ -26,6 +26,8 @@ internal object ContentContribution {
             "models/editor/marker.json" to "assets/grounds/models/editor/marker.json",
             "models/npc_bodies/editor/guide.json" to
                 "assets/grounds/models/npc_bodies/editor/guide.json",
+            "particles/scene/happy_villager.json" to
+                "assets/grounds/particles/scene/happy_villager.json",
         )
 
     val modelSourcePaths: Set<String> = MODEL_PACK_PATHS.keys
