@@ -6,6 +6,68 @@ import org.junit.jupiter.api.Test
 
 class NpcModelTest {
     @Test
+    fun `skeletal look retains the published two argument pose methods and bone constructor`() {
+        assertNotNull(
+            NpcModel::class
+                .java
+                .getMethod("pose", String::class.java, Double::class.javaPrimitiveType)
+        )
+        assertNotNull(
+            NpcModel::class
+                .java
+                .getMethod("itemDisplayPose", String::class.java, Double::class.javaPrimitiveType)
+        )
+        assertNotNull(
+            NpcBone::class
+                .java
+                .getConstructor(
+                    String::class.java,
+                    String::class.java,
+                    Vec3::class.java,
+                    Vec3::class.java,
+                )
+        )
+    }
+
+    @Test
+    fun `named head receives additive look while body stays still and head children follow`() {
+        val model =
+            NpcModel.parse(
+                """{
+          "schemaVersion":1,"asset":"grounds:npc/test/head","bounds":{"center":[0,1,0],"size":[1,2,1]},
+          "bones":[{"id":"body-id","name":"body","parent":null,"origin":[0,0,0],"rotation":[0,0,0]},
+          {"id":"head-id","name":"head","parent":"body-id","origin":[0,1.5,0],"rotation":[0,0,0]},
+          {"id":"hat-id","name":"hat","parent":"head-id","origin":[0,2,0],"rotation":[0,0,0]}],
+          "parts":[{"bone":"body-id","model":"grounds:npc_parts/test/body","center":[0,0.7,0],"pivot":[0,0.7,0],"rotation":[0,0,0]},
+          {"bone":"head-id","model":"grounds:npc_parts/test/head","center":[0,1.75,0],"pivot":[0,1.75,0],"rotation":[0,0,0]},
+          {"bone":"hat-id","model":"grounds:npc_parts/test/hat","center":[0,2.1,0],"pivot":[0,2.1,0],"rotation":[0,0,0]}],
+          "animations":{"idle":{"loop":"loop","length":2,"tracks":{"body-id":{"position":[{"time":0,"value":[0.2,0,0],"interpolation":"linear"}]}}}},"sounds":{}
+        }"""
+            )
+        assertEquals("head-id", model.headBone!!.id)
+        val original = model.pose("idle", 0.5)
+        val looked = model.pose("idle", 0.5, Vec3(30.0, 45.0, 0.0))
+        assertArrayEquals(original[0].values, looked[0].values, 1e-12)
+        assertNotEquals(original[1].point(ZERO), looked[1].point(ZERO))
+        assertNotEquals(original[2].point(ZERO), looked[2].point(ZERO))
+        val facing = NpcMatrix.rotation(Vec3(0.0, 180.0, 0.0))
+        val world = facing * looked[1]
+        val origin = world.point(ZERO)
+        val forward = world.point(Vec3(0.0, 0.0, -1.0)) - origin
+        assertTrue(forward.x > 0.0, "Head must turn toward +X")
+        assertTrue(
+            forward.y > 0.0,
+            "Negative Scene pitch must look upward after model-facing correction",
+        )
+        assertArrayEquals(
+            original[0].values,
+            model.pose("idle", 0.5)[0].values,
+            1e-12,
+            "Look must not mutate original clips",
+        )
+    }
+
+    @Test
     fun `client item display rotation preserves authored head orientation and pivot`() {
         val model =
             NpcModel(
