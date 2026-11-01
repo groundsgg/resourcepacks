@@ -11,7 +11,15 @@ import kotlin.math.sin
 
 data class NpcKeyframe(val time: Double, val value: Vec3, val interpolation: String)
 
-data class NpcBone(val id: String, val parent: String?, val origin: Vec3, val rotation: Vec3)
+data class NpcBone
+@JvmOverloads
+constructor(
+    val id: String,
+    val parent: String?,
+    val origin: Vec3,
+    val rotation: Vec3,
+    val name: String = id,
+)
 
 data class NpcPart(
     val bone: String?,
@@ -39,13 +47,22 @@ data class NpcModel(
     val animations: Map<String, NpcClip>,
     val sounds: Map<String, NpcClipSound>,
 ) {
+    val headBone: NpcBone?
+        get() = bones.singleOrNull { it.name.equals("head", ignoreCase = true) }
+
     /** Minecraft rotates each ItemDisplay mesh by pi after its entity transformation. */
-    fun itemDisplayPose(animation: String?, seconds: Double): List<NpcMatrix> {
+    @JvmOverloads
+    fun itemDisplayPose(
+        animation: String?,
+        seconds: Double,
+        headLook: Vec3? = null,
+    ): List<NpcMatrix> {
         val inverseClientRotation = NpcMatrix.rotation(Vec3(0.0, 180.0, 0.0))
-        return pose(animation, seconds).map { it * inverseClientRotation }
+        return pose(animation, seconds, headLook).map { it * inverseClientRotation }
     }
 
-    fun pose(animation: String?, seconds: Double): List<NpcMatrix> {
+    @JvmOverloads
+    fun pose(animation: String?, seconds: Double, headLook: Vec3? = null): List<NpcMatrix> {
         val clip = animation?.let(animations::get)
         val time = if (clip?.loop == "loop") seconds % clip.length else seconds
         val world = mutableMapOf<String, NpcMatrix>()
@@ -61,7 +78,11 @@ data class NpcModel(
             val local =
                 NpcMatrix.translation(
                     bone.origin - (bone.parent?.let(origins::get) ?: ZERO) + position
-                ) * NpcMatrix.rotation(rotation) * NpcMatrix.scale(scale)
+                ) *
+                    NpcMatrix.rotation(rotation) *
+                    (if (headLook != null && bone.id == headBone?.id) NpcMatrix.rotation(headLook)
+                    else NpcMatrix.IDENTITY) *
+                    NpcMatrix.scale(scale)
             world[bone.id] = (bone.parent?.let(world::get) ?: NpcMatrix.IDENTITY) * local
         }
         return parts.map { part ->
@@ -91,6 +112,7 @@ data class NpcModel(
                         bone.get("parent")?.takeUnless { it.isJsonNull }?.asString,
                         vector(bone, "origin"),
                         vector(bone, "rotation"),
+                        bone.get("name")?.asString ?: bone.get("id").asString,
                     )
                 }
             require(bones.size <= 256)
