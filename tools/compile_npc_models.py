@@ -35,6 +35,62 @@ def write_json(path, data):
     path.write_text(json.dumps(data, sort_keys=True, separators=(',', ':'), allow_nan=False) + '\n', encoding='utf-8')
 
 
+def group_rigid_parts(parts, output):
+    """Share one display for cubes with exactly the same bone and linear transform.
+
+    Arbitrary authored cube rotations stay on the display, not baked into vanilla's
+    restricted element rotations. Different pivots can share only at zero rotation.
+    Split large groups so every native element stays within Minecraft's [-16, 32].
+    """
+    buckets, groups = {}, []
+    for part in parts:
+        path = output / f'pack/assets/grounds/models/{part["model"].split(":", 1)[1]}.json'
+        native = json.loads(path.read_text())
+        element = native['elements'][0]
+        size = [b - a for a, b in zip(element['from'], element['to'])]
+        center = [v * 16 for v in part['center']]
+        lo = [c - s / 2 for c, s in zip(center, size)]
+        hi = [c + s / 2 for c, s in zip(center, size)]
+        rotation = tuple(part['rotation'])
+        scale = tuple(part.get('scale', [1, 1, 1]))
+        pivot = tuple(part['pivot']) if any(rotation) else None
+        key = (part['bone'], rotation, scale, pivot)
+        group = next((g for g in buckets.get(key, []) if all(
+            max(g['hi'][i], hi[i]) - min(g['lo'][i], lo[i]) <= 48
+            for i in range(3))), None)
+        if group is None:
+            group = {'parts': [], 'lo': lo, 'hi': hi}
+            buckets.setdefault(key, []).append(group)
+            groups.append(group)
+        group['parts'].append((part, native, size))
+        group['lo'] = [min(a, b) for a, b in zip(group['lo'], lo)]
+        group['hi'] = [max(a, b) for a, b in zip(group['hi'], hi)]
+    result = []
+    for group in groups:
+        first, native, _ = group['parts'][0]
+        if len(group['parts']) == 1:
+            result.append(first)
+            continue
+        center = [(a + b) / 32 for a, b in zip(group['lo'], group['hi'])]
+        scale = first.get('scale', [1, 1, 1])
+        elements = []
+        for part, model, size in group['parts']:
+            offset = [8 + (p - c) * 16 / s for p, c, s in zip(part['center'], center, scale)]
+            elements.append(dict(model['elements'][0], **{
+                'from': [c - s / 2 for c, s in zip(offset, size)],
+                'to': [c + s / 2 for c, s in zip(offset, size)],
+            }))
+            if part is not first:
+                suffix = part['model'].split(':', 1)[1] + '.json'
+                (output / f'pack/assets/grounds/models/{suffix}').unlink()
+                (output / f'pack/assets/grounds/items/{suffix}').unlink()
+        native['elements'] = elements
+        suffix = first['model'].split(':', 1)[1] + '.json'
+        write_json(output / f'pack/assets/grounds/models/{suffix}', native)
+        result.append(dict(first, center=center))
+    return result
+
+
 def compile_model(data, collection, character, output):
     output = Path(output); prefix = f'{collection}/{character}'
     asset = f'grounds:npc/{prefix}'
@@ -128,7 +184,7 @@ def compile_model(data, collection, character, output):
         lo, hi = [0,0,0], [0,0,0]
     bounds = {'center': [(a+b)/32 for a,b in zip(lo,hi)], 'size': [(b-a)/16 for a,b in zip(lo,hi)]}
     write_json(output / f'pack/assets/grounds/models/npc_bodies/npc/{prefix}.json', {'elements': []})
-    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': parts, 'animations': animations, 'sounds': {}}
+    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': group_rigid_parts(parts, output), 'animations': animations, 'sounds': {}}
 
 
 def remap_sound_event(event, character, clip):

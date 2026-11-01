@@ -6,6 +6,42 @@ import org.junit.jupiter.api.Test
 
 class NpcModelTest {
     @Test
+    fun `sampling a fifty part skeleton keeps temporary allocation bounded`() {
+        val bean = java.lang.management.ManagementFactory.getThreadMXBean()
+        org.junit.jupiter.api.Assumptions.assumeTrue(bean is com.sun.management.ThreadMXBean)
+        val allocation = bean as com.sun.management.ThreadMXBean
+        val bones =
+            (0 until 12).map {
+                NpcBone("bone-$it", if (it == 0) null else "bone-${it - 1}", ZERO, ZERO)
+            }
+        val model =
+            NpcModel(
+                gg.grounds.scene.format.AssetKey("test:allocation"),
+                gg.grounds.scene.format.LocalBounds(ZERO, ONE),
+                bones,
+                (0 until 50).map {
+                    NpcPart(
+                        "bone-${it % 12}",
+                        "test:part-$it",
+                        Vec3(0.0, it / 50.0, 0.0),
+                        ZERO,
+                        ZERO,
+                    )
+                },
+                mapOf("idle" to NpcClip("loop", 2.0, emptyMap())),
+                emptyMap(),
+            )
+        repeat(1000) { model.itemDisplayPose("idle", it / 1000.0, ZERO) }
+        val id = Thread.currentThread().threadId()
+        val before = allocation.getThreadAllocatedBytes(id)
+        var sampled = 0.0
+        repeat(100) { sampled += model.itemDisplayPose("idle", it / 1000.0, ZERO).last().values[7] }
+        val perPose = (allocation.getThreadAllocatedBytes(id) - before) / 100
+        assertEquals(98.0, sampled, 1e-8)
+        assertTrue(perPose < 50_000, "Allocated $perPose bytes per fifty-part pose")
+    }
+
+    @Test
     fun `skeletal look retains the published two argument pose methods and bone constructor`() {
         assertNotNull(
             NpcModel::class

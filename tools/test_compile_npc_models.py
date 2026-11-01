@@ -1,4 +1,5 @@
 import base64
+import copy
 import json
 from pathlib import Path
 import tempfile
@@ -19,6 +20,79 @@ def fixture():
 
 
 class CompilerTest(unittest.TestCase):
+    def test_rigid_cubes_share_one_bone_display_without_moving_geometry(self):
+        data = fixture()
+        first = data['elements'][0]
+        first['rotation'] = [0, 0, 0]
+        second = copy.deepcopy(first)
+        second.update(uuid='second', **{'from': [8, 16, 0], 'to': [12, 24, 2], 'origin': [9, 18, 1]})
+        data['elements'].append(second)
+        data['outliner'][0]['children'][0]['children'].append('second')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+            self.assertEqual(len(result['parts']), 1)
+            self.assertEqual(result['parts'][0]['center'], [0.375, 1.25, 0.0625])
+            native = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            self.assertEqual([e['from'] for e in native['elements']], [[2, 4, 7], [10, 4, 7]])
+            self.assertEqual([e['to'] for e in native['elements']], [[6, 12, 9], [14, 12, 9]])
+            self.assertFalse((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_001.json').exists())
+
+    def test_differently_rotated_cubes_keep_independent_displays(self):
+        data = fixture()
+        second = copy.deepcopy(data['elements'][0])
+        second.update(uuid='second', rotation=[0, 45, 0])
+        data['elements'].append(second)
+        data['outliner'][0]['children'][0]['children'].append('second')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+            self.assertEqual(len(result['parts']), 2)
+
+    def test_mirrored_rigid_cubes_keep_their_authored_side_and_uvs(self):
+        data = fixture()
+        first = data['elements'][0]
+        first.update(rotation=[0, 0, 0], **{'from': [4, 24, 2], 'to': [0, 16, 0]})
+        second = copy.deepcopy(first)
+        second.update(uuid='second', **{'from': [12, 24, 2], 'to': [8, 16, 0]})
+        data['elements'].append(second)
+        data['outliner'][0]['children'][0]['children'].append('second')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+            self.assertEqual(len(result['parts']), 1)
+            self.assertEqual(result['parts'][0]['scale'], [-1, -1, -1])
+            native = json.loads((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_000.json').read_text())
+            self.assertEqual([e['from'] for e in native['elements']], [[10, 4, 7], [2, 4, 7]])
+            self.assertEqual(native['elements'][0]['faces']['north']['uv'], [0, 2, 8, 6])
+
+    def test_different_bones_and_rotated_pivots_never_merge(self):
+        for different_bone in (False, True):
+            data = fixture()
+            first = data['elements'][0]
+            second = copy.deepcopy(first)
+            second.update(uuid='second', origin=[9, 18, 1])
+            data['elements'].append(second)
+            if different_bone:
+                data['outliner'][0]['children'].append('second')
+            else:
+                data['outliner'][0]['children'][0]['children'].append('second')
+            with tempfile.TemporaryDirectory() as tmp:
+                result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+                self.assertEqual(len(result['parts']), 2)
+
+    def test_large_rigid_groups_split_before_exceeding_native_model_bounds(self):
+        data = fixture()
+        first = data['elements'][0]
+        first['rotation'] = [0, 0, 0]
+        second = copy.deepcopy(first)
+        second.update(uuid='second', **{'from': [64, 16, 0], 'to': [68, 24, 2]})
+        data['elements'].append(second)
+        data['outliner'][0]['children'][0]['children'].append('second')
+        with tempfile.TemporaryDirectory() as tmp:
+            result = compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+            self.assertEqual(len(result['parts']), 2)
+            for path in Path(tmp).glob('pack/assets/grounds/models/npc_parts/**/*.json'):
+                for element in json.loads(path.read_text())['elements']:
+                    self.assertTrue(all(-16 <= v <= 32 for key in ('from', 'to') for v in element[key]))
+
     def test_native_model_textures_are_discoverable_by_vanilla_atlas_directories(self):
         # Minecraft 26.x stitches block/ and item/ directories, not arbitrary texture folders.
         atlas_directories = ('block/', 'item/')
