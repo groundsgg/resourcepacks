@@ -69,6 +69,8 @@ data class NpcModel(
         NpcMatrix.rotation(Vec3(0.0, 180.0, 0.0)).let { correction ->
             bindParts.map { it * correction }
         }
+    private val boneOffsets = bones.map { it.origin - (it.parent?.let(origins::get) ?: ZERO) }
+    private val preparedClips = prepareNpcClips(bones, boneOffsets, headIndex, animations)
 
     /** Minecraft rotates each ItemDisplay mesh by pi after its entity transformation. */
     @JvmOverloads
@@ -90,28 +92,38 @@ data class NpcModel(
         headLook: Vec3?,
         localParts: List<NpcMatrix>,
     ): List<NpcMatrix> {
-        val clip = animation?.let(animations::get)
+        val prepared = animation?.let(preparedClips::get)
+        val clip = prepared?.source
         val time = if (clip?.loop == "loop") seconds % clip.length else seconds
         val world = arrayOfNulls<NpcMatrix>(bones.size)
         val look = headLook?.takeUnless { it == ZERO }?.let(NpcMatrix::rotation)
         for ((index, bone) in bones.withIndex()) {
-            val channels = clip?.tracks?.get(bone.id).orEmpty()
-            if (channels.values.all { it.isEmpty() }) {
+            val channels = prepared?.bones?.get(index)
+            if (channels == null) {
                 val local =
                     if (index == headIndex && look != null) bindBones[index] * look
                     else bindBones[index]
                 world[index] = (world.getOrNull(parents[index]) ?: NpcMatrix.IDENTITY) * local
                 continue
             }
+            val constant = channels.constantLocal
+            if (constant != null && !time.isNaN()) {
+                val local =
+                    if (index == headIndex && look != null)
+                        channels.headPrefix!! * look * channels.headScale!!
+                    else constant
+                world[index] = (world.getOrNull(parents[index]) ?: NpcMatrix.IDENTITY) * local
+                continue
+            }
             val position =
-                sampleNpcTrack(channels["position"].orEmpty(), time, ZERO, clip?.loop == "loop")
+                sampleNpcTrack(channels.position, time, ZERO, clip?.loop == "loop")
             val rotation =
                 bone.rotation +
-                    sampleNpcTrack(channels["rotation"].orEmpty(), time, ZERO, clip?.loop == "loop")
-            val scale = sampleNpcTrack(channels["scale"].orEmpty(), time, ONE, clip?.loop == "loop")
+                    sampleNpcTrack(channels.rotation, time, ZERO, clip?.loop == "loop")
+            val scale = sampleNpcTrack(channels.scale, time, ONE, clip?.loop == "loop")
             val local =
                 NpcMatrix.translation(
-                    bone.origin - (bone.parent?.let(origins::get) ?: ZERO) + position
+                    boneOffsets[index] + position
                 ) *
                     NpcMatrix.rotation(rotation) *
                     (if (index == headIndex && look != null) look else NpcMatrix.IDENTITY) *

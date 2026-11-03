@@ -1,0 +1,13 @@
+# Prepared NPC clip data
+
+Continue the user-authorized performance backlog after accepted#243/#560. Preserve exact authored curves, head/body layering, part geometry, SOLID and visibility. Primary implements in the existing isolated Resourcepacks worktree; no new user-facing feature or lowering of rates/range.
+
+Approaches considered: stateful per-handle keyframe cursors add seek/loop/reset lifecycle cost for tracks whose median is5keys/max23. Quantized shared pose samples risk timing/curve changes and cache growth. Chosen: stateless per-clip bone/channel bindings and precomputed local transforms only when all three channel lengths are0or1. There are110constant of391tracked bone/clip combinations across45clips/15models. Multi-key tracks retain the exact current sampler and matrix evaluation order; identical multi-key values are not collapsed.
+
+Share only private immutable prepared data. Constant head tracks preserve Translation*Rotation*Look*Scale ordering with private prefix/scale matrices. Every returned matrix remains caller-owned, including repeated/independent samples. No public API change or published package-version change in this Stage trial. Existing public sampling methods and authored data remain intact. Derived constant matrices are capped at1024bone/clip entries per model; beyond this, the existing dynamic path remains correct. Empty tracks continue existing bind-cache behavior. Prepared channel arrays are indexed by existing bone order.
+
+Tradeoff: extra bounded construction work and retained memory may offset runtime savings, so measure both. Asset models are compiled immutable inputs, consistent with existing bind caches. No mutable player/entity state enters these caches. No speculative reimplementation of interpolation, trig or matrix multiplication.
+
+Acceptance: characterization of constant head hierarchy, returned matrix ownership, multi-key rounding and existing tests; real per-pose allocation budget RED/GREEN; all runtime/Host tests and723456state exact golden plus unchanged addon gate. Frozen exact Stagejar component and connected baseline/candidate comparisons must retain adverse results and cold prep cost. Independent final review. Only qualify a bounded Stage trial with exact-head CI, current live-base archive preservation, private image/scope checks and actual readiness/map/SOLID/Announcements proof. Source follows normal Resourcepacks PR; no Maven release or Production action.
+
+Ruling: the user's repeated instruction to continue the accepted backlog authorizes this internal behavior-preserving optimization and qualified Stage rollout; proceed inline without another design/permission loop. Record any changed scope rather than silently extending it.
