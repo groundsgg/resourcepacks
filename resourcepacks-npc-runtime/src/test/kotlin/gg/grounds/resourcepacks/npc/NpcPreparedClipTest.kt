@@ -58,21 +58,24 @@ class NpcPreparedClipTest {
             ),
             mapOf("idle" to NpcClip("loop", 2.0, mapOf(
                 "body" to mapOf("position" to listOf(NpcKeyframe(0.2, Vec3(2.0, 0.0, 0.0), "linear"))),
-                "head" to mapOf("rotation" to listOf(NpcKeyframe(0.4, Vec3(0.0, 0.0, 90.0), "step"))),
+                "head" to mapOf(
+                    "rotation" to listOf(NpcKeyframe(0.4, Vec3(0.0, 0.0, 90.0), "step")),
+                    "scale" to listOf(NpcKeyframe(0.4, Vec3(2.0, 1.0, 1.0), "linear")),
+                ),
             ))), emptyMap(),
         )
         for (time in listOf(0.0, 0.5, 2.2, 0.1, 20.3, -0.1)) {
             val original = model.pose("idle", time)
             point(Vec3(2.0, 0.0, 0.0), original[0])
             point(Vec3(2.0, 1.0, 0.0), original[1])
-            point(Vec3(2.0, 2.0, 0.0), original[2])
+            point(Vec3(2.0, 3.0, 0.0), original[2])
             val looked = model.pose("idle", time, Vec3(0.0, 90.0, 0.0))
             point(Vec3(2.0, 0.0, 0.0), looked[0])
             point(Vec3(2.0, 1.0, 0.0), looked[1])
-            point(Vec3(2.0, 1.0, -1.0), looked[2])
+            point(Vec3(2.0, 1.0, -2.0), looked[2])
             original.forEach { it.values.fill(-900.0) }
             looked.forEach { it.values.fill(-800.0) }
-            point(Vec3(2.0, 2.0, 0.0), model.pose("idle", time)[2])
+            point(Vec3(2.0, 3.0, 0.0), model.pose("idle", time)[2])
             point(ZERO, model.pose(null, time)[0])
             point(ZERO, model.pose("unknown", time)[0])
         }
@@ -106,9 +109,39 @@ class NpcPreparedClipTest {
             AssetKey("test:many-clips"), LocalBounds(ZERO, ONE), bones,
             listOf(NpcPart("bone-255", "test:part", ZERO, ZERO, ZERO)), clips, emptyMap(),
         )
+        val prepared = prepareNpcClips(bones, bones.map { ZERO }, -1, clips)
+        assertEquals(1024, prepared.values.sumOf { clip -> clip.bones.count { it?.constantLocal != null } })
         for (clip in listOf(4, 0, 3, 1, 2, 4)) {
             point(Vec3(clip.toDouble(), 255.0, 0.0), model.pose("clip-$clip", 2.1).single())
         }
+    }
+
+    @Test
+    fun `unused clip rotation overflow does not reject a valid model`() {
+        overflowRemainsLazy("rotation")
+    }
+
+    @Test
+    fun `unused clip position overflow does not reject a valid model`() {
+        overflowRemainsLazy("position")
+    }
+
+    private fun overflowRemainsLazy(channel: String) {
+        val origin = if (channel == "position") "[1e308,0,0]" else "[0,0,0]"
+        val rotation = if (channel == "rotation") "[1e308,0,0]" else "[0,0,0]"
+        val model = assertDoesNotThrow<NpcModel> {
+            NpcModel.parse("""{
+                "schemaVersion":1,"asset":"test:overflow","bounds":{"center":[0,0,0],"size":[1,1,1]},
+                "bones":[{"id":"body","parent":null,"origin":$origin,"rotation":$rotation}],
+                "parts":[{"bone":"body","model":"grounds:npc_parts/test/body","center":[0,0,0],"pivot":[0,0,0],"rotation":[0,0,0]}],
+                "animations":{"safe":{"loop":"loop","length":2,"tracks":{}},
+                    "overflow":{"loop":"once","length":2,"tracks":{"body":{"$channel":[{"time":0,"value":[1e308,0,0],"interpolation":"linear"}]}}}},
+                "sounds":{}
+            }""")
+        }
+        assertDoesNotThrow { model.pose(null, 0.0) }
+        assertDoesNotThrow { model.pose("safe", 0.0) }
+        assertThrows(IllegalArgumentException::class.java) { model.pose("overflow", 0.0) }
     }
 
     private fun point(expected: Vec3, matrix: NpcMatrix) {

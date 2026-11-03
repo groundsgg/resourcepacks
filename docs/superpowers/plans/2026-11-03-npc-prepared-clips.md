@@ -24,7 +24,7 @@ Preserve exact numerical operation order; no sampling quantization or cursor sta
 Files: resourcepacks-npc-runtime/src/main/kotlin/gg/grounds/resourcepacks/npc/NpcModel.kt and PreparedNpcClip.kt; tests/NpcPreparedClipTest.kt.
 - [x] Baseline runtime tests, then add literal head/child and result ownership/rounding characterization. Add12bone/50part real constant-track allocation test; observe current behavior fails20KB/pose budget after1000warmups.
 - [x] Prepare bone offsets/channel arrays; cache constant local transforms with head prefix/scale and1024limit. Existing dynamic interpolation/math remains verbatim. Unknown/null clips use bind path.
-- [ ] Full runtime tests/formatting and commit; record measured allocation and memory/preparation cost. Behavioral refactor tests may already pass old code; no fabricated RED for an internal cache.
+- [x] Full runtime tests/formatting and commit; record measured allocation and memory/preparation cost. Behavioral refactor tests may already pass old code; no fabricated RED for an internal cache.
 
 ### Task2: exact integration and measurement
 - [ ] Build private licensed Host variant using existing composite init, all Host/runtime tests, freeze. Unchanged723456state golden/addon983files; verify only intended runtime class entries change.
@@ -42,3 +42,6 @@ Ruling: allocation budget is an external resource contract, not a cache implemen
 
 Task1: baseline original8tests pass. New4test characterization:3pass baseline; allocation contract RED30544bytes/pose versus20000budget. Candidate full12tests pass,0skips/failures/errors. Initial non-escalated Gradle could not load native cache; retry with ordinary authorized cache access succeeded. This was a harness permission failure, not a product failure.
 Ruling: cache only0/1-key channels, never collapse equal multi-key values; preserve prior NaN-time behavior by falling through to the original sampler. Constant head caches retain prefix/scale privately; all public results remain owned.1024constant budget tested through5clips×256bones and correct late-clip results.
+
+Review fix: valid finite vectors can overflow only when an unused clip is played. Eager preparation initially moved this failure into model construction. Two parsed-model regressions reproduce RED (rotation and position); finite-sum eligibility leaves these bones dynamic and preserves lazy errors. Full14runtime tests now pass with0failures/errors/skips. Head test now includes nonuniform(2,1,1)scale to pin Look*Scale order; explicit prepared-constant count pins1024resource budget (large-model output alone did not prove the cap). No other new ABI/ownership/thread-safety finding.
+Ruling: cache-count assertion verifies the explicit resource budget rather than mirroring interpolation logic; all returned pose geometry is still tested independently. No new public method/version or Maven publication is needed for this private Stage runtime variant; normal future Maven release adoption remains separate.
