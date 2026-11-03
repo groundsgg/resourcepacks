@@ -115,16 +115,12 @@ data class NpcModel(
                 world[index] = (world.getOrNull(parents[index]) ?: NpcMatrix.IDENTITY) * local
                 continue
             }
-            val position =
-                sampleNpcTrack(channels.position, time, ZERO, clip?.loop == "loop")
+            val position = sampleNpcTrack(channels.position, time, ZERO, clip?.loop == "loop")
             val rotation =
-                bone.rotation +
-                    sampleNpcTrack(channels.rotation, time, ZERO, clip?.loop == "loop")
+                bone.rotation + sampleNpcTrack(channels.rotation, time, ZERO, clip?.loop == "loop")
             val scale = sampleNpcTrack(channels.scale, time, ONE, clip?.loop == "loop")
             val local =
-                NpcMatrix.translation(
-                    boneOffsets[index] + position
-                ) *
+                NpcMatrix.translation(boneOffsets[index] + position) *
                     NpcMatrix.rotation(rotation) *
                     (if (index == headIndex && look != null) look else NpcMatrix.IDENTITY) *
                     NpcMatrix.scale(scale)
