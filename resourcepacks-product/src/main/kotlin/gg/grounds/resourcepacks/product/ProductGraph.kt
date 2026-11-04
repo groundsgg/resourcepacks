@@ -127,6 +127,7 @@ internal object ProductGraph {
                     .withLicense(held.getValue(PLATFORM_LICENSE_SOURCE), PLATFORM_LICENSE_ENTRY)
                     .withTabArtwork(held)
                     .withChatFont(held)
+                    .withWelcomeFont()
                     .withHud()
                     .withSidebarFont(held)
                     .withMenu(held)
@@ -269,6 +270,27 @@ internal object ProductGraph {
             requires,
         )
     }
+
+    private fun PackContribution.withWelcomeFont(): PackContribution =
+        PackContribution(
+            id,
+            supportedFormats,
+            entries +
+                listOf(
+                    PackEntry.text("assets/grounds/font/welcome.json", WelcomeFont.json()),
+                    PackEntry.bytes(
+                        "assets/grounds/textures/font/welcome_icons.png",
+                        WelcomeFont.texture(),
+                    ),
+                    PackEntry.text(
+                        "assets/grounds/licenses/welcome-icons.txt",
+                        WelcomeFont.attribution,
+                    ),
+                ),
+            vanillaClaims,
+            provides,
+            requires,
+        )
 
     private fun PackContribution.withChatFont(held: Map<String, HeldSourceFile>): PackContribution {
         val logo = CHAT_ARTWORK.getValue(CHAT_LOGO_SOURCE)

@@ -124,6 +124,9 @@ class TabPackTest {
 
         val TAB_PATHS =
             listOf(
+                "assets/grounds/font/welcome.json",
+                "assets/grounds/textures/font/welcome_icons.png",
+                "assets/grounds/licenses/welcome-icons.txt",
                 "assets/grounds/font/tab.json",
                 "assets/grounds/font/tab_labels.json",
                 "assets/grounds/textures/font/tab_logo.png",
