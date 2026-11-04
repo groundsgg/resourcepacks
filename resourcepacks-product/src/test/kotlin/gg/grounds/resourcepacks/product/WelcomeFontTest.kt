@@ -1,6 +1,8 @@
 package gg.grounds.resourcepacks.product
 
 import java.io.ByteArrayInputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,6 +10,28 @@ import kotlin.test.assertTrue
 import tools.jackson.databind.json.JsonMapper
 
 class WelcomeFontTest {
+    @Test
+    fun `decorated wordmark has its own bounded bitmap provider`() {
+        val font = JsonMapper.builder().build().readTree(WelcomeFont.json())
+        val logo = font.get("providers").get(1)
+        assertEquals("grounds:font/welcome_logo.png", logo.get("file").asString())
+        assertEquals("\uE403", logo.get("chars").get(0).asString())
+        assertEquals(40, logo.get("height").asInt())
+        assertEquals(33, logo.get("ascent").asInt())
+        val root =
+            generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
+                .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
+        val image = ImageIO.read(root.resolve("art/platform/welcome/logo.png").toFile())
+        assertEquals(512, image.width)
+        assertEquals(241, image.height)
+        assertTrue(
+            (0 until image.height / 3).any { y ->
+                (0 until image.width).any { x -> image.getRGB(x, y) ushr 24 != 0 }
+            },
+            "Floating stones above the wordmark must remain present",
+        )
+    }
+
     @Test
     fun `each branded glyph selects a distinct pixel icon from the atlas`() {
         val font = JsonMapper.builder().build().readTree(WelcomeFont.json())
