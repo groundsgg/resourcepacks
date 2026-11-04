@@ -128,6 +128,7 @@ internal object ProductGraph {
                     .withTabArtwork(held)
                     .withChatFont(held)
                     .withWelcomeFont()
+                    .withConnectionFont()
                     .withHud()
                     .withSidebarFont(held)
                     .withMenu(held)
