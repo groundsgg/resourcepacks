@@ -1,10 +1,51 @@
 package gg.grounds.resourcepacks.product
 
 import gg.grounds.resourcepack.api.PackPath
+import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFails
 
 class NpcCompositeGraphTest {
+    @Test
+    fun `in-place source change cannot reuse a previously captured catalogue digest`() {
+        val path = Files.createTempFile("npc-captured-change-", ".json")
+        val original = "original".toByteArray()
+        Files.write(path, original)
+        val modified = "modified".toByteArray()
+        val mtime = Files.getLastModifiedTime(path)
+        try {
+            HeldSourceFile.capture(path, 1024).use { source ->
+                val expected = source.digests.sha256
+                Files.write(path, modified)
+                Files.setLastModifiedTime(path, mtime)
+                try {
+                    assertFails { NpcBundle.materializeFile(source, expected) }
+                } finally {
+                    Files.write(path, original)
+                    Files.setLastModifiedTime(path, mtime)
+                }
+            }
+        } finally {
+            Files.deleteIfExists(path)
+        }
+    }
+
+    @Test
+    fun `extensionless items cannot replace or alias canonical json definitions`() {
+        val path = "assets/grounds/items/npc_parts/townfolk/builder/part_000_${"a".repeat(64)}"
+        assertFails { NpcBundle.indexItemDefinitions(mapOf(path to item(leaf(first)))) }
+        assertFails {
+            NpcBundle.indexItemDefinitions(
+                mapOf(path to item(leaf(first)), "$path.json" to item(leaf(first)))
+            )
+        }
+        assertEquals(
+            setOf(first),
+            NpcBundle.indexItemDefinitions(mapOf("$path.json" to item(leaf(first)))).keys,
+        )
+    }
+
     private val root = "grounds:npc_parts/townfolk/builder/part_002_${"c".repeat(64)}"
     private val first = "grounds:npc_parts/townfolk/builder/part_000_${"a".repeat(64)}"
     private val second = "grounds:npc_parts/townfolk/builder/part_001_${"b".repeat(64)}"

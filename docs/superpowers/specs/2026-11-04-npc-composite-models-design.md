@@ -19,14 +19,22 @@ An explicit `--geometry-mode composite` / `-PnpcGeometryMode=composite` build op
 groups existing rigid parts by bone (including null/root), without merging bones.
 The default remains `rigid`, with exactly the current output bytes. Singletons keep
 their existing part data. Multi-part groups get a new content-addressed item model,
-and one existing-schema part at the bone origin with identity rotation/scale.
+and one existing-schema part with identity rotation/scale. Its anchor is the
+bounds midpoint of the original leaf centers, relative to the bone origin; subtract
+the representable anchor from each child matrix.
 No runtime sampling/API, visibility, interaction, collision or interpolation-rate
-change. Current licensed assets should reduce 471 displays to 151, retaining 765
-cubes; this count is validated, not imposed on arbitrary sources.
+change. Full consolidation would reduce the licensed platform from 471 displays to 151,
+but is not qualified: 25 bone groups increase interpolation error beyond the gate.
+A separately supplied eligibility policy keeps those groups rigid, producing 276
+displays while preserving all 765 cubes. Policy entries bind the exact compiler
+SHA and order-preserving source serialization SHA; unknown/stale policies fail.
+Explicit JSON null is rejected. The no-policy composite mode is for qualification;
+arbitrary sources do not acquire a visual-quality guarantee from finite matrices.
 
 For a leaf whose existing bone-relative matrix is
 L=T(pivot-origin) Rz Ry Rx T(center-pivot) S, emit the row-major matrix
-A=T(.5,.5,.5) L T(-.5,-.5,-.5). The extra conjugation is required because the
+A=T(.5,.5,.5) L T(-.5,-.5,-.5), then subtract the shared anchor.
+Compose L before adding the half-block offsets to preserve cancelling large pivots. The extra conjugation is required because the
 actual 26.3 ItemTransform centers native vertices before applying the submodel
 matrix. The official local client codec has been executed and confirms row-major
 matrix decoding. Preserve negative scales in A, with the native PoseStack normal
@@ -62,6 +70,17 @@ authored intermediate pose, including head turns and scaling. Do not qualify a
 group that increases the maximum authored-curve error by more than 0.01 blocks;
 retain that group rigid or hold the candidate. Treat undefined normals under
 one-axis/all-axis zero scale as explicit classifications, never NaN equality.
+
+A separate Host matrix correction was evaluated and held: although its 208 tests
+and endpoint checks pass, a native accepted-vs-candidate comparison worsens one
+Arcane Artificer interpolation interval by 0.505 blocks. It is excluded from this
+rollout. The composite catalogue is instead qualified with the unchanged accepted
+Host. Its rank-deficient Arcane group remains rigid: existing undefined vertices
+and authored-curve inaccuracies are explicitly retained, with no new undefined
+vertex classifications. Synthetic globally zero-axis scenes remain outside this
+candidate's qualification (Scene requires positive scale); this work does not
+claim a general singular-matrix fix. Real authored clips and positive Scene
+root/local scales are compared to the accepted runtime and independent raw poses.
 
 Freeze an exact Stage-derived Host/pack pair; retain every unrelated jar entry and
 all existing Stage feature pins. Qualify with owned 20/60-client tests, movement,

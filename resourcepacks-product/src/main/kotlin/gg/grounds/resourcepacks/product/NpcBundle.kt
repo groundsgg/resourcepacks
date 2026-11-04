@@ -54,6 +54,7 @@ internal object NpcBundle {
         return files
             .filter { it.startsWith("assets/grounds/models/npc_parts/") }
             .map { path ->
+                check(path.endsWith(".json")) { "Invalid native NPC extension: $path" }
                 check(
                     partId.matches(
                         "grounds:" +
@@ -147,6 +148,36 @@ internal object NpcBundle {
         GroundsNpcModels::class.java.getResourceAsStream(path)?.use { mapper.readTree(it) }
             ?: throw IOException("Missing NPC catalogue resource: $path")
 
+    internal fun materializeFile(source: HeldSourceFile, expectedSha256: String): ByteArray {
+        check(source.digests.sha256 == expectedSha256) {
+            "NPC file does not match catalogue: ${source.path}"
+        }
+        val bytes = source.readBytes(MAX_BYTES)
+        check(ArtifactDigests.fromBytes(bytes).sha256 == expectedSha256) {
+            "NPC payload does not match catalogue: ${source.path}"
+        }
+        return bytes
+    }
+
+    internal fun indexItemDefinitions(files: Map<String, ByteArray>): Map<String, ByteArray> {
+        val indexed = linkedMapOf<String, ByteArray>()
+        files
+            .filterKeys { it.startsWith("assets/grounds/items/npc_parts/") }
+            .forEach { (path, bytes) ->
+                check(path.endsWith(".json")) { "Invalid NPC item extension: $path" }
+                val id =
+                    "grounds:" + path.removePrefix("assets/grounds/items/").removeSuffix(".json")
+                check(
+                    partId.matches(id) &&
+                        path == "assets/grounds/items/${id.substringAfter(':')}.json"
+                ) {
+                    "Invalid NPC item path: $path"
+                }
+                check(indexed.put(id, bytes) == null) { "Duplicate NPC item path: $path" }
+            }
+        return indexed
+    }
+
     fun capture(root: Path, held: MutableMap<String, HeldSourceFile>): Captured {
         val bundle = HeldSourceFile.capture(root.resolve("bundle.json"), MAX_BYTES)
         held["npc:bundle"] = bundle
@@ -170,6 +201,7 @@ internal object NpcBundle {
             "NPC bundle does not match catalogue parts"
         }
         val pack = root.resolve("pack")
+        val itemFiles = linkedMapOf<String, ByteArray>()
         val entries =
             files.map { path ->
                 check(
@@ -180,22 +212,12 @@ internal object NpcBundle {
                 }
                 val source = HeldSourceFile.capture(pack.resolve(path), MAX_BYTES)
                 held["npc:$path"] = source
-                check(source.digests.sha256 == digests.get(path).asString()) {
-                    "NPC file does not match catalogue: $path"
-                }
-                PackEntry.bytes(path, source.readBytes(MAX_BYTES))
+                val bytes = materializeFile(source, digests.get(path).asString())
+                if (path.startsWith("assets/grounds/items/npc_parts/")) itemFiles[path] = bytes
+                PackEntry.bytes(path, bytes)
             }
         check(parts.all { it.value in files }) { "NPC part is missing" }
-        validatePartGraph(
-            partOwners(),
-            files
-                .filter { it.startsWith("assets/grounds/items/npc_parts/") }
-                .associate { path ->
-                    "grounds:" + path.removePrefix("assets/grounds/items/").removeSuffix(".json") to
-                        held.getValue("npc:$path").readBytes(MAX_BYTES)
-                },
-            parts,
-        )
+        validatePartGraph(partOwners(), indexItemDefinitions(itemFiles), parts)
         return Captured(
             PackContribution(
                 ContributionId.of("grounds:npc-models"),

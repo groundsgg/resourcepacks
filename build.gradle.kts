@@ -103,15 +103,19 @@ val npcSourceDirectory = providers.systemProperty("grounds.npc.sources")
     .orElse(providers.gradleProperty("npcSourceDirectory"))
 val npcOutput = layout.buildDirectory.dir("generated/npc-models")
 val npcGeometryMode = providers.gradleProperty("npcGeometryMode").orElse("rigid")
+val npcCompositePolicy = providers.gradleProperty("npcCompositePolicy")
 tasks.register<Exec>("compileNpcModels") {
     inputs.file(layout.projectDirectory.file("tools/compile_npc_models.py"))
     inputs.property("npcSourceDirectory", npcSourceDirectory.orElse(""))
     inputs.property("npcGeometryMode", npcGeometryMode)
+    inputs.property("npcCompositePolicy", npcCompositePolicy.orElse(""))
+    npcCompositePolicy.orNull?.let { inputs.file(file(it)) }
     npcSourceDirectory.orNull?.let { inputs.dir(file(it)) }
     outputs.dir(npcOutput)
     doFirst {
         val arguments = mutableListOf("python3", layout.projectDirectory.file("tools/compile_npc_models.py").asFile.absolutePath, "--output", npcOutput.get().asFile.absolutePath)
         arguments.addAll(listOf("--geometry-mode", npcGeometryMode.get()))
+        npcCompositePolicy.orNull?.let { arguments.addAll(listOf("--composite-policy", file(it).absolutePath)) }
         npcSourceDirectory.orNull?.let { arguments.addAll(listOf("--sources", it)) }
         commandLine(arguments)
     }

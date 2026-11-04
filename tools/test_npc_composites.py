@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import compile_npc_models as compiler
 from test_compile_npc_models import fixture
@@ -38,6 +39,69 @@ def two_cubes():
 
 
 class CompositeCompilerTest(unittest.TestCase):
+    def test_explicit_null_policy_fails_before_compilation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            policy = root / 'policy.json'; policy.write_text('null')
+            args = ['compile_npc_models.py', '--sources', str(root), '--output', str(root / 'out'),
+                    '--geometry-mode', 'composite', '--composite-policy', str(policy)]
+            with mock.patch('sys.argv', args), mock.patch.object(compiler, 'compile_archives') as compile_call:
+                with self.assertRaises(SystemExit) as failure: compiler.main()
+                self.assertEqual(failure.exception.code, 1)
+                compile_call.assert_not_called()
+
+    def test_reordered_source_members_cannot_reuse_eligibility(self):
+        data = two_cubes()
+        data['textures'].append(copy.deepcopy(data['textures'][0]))
+        data['elements'][0]['faces']['south'] = dict(data['elements'][0]['faces']['north'], texture=1)
+        policy = {'schemaVersion': 1, 'compilerSha256': hashlib.sha256(Path(compiler.__file__).read_bytes()).hexdigest(),
+                  'models': {'grounds:npc/townfolk/builder': {'sourceSha256': hashlib.sha256(
+                      json.dumps(data, separators=(',', ':'), allow_nan=False).encode()).hexdigest(), 'bones': ['child']}}}
+        changed = copy.deepcopy(data)
+        changed['elements'][0]['faces'] = dict(reversed(list(changed['elements'][0]['faces'].items())))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError): compiler.compile_model(changed, 'townfolk', 'builder', Path(tmp),
+                geometry_mode='composite', composite_policy=policy)
+
+    def test_eligibility_policy_keeps_unapproved_bones_rigid_and_binds_source_and_compiler(self):
+        data = two_cubes()
+        source_hash = hashlib.sha256(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        policy = {'schemaVersion': 1, 'compilerSha256': hashlib.sha256(Path(compiler.__file__).read_bytes()).hexdigest(),
+                  'models': {'grounds:npc/townfolk/builder': {'sourceSha256': source_hash, 'bones': []}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            denied = compiler.compile_model(data, 'townfolk', 'builder', root / 'denied', geometry_mode='composite', composite_policy=policy)
+            self.assertEqual(len(denied['parts']), 2)
+            policy['models']['grounds:npc/townfolk/builder']['bones'] = ['child']
+            allowed = compiler.compile_model(data, 'townfolk', 'builder', root / 'allowed', geometry_mode='composite', composite_policy=policy)
+            self.assertEqual(len(allowed['parts']), 1)
+            policy['models']['grounds:npc/townfolk/builder']['bones'] = ['unknown']
+            with self.assertRaises(ValueError): compiler.compile_model(data, 'townfolk', 'builder', root / 'unknown', geometry_mode='composite', composite_policy=policy)
+            policy['models']['grounds:npc/townfolk/builder']['bones'] = ['child']
+            changed = copy.deepcopy(data); changed['elements'][0]['rotation'][0] += 1
+            with self.assertRaises(ValueError): compiler.compile_model(changed, 'townfolk', 'builder', root / 'stale-source', geometry_mode='composite', composite_policy=policy)
+            policy['compilerSha256'] = '0' * 64
+            with self.assertRaises(ValueError): compiler.compile_model(data, 'townfolk', 'builder', root / 'stale-compiler', geometry_mode='composite', composite_policy=policy)
+
+    def test_compound_anchor_uses_the_center_of_leaf_centers_without_changing_geometry(self):
+        data = two_cubes()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            old = compiler.compile_model(data, 'townfolk', 'builder', root / 'old')
+            new = compiler.compile_model(data, 'townfolk', 'builder', root / 'new', geometry_mode='composite')
+            centers = []
+            for part in old['parts']:
+                offset = rotate([a - b for a, b in zip(part['center'], part['pivot'])], part['rotation'])
+                centers.append([a + b for a, b in zip(part['pivot'], offset)])
+            expected = [(min(c[i] for c in centers) + max(c[i] for c in centers)) / 2 for i in range(3)]
+            for a, b in zip(new['parts'][0]['center'], expected): self.assertAlmostEqual(a, b, places=12)
+            self.assertEqual(new['parts'][0]['pivot'], new['parts'][0]['center'])
+
+    def test_large_cancelling_pivot_is_composed_before_item_centering(self):
+        part = {'pivot': [1e16, 0, 0], 'center': [0, 0, 0], 'rotation': [0, 0, 0]}
+        matrix = compiler.composite_part_matrix(part, [0, 0, 0])
+        self.assertEqual(matrix, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+
     def assert_geometry(self, baseline, candidate, root):
         old = {p['model']: p for p in baseline['parts']}
         origins = {b['id']: b['origin'] for b in candidate['bones']}
@@ -50,8 +114,7 @@ class CompositeCompilerTest(unittest.TestCase):
                 seen.add(node['model'])
                 continue
             origin = origins.get(part['bone'], [0, 0, 0])
-            self.assertEqual(part['center'], origin)
-            self.assertEqual(part['pivot'], origin)
+            self.assertEqual(part['pivot'], part['center'])
             self.assertEqual(part['rotation'], [0, 0, 0])
             self.assertEqual(part.get('scale', [1, 1, 1]), [1, 1, 1])
             for child in node['models']:
@@ -69,7 +132,7 @@ class CompositeCompilerTest(unittest.TestCase):
                                  + source['center'][i] - source['pivot'][i] for i in range(3)]
                         expected = [a + b for a, b in zip(rotate(local, source['rotation']), source['pivot'])]
                         raw = [v / 16 for v in point] + [1]
-                        actual = [sum(matrix[row * 4 + j] * raw[j] for j in range(4)) - .5 + origin[row]
+                        actual = [sum(matrix[row * 4 + j] * raw[j] for j in range(4)) - .5 + part['center'][row]
                                   for row in range(3)]
                         for a, b in zip(expected, actual):
                             self.assertAlmostEqual(a, b, places=11)
