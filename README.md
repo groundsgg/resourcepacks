@@ -108,8 +108,15 @@ This repository does not activate a PackSet in Config Service, deliver packs fro
 
 The platform pack includes `grounds:welcome`: Discord (U+E400), TikTok (U+E401) and a shopping bag (U+E402). The 14px hard-edged atlas is generated deterministically by `WelcomeFont`; source silhouettes come from Simple Icons and Lucide, with their license notices included at `assets/grounds/licenses/welcome-icons.txt`. Callers render the multicolor glyphs white and verify pack readiness before use.
 
-The welcome font also provides the original full Grounds logo with floating stones and its gold base as U+E403 (40px height,33px ascent). The separate asset retains the original proportions and colours. Existing tab/sidebar wordmarks are unchanged.
+The welcome font also provides the original full Grounds logo with floating stones and its gold base as U+E403 (40px height, 33px ascent). The separate asset retains the original proportions and colours. Existing tab/sidebar wordmarks are unchanged.
+
+Welcome logo compatibility: each native bitmap glyph must fit the client's 256x256 font atlas. The full logo is stored at 256x121, while GUI height 40/ascent 33 and advance 86 stay unchanged. Validate against the actual Minecraft client before publication:
+
+```sh
+resourcepacks-product/src/test/scripts/verify-welcome-atlas.sh /path/to/minecraft-client.jar art/platform/welcome/logo.png
+```
 
 ## Connection icons
 
 The platform pack adds first-party pin, proxy and server icons in `grounds:connection` (U+E410–U+E412). Render the hard-alpha 10px atlas white after verified compatible pack loading.
+

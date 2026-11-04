@@ -511,8 +511,8 @@ internal object ProductGraph {
         linkedMapOf(
             "welcome/logo.png" to
                 ArtworkExpectation(
-                    157005,
-                    "62df814fd15d788e94eb2ab7f83a9ff27d1de0d19737801a22e5eab2155ffd21",
+                    42749,
+                    "3dd19853860a4f57a57faea9106ca484e471427d58eb7b4d6afd565b759f7d2c",
                 ),
             CHAT_LOGO_SOURCE to
                 ArtworkExpectation(

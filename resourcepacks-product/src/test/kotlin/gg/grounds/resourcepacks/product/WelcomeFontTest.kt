@@ -22,8 +22,12 @@ class WelcomeFontTest {
             generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
                 .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
         val image = ImageIO.read(root.resolve("art/platform/welcome/logo.png").toFile())
-        assertEquals(512, image.width)
-        assertEquals(241, image.height)
+        assertTrue(
+            image.width <= 256 && image.height <= 256,
+            "A single bitmap glyph must fit Minecraft's 256x256 native font atlas",
+        )
+        assertEquals(256, image.width)
+        assertEquals(121, image.height)
         assertTrue(
             (0 until image.height / 3).any { y ->
                 (0 until image.width).any { x -> image.getRGB(x, y) ushr 24 != 0 }
