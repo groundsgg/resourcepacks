@@ -107,7 +107,108 @@ def isolate_part_models(parts, output):
     return result
 
 
-def compile_model(data, collection, character, output):
+def multiply_matrix(left, right):
+    return [sum(left[row * 4 + k] * right[k * 4 + col] for k in range(4))
+            for row in range(4) for col in range(4)]
+
+
+def translation_matrix(value):
+    return [1, 0, 0, value[0], 0, 1, 0, value[1], 0, 0, 1, value[2], 0, 0, 0, 1]
+
+
+def composite_part_matrix(part, origin):
+    """Preserve the runtime's T(pivot-origin) Rz Ry Rx T(center-pivot) S.
+
+    ItemTransform centers native vertices BEFORE the submodel transformation:
+    its matrix therefore needs T(.5) L T(-.5), in row-major codec order.
+    """
+    x, y, z = map(math.radians, part['rotation'])
+    cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y), math.cos(z), math.sin(z)
+    rx = [1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1]
+    ry = [cy, 0, sy, 0, 0, 1, 0, 0, -sy, 0, cy, 0, 0, 0, 0, 1]
+    rz = [cz, -sz, 0, 0, sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    scale = part.get('scale', [1, 1, 1])
+    sm = [scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, 0, 0, 0, 1]
+    matrices = [translation_matrix([a - b for a, b in zip(part['pivot'], origin)]),
+                rz, ry, rx,
+                translation_matrix([a - b for a, b in zip(part['center'], part['pivot'])]),
+                sm]
+    result = matrices[0]
+    for matrix in matrices[1:]:
+        result = multiply_matrix(result, matrix)
+    # Match runtime cancellation before adding the half-block item centering.
+    return multiply_matrix(multiply_matrix(translation_matrix([.5] * 3), result),
+                           translation_matrix([-.5] * 3))
+
+
+def eligible_composite_bones(policy, data, asset, parts):
+    if policy is None: return None
+    if not isinstance(policy, dict) or type(policy.get('schemaVersion')) is not int or policy['schemaVersion'] != 1:
+        raise ValueError('invalid composite eligibility schema')
+    if policy.get('compilerSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
+        raise ValueError('composite eligibility belongs to another compiler')
+    models = policy.get('models')
+    if not isinstance(models, dict) or asset not in models: raise ValueError(f'missing composite eligibility: {asset}')
+    entry = models[asset]
+    source = hashlib.sha256(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    if not isinstance(entry, dict) or entry.get('sourceSha256') != source: raise ValueError(f'stale composite source: {asset}')
+    allowed = entry.get('bones')
+    if not isinstance(allowed, list) or len(allowed) > 256 or any(x is not None and not isinstance(x, str) for x in allowed):
+        raise ValueError('invalid composite bone eligibility')
+    if len(allowed) != len(set(allowed)) or not set(allowed) <= {p['bone'] for p in parts}:
+        raise ValueError('unknown or duplicate composite bone eligibility')
+    return set(allowed)
+
+
+def group_bone_composites(parts, bones, output, allowed=None):
+    """Keep rigid leaf files intact; move their fixed transforms into item layers."""
+    origins = {bone['id']: bone['origin'] for bone in bones}
+    groups = {}
+    for part in parts:
+        groups.setdefault(part['bone'], []).append(part)
+    result = []
+    for bone, leaves in groups.items():
+        if len(leaves) == 1 or (allowed is not None and bone not in allowed):
+            result.extend(leaves)
+            continue
+        origin = origins.get(bone, [0, 0, 0])
+        matrices = [composite_part_matrix(part, origin) for part in leaves]
+        # A finite JSON double can overflow the actual client float matrix codec.
+        if any(not math.isfinite(v) or abs(v) > 3.4028234663852886e38
+               for matrix in matrices for v in matrix):
+            result.extend(leaves)
+            continue
+        # Center the shared entity near its leaves to reduce chord-vs-arc error
+        # during native interpolation. Recover the representable anchor after
+        # adding the bone origin; a large origin must not lose an unaccounted offset.
+        centers = [[sum(matrix[i * 4 + j] * .5 for j in range(3)) + matrix[i * 4 + 3] - .5
+                    for i in range(3)] for matrix in matrices]
+        center = [origin[i] + (min(c[i] for c in centers) + max(c[i] for c in centers)) / 2
+                  for i in range(3)]
+        anchor = [c - o for c, o in zip(center, origin)]
+        for matrix in matrices:
+            for i in range(3): matrix[i * 4 + 3] -= anchor[i]
+        if any(not math.isfinite(v) or abs(v) > 3.4028234663852886e38
+               for matrix in matrices for v in matrix) or not all(math.isfinite(v) for v in center):
+            result.extend(leaves)
+            continue
+        node = {'type': 'minecraft:composite', 'models': [
+            {'type': 'minecraft:model', 'model': part['model'], 'transformation': matrix}
+            for part, matrix in zip(leaves, matrices)]}
+        fingerprint = hashlib.sha256(json.dumps(node, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        # Leaf IDs already include their mesh/material digest; the root also
+        # includes every matrix value, so an old pack cannot shadow either layer.
+        prefix = leaves[0]['model'].split(':', 1)[1].rsplit('/', 1)[0]
+        model = f'grounds:{prefix}/part_{len(result):03d}_{fingerprint}'
+        write_json(output / f'pack/assets/grounds/items/{model.split(":", 1)[1]}.json', {'model': node})
+        result.append({'bone': bone, 'model': model, 'center': center,
+                       'pivot': list(center), 'rotation': [0, 0, 0]})
+    return result
+
+
+def compile_model(data, collection, character, output, geometry_mode='rigid', composite_policy=None):
+    if geometry_mode not in ('rigid', 'composite'): raise ValueError('invalid NPC geometry mode')
+    if composite_policy is not None and geometry_mode != 'composite': raise ValueError('composite policy requires composite mode')
     output = Path(output); prefix = f'{collection}/{character}'
     asset = f'grounds:npc/{prefix}'
     elements = {e['uuid']: e for e in data['elements']}
@@ -201,7 +302,11 @@ def compile_model(data, collection, character, output):
         lo, hi = [0,0,0], [0,0,0]
     bounds = {'center': [(a+b)/32 for a,b in zip(lo,hi)], 'size': [(b-a)/16 for a,b in zip(lo,hi)]}
     write_json(output / f'pack/assets/grounds/models/npc_bodies/npc/{prefix}.json', {'elements': []})
-    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': isolate_part_models(group_rigid_parts(parts, output), output), 'animations': animations, 'sounds': {}}
+    parts = isolate_part_models(group_rigid_parts(parts, output), output)
+    if geometry_mode == 'composite':
+        allowed = eligible_composite_bones(composite_policy, data, asset, parts)
+        parts = group_bone_composites(parts, bones, output, allowed)
+    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': parts, 'animations': animations, 'sounds': {}}
 
 
 def remap_sound_event(event, character, clip):
@@ -216,7 +321,9 @@ def remap_sound_event(event, character, clip):
     return result
 
 
-def compile_archives(sources, output):
+def compile_archives(sources, output, geometry_mode='rigid', composite_policy=None):
+    if geometry_mode not in ('rigid', 'composite'): raise ValueError('invalid NPC geometry mode')
+    if composite_policy is not None and geometry_mode != 'composite': raise ValueError('composite policy requires composite mode')
     sources, output = Path(sources), Path(output)
     archives = [sources / f'Ginko-fantasy_{c}_NPCs.zip' for c in COLLECTIONS]
     if not all(p.is_file() for p in archives): raise ValueError('missing licensed source archives')
@@ -245,7 +352,7 @@ def compile_archives(sources, output):
                     character = stem[len(prefix):]
                     try: data = json.loads(archive.read(info))
                     except Exception as e: raise ValueError(f'invalid model {info.filename}: {e}') from e
-                    try: model = compile_model(data, collection, character, temp)
+                    try: model = compile_model(data, collection, character, temp, geometry_mode, composite_policy)
                     except (ValueError, KeyError, TypeError) as e: raise ValueError(f'{info.filename}: {e}') from e
                     if collection == 'craftmasters':
                         for clip in ('idle2', 'wave'):
@@ -257,6 +364,8 @@ def compile_archives(sources, output):
                                 sounds[key] = remap_sound_event(source_sounds.get(f'{character}.{clip}'), character, clip); model['sounds'][clip] = {'key': f'grounds:{key}', 'volume': 0.8, 'pitch': 1.0, 'radius': 12.0}
                     models.append(model)
         if len(models) != 15 or len({m['asset'] for m in models}) != 15: raise ValueError('expected 15 unique NPCs')
+        if composite_policy is not None and set(composite_policy['models']) != {m['asset'] for m in models}:
+            raise ValueError('composite eligibility model set does not match sources')
         models.sort(key=lambda m:m['asset'])
         write_json(temp / 'pack/assets/grounds/sounds.json', sounds)
         index = []
@@ -313,10 +422,16 @@ def compile_empty(output):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); parser.add_argument('--geometry-mode', choices=('rigid', 'composite'), default='rigid'); parser.add_argument('--composite-policy', type=Path); args=parser.parse_args()
     try:
+        policy = None
+        if args.composite_policy:
+            if args.sources is None or args.geometry_mode != 'composite': raise ValueError('composite policy requires licensed sources and composite mode')
+            if args.composite_policy.stat().st_size > 1_048_576: raise ValueError('composite policy too large')
+            policy = json.loads(args.composite_policy.read_bytes())
+            if not isinstance(policy, dict): raise ValueError('composite policy must be an object')
         if args.sources is None: compile_empty(args.output)
-        else: compile_archives(args.sources, args.output)
+        else: compile_archives(args.sources, args.output, args.geometry_mode, policy)
     except (ValueError, OSError, zipfile.BadZipFile) as e: parser.exit(1, f'NPC compilation failed: {e}\n')
 
 if __name__ == '__main__': main()

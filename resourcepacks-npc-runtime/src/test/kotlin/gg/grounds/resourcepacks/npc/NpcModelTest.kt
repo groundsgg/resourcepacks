@@ -31,7 +31,8 @@ class NpcModelTest {
                 mapOf("idle" to NpcClip("loop", 2.0, emptyMap())),
                 emptyMap(),
             )
-        repeat(1000) { model.itemDisplayPose("idle", it / 1000.0, ZERO) }
+        // Measure steady allocation after the hot matrix loops have reached C2.
+        repeat(10_000) { model.itemDisplayPose("idle", it / 1000.0, ZERO) }
         val id = Thread.currentThread().threadId()
         val before = allocation.getThreadAllocatedBytes(id)
         var sampled = 0.0

@@ -14,6 +14,10 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// The allocation regression must not race background JIT compilation on busy CI workers.
+// This changes only test JVMs; the measured allocation budget remains unchanged.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach { jvmArgs("-Xbatch") }
+
 java { withSourcesJar() }
 
 // Purchased bone/animation data stays in the private renderer variant. The public
