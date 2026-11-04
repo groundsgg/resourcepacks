@@ -286,6 +286,7 @@ class ThemeAssetContractTest {
         val NATIVE_ICON_PALETTE = setOf(0xff202020.toInt(), 0xffc8c8c8.toInt(), 0xff7a7a7a.toInt())
         val ART_FILES =
             listOf(
+                "welcome/logo.png",
                 "panels/menu.png",
                 "icons/close.png",
                 "icons/back.png",
@@ -394,7 +395,17 @@ class ThemeAssetContractTest {
         val EXPECTED_PLATFORM_FILES =
             ART_FILES.toSet() + setOf("pack.png", "ASSET_ORIGINS.json", "LICENSE")
         val EXPECTED_PLATFORM_DIRECTORIES =
-            setOf("panels", "icons", "tooltips", "frames", "tab", "chat", "menu", "sidebar")
+            setOf(
+                "panels",
+                "icons",
+                "tooltips",
+                "frames",
+                "tab",
+                "chat",
+                "menu",
+                "sidebar",
+                "welcome",
+            )
         val APPROVED_ORIGINS =
             mapOf(
                 "panels/menu.png" to
@@ -743,6 +754,21 @@ class ThemeAssetContractTest {
         721,
         3555,
         702
+      ]
+    },
+    "welcome/logo.png": {
+      "source": "Grounds original brand artwork: logo/logo-png-noglow.png",
+      "sha256": "62df814fd15d788e94eb2ab7f83a9ff27d1de0d19737801a22e5eab2155ffd21",
+      "sourceSha256": "197979c54f2277d7c6d641c18ad3b71551a3f117fb3c5ef6a7bf2a20e78ab93c",
+      "crop": [
+        70,
+        29,
+        3686,
+        1738
+      ],
+      "normalizedSize": [
+        512,
+        241
       ]
     }
   }

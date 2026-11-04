@@ -9,6 +9,7 @@ internal object WelcomeFont {
     const val DISCORD = 0xE400
     const val TIKTOK = 0xE401
     const val SHOP = 0xE402
+    const val LOGO = 0xE403
     private const val SIZE = 14
 
     // Sources: simple-icons Discord/TikTok and lucide shopping-bag, retrieved 2026-11-04.
@@ -74,7 +75,7 @@ internal object WelcomeFont {
         )
 
     fun json(): String =
-        """{"providers":[{"type":"bitmap","file":"grounds:font/welcome_icons.png","ascent":11,"height":14,"chars":["\uE400\uE401\uE402"]}]}"""
+        """{"providers":[{"type":"bitmap","file":"grounds:font/welcome_icons.png","ascent":11,"height":14,"chars":["\uE400\uE401\uE402"]},{"type":"bitmap","file":"grounds:font/welcome_logo.png","ascent":33,"height":40,"chars":["\uE403"]}]}"""
 
     fun texture(): ByteArray {
         val image = BufferedImage(SIZE * icons.size, SIZE, BufferedImage.TYPE_INT_ARGB)

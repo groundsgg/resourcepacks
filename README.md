@@ -107,3 +107,5 @@ This repository does not activate a PackSet in Config Service, deliver packs fro
 ## Welcome link icons
 
 The platform pack includes `grounds:welcome`: Discord (U+E400), TikTok (U+E401) and a shopping bag (U+E402). The 14px hard-edged atlas is generated deterministically by `WelcomeFont`; source silhouettes come from Simple Icons and Lucide, with their license notices included at `assets/grounds/licenses/welcome-icons.txt`. Callers render the multicolor glyphs white and verify pack readiness before use.
+
+The welcome font also provides the original full Grounds logo with floating stones and its gold base as U+E403 (40px height,33px ascent). The separate asset retains the original proportions and colours. Existing tab/sidebar wordmarks are unchanged.
