@@ -91,24 +91,32 @@ class NpcBundleTest {
                 )
                 model["parts"].forEach { part ->
                     val id = part["model"].asString().substringAfter(':')
-                    val native = json("assets/grounds/models/$id.json")
                     val item = json("assets/grounds/items/$id.json")
-                    assertEquals("grounds:$id", item["model"]["model"].asString())
-                    native["textures"].properties().forEach { (_, texture) ->
-                        val value = texture.asString()
-                        val sprite =
-                            if (value.startsWith("#"))
-                                native["textures"][value.substring(1)].asString()
-                            else value
-                        assertTrue(
-                            sprite.substringAfter(':').startsWith("item/"),
-                            "NPC texture must be stitched into a vanilla atlas: $sprite",
-                        )
-                        assertNotNull(
-                            entries["assets/grounds/textures/${sprite.substringAfter(':')}.png"]
-                        )
+                    val root = item["model"]
+                    val leaves =
+                        if (root["type"].asString() == "minecraft:composite")
+                            root["models"].toList()
+                        else listOf(root)
+                    leaves.forEach { leaf ->
+                        val nativeId = leaf["model"].asString().substringAfter(':')
+                        val native = json("assets/grounds/models/$nativeId.json")
+                        assertEquals("minecraft:model", leaf["type"].asString())
+                        native["textures"].properties().forEach { (_, texture) ->
+                            val value = texture.asString()
+                            val sprite =
+                                if (value.startsWith("#"))
+                                    native["textures"][value.substring(1)].asString()
+                                else value
+                            assertTrue(
+                                sprite.substringAfter(':').startsWith("item/"),
+                                "NPC texture must be stitched into a vanilla atlas: $sprite",
+                            )
+                            assertNotNull(
+                                entries["assets/grounds/textures/${sprite.substringAfter(':')}.png"]
+                            )
+                        }
+                        assertNotNull(native["textures"]["particle"])
                     }
-                    assertNotNull(native["textures"]["particle"])
                 }
                 model["sounds"].properties().forEach { (_, sound) ->
                     assertNotNull(

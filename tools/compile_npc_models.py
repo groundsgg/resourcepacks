@@ -107,7 +107,73 @@ def isolate_part_models(parts, output):
     return result
 
 
-def compile_model(data, collection, character, output):
+def multiply_matrix(left, right):
+    return [sum(left[row * 4 + k] * right[k * 4 + col] for k in range(4))
+            for row in range(4) for col in range(4)]
+
+
+def translation_matrix(value):
+    return [1, 0, 0, value[0], 0, 1, 0, value[1], 0, 0, 1, value[2], 0, 0, 0, 1]
+
+
+def composite_part_matrix(part, origin):
+    """Preserve the runtime's T(pivot-origin) Rz Ry Rx T(center-pivot) S.
+
+    ItemTransform centers native vertices BEFORE the submodel transformation:
+    its matrix therefore needs T(.5) L T(-.5), in row-major codec order.
+    """
+    x, y, z = map(math.radians, part['rotation'])
+    cx, sx, cy, sy, cz, sz = math.cos(x), math.sin(x), math.cos(y), math.sin(y), math.cos(z), math.sin(z)
+    rx = [1, 0, 0, 0, 0, cx, -sx, 0, 0, sx, cx, 0, 0, 0, 0, 1]
+    ry = [cy, 0, sy, 0, 0, 1, 0, 0, -sy, 0, cy, 0, 0, 0, 0, 1]
+    rz = [cz, -sz, 0, 0, sz, cz, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    scale = part.get('scale', [1, 1, 1])
+    sm = [scale[0], 0, 0, 0, 0, scale[1], 0, 0, 0, 0, scale[2], 0, 0, 0, 0, 1]
+    matrices = [translation_matrix([.5] * 3),
+                translation_matrix([a - b for a, b in zip(part['pivot'], origin)]),
+                rz, ry, rx,
+                translation_matrix([a - b for a, b in zip(part['center'], part['pivot'])]),
+                sm, translation_matrix([-.5] * 3)]
+    result = matrices[0]
+    for matrix in matrices[1:]:
+        result = multiply_matrix(result, matrix)
+    return result
+
+
+def group_bone_composites(parts, bones, output):
+    """Keep rigid leaf files intact; move their fixed transforms into item layers."""
+    origins = {bone['id']: bone['origin'] for bone in bones}
+    groups = {}
+    for part in parts:
+        groups.setdefault(part['bone'], []).append(part)
+    result = []
+    for bone, leaves in groups.items():
+        if len(leaves) == 1:
+            result.extend(leaves)
+            continue
+        origin = origins.get(bone, [0, 0, 0])
+        matrices = [composite_part_matrix(part, origin) for part in leaves]
+        # A finite JSON double can overflow the actual client float matrix codec.
+        if any(not math.isfinite(v) or abs(v) > 3.4028234663852886e38
+               for matrix in matrices for v in matrix):
+            result.extend(leaves)
+            continue
+        node = {'type': 'minecraft:composite', 'models': [
+            {'type': 'minecraft:model', 'model': part['model'], 'transformation': matrix}
+            for part, matrix in zip(leaves, matrices)]}
+        fingerprint = hashlib.sha256(json.dumps(node, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+        # Leaf IDs already include their mesh/material digest; the root also
+        # includes every matrix value, so an old pack cannot shadow either layer.
+        prefix = leaves[0]['model'].split(':', 1)[1].rsplit('/', 1)[0]
+        model = f'grounds:{prefix}/part_{len(result):03d}_{fingerprint}'
+        write_json(output / f'pack/assets/grounds/items/{model.split(":", 1)[1]}.json', {'model': node})
+        result.append({'bone': bone, 'model': model, 'center': list(origin),
+                       'pivot': list(origin), 'rotation': [0, 0, 0]})
+    return result
+
+
+def compile_model(data, collection, character, output, geometry_mode='rigid'):
+    if geometry_mode not in ('rigid', 'composite'): raise ValueError('invalid NPC geometry mode')
     output = Path(output); prefix = f'{collection}/{character}'
     asset = f'grounds:npc/{prefix}'
     elements = {e['uuid']: e for e in data['elements']}
@@ -201,7 +267,9 @@ def compile_model(data, collection, character, output):
         lo, hi = [0,0,0], [0,0,0]
     bounds = {'center': [(a+b)/32 for a,b in zip(lo,hi)], 'size': [(b-a)/16 for a,b in zip(lo,hi)]}
     write_json(output / f'pack/assets/grounds/models/npc_bodies/npc/{prefix}.json', {'elements': []})
-    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': isolate_part_models(group_rigid_parts(parts, output), output), 'animations': animations, 'sounds': {}}
+    parts = isolate_part_models(group_rigid_parts(parts, output), output)
+    if geometry_mode == 'composite': parts = group_bone_composites(parts, bones, output)
+    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': parts, 'animations': animations, 'sounds': {}}
 
 
 def remap_sound_event(event, character, clip):
@@ -216,7 +284,8 @@ def remap_sound_event(event, character, clip):
     return result
 
 
-def compile_archives(sources, output):
+def compile_archives(sources, output, geometry_mode='rigid'):
+    if geometry_mode not in ('rigid', 'composite'): raise ValueError('invalid NPC geometry mode')
     sources, output = Path(sources), Path(output)
     archives = [sources / f'Ginko-fantasy_{c}_NPCs.zip' for c in COLLECTIONS]
     if not all(p.is_file() for p in archives): raise ValueError('missing licensed source archives')
@@ -245,7 +314,7 @@ def compile_archives(sources, output):
                     character = stem[len(prefix):]
                     try: data = json.loads(archive.read(info))
                     except Exception as e: raise ValueError(f'invalid model {info.filename}: {e}') from e
-                    try: model = compile_model(data, collection, character, temp)
+                    try: model = compile_model(data, collection, character, temp, geometry_mode)
                     except (ValueError, KeyError, TypeError) as e: raise ValueError(f'{info.filename}: {e}') from e
                     if collection == 'craftmasters':
                         for clip in ('idle2', 'wave'):
@@ -313,10 +382,10 @@ def compile_empty(output):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); parser.add_argument('--geometry-mode', choices=('rigid', 'composite'), default='rigid'); args=parser.parse_args()
     try:
         if args.sources is None: compile_empty(args.output)
-        else: compile_archives(args.sources, args.output)
+        else: compile_archives(args.sources, args.output, args.geometry_mode)
     except (ValueError, OSError, zipfile.BadZipFile) as e: parser.exit(1, f'NPC compilation failed: {e}\n')
 
 if __name__ == '__main__': main()
