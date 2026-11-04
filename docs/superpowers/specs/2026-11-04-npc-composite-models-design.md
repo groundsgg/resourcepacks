@@ -24,8 +24,9 @@ bounds midpoint of the original leaf centers, relative to the bone origin; subtr
 the representable anchor from each child matrix.
 No runtime sampling/API, visibility, interaction, collision or interpolation-rate
 change. Full consolidation would reduce the licensed platform from 471 displays to 151,
-but is not qualified: 25 bone groups increase interpolation error beyond the gate.
-A separately supplied eligibility policy keeps those groups rigid, producing 276
+but is not qualified: 37 bone groups increase interpolation error beyond the gate
+across animation, head movement and 0.5–2.0 growth/shrink transitions.
+A separately supplied eligibility policy keeps those groups rigid, producing 348
 displays while preserving all 765 cubes. Policy entries bind the exact compiler
 SHA and order-preserving source serialization SHA; unknown/stale policies fail.
 Explicit JSON null is rejected. The no-policy composite mode is for qualification;
@@ -66,8 +67,11 @@ bounds; packet bits cannot be identical because the entity partition changes.
 Endpoint vertex error must be at most 0.00001 blocks in model-relative space.
 Measure actual client TRSR interpolation at 0.25/0.5/0.75 of 200/250/500ms updates.
 Report changes from the old chord interpolation and compare error against the
-authored intermediate pose, including head turns and scaling. Do not qualify a
-group that increases the maximum authored-curve error by more than 0.01 blocks;
+authored intermediate pose, including head turns and scaling. Test both 0.5→2.0 and 2.0→0.5 metadata
+scale transitions against independently sampled authored intermediate poses,
+including different start phases and native client interpolation fractions. Do not qualify a
+group that increases authored-curve error by more than 0.01 model-space blocks
+at any sampled vertex (normalize by the current uniform personal scale);
 retain that group rigid or hold the candidate. Treat undefined normals under
 one-axis/all-axis zero scale as explicit classifications, never NaN equality.
 

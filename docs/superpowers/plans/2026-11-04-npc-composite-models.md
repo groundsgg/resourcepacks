@@ -37,7 +37,8 @@ Current runtime schema/sampling remains unchanged.
 CLI `--geometry-mode rigid|composite` plus optional `--composite-policy`; Gradle
 properties `npcGeometryMode` and `npcCompositePolicy`. Policy tracks file contents.
 Bounds-center roots preserve fixed geometry; source/compiler-bound admission
-retains 25 disqualified bone groups as rigid parts. Actual licensed count 276.
+retains 37 disqualified bone groups as rigid parts. Actual licensed count 348.
+The initial 276-display prototype is rejected by large dynamic scaling tests.
 
 - [x] Add failing compiler tests for two pivoted/rotated/mirrored leaves sharing one bone; default and singleton behavior retained.
 - [x] Implement matrix composition and content-addressed shallow composites without touching leaf files.
@@ -69,3 +70,8 @@ therefore changes only 16 catalogue resources in the accepted Host JAR. Both
 compiler modes pass 160 Product and 8 runtime tests; default generated output is
 byte-identical. Native dense/heldout tests with the accepted math pass the new
 error gates, retaining the baseline singular group and existing undefined values.
+
+Final native qualification preserves 348 displays, all 765 cubes and all 983
+original files. Dense/static heldout and grow/shrink heldout each pass, including
+0.5→2.0 and 2.0→0.5 personal scale during animation. Final matched artifact and
+connected comparison use this exact filtered catalogue, not the rejected prototype.
