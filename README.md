@@ -107,3 +107,10 @@ This repository does not activate a PackSet in Config Service, deliver packs fro
 ## Welcome link icons
 
 The platform pack includes `grounds:welcome`: Discord (U+E400), TikTok (U+E401) and a shopping bag (U+E402). The 14px hard-edged atlas is generated deterministically by `WelcomeFont`; source silhouettes come from Simple Icons and Lucide, with their license notices included at `assets/grounds/licenses/welcome-icons.txt`. Callers render the multicolor glyphs white and verify pack readiness before use.
+
+## Connection icons
+
+The platform pack includes first-party `grounds:connection` pin, proxy and server
+icons (U+E410–U+E412). The hard-alpha 10px atlas uses the Minecraft Mini-CD palette
+and leaves transparent margins so visible ink fits native chat rows. Render it
+white, only after verified recipient-specific loading of a compatible pack.

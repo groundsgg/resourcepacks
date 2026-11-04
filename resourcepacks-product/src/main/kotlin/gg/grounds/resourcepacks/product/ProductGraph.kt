@@ -292,6 +292,23 @@ internal object ProductGraph {
             requires,
         )
 
+    private fun PackContribution.withConnectionFont(): PackContribution =
+        PackContribution(
+            id,
+            supportedFormats,
+            entries +
+                listOf(
+                    PackEntry.text("assets/grounds/font/connection.json", ConnectionFont.json()),
+                    PackEntry.bytes(
+                        "assets/grounds/textures/font/connection_icons.png",
+                        ConnectionFont.texture(),
+                    ),
+                ),
+            vanillaClaims,
+            provides,
+            requires,
+        )
+
     private fun PackContribution.withChatFont(held: Map<String, HeldSourceFile>): PackContribution {
         val logo = CHAT_ARTWORK.getValue(CHAT_LOGO_SOURCE)
         val entries =
