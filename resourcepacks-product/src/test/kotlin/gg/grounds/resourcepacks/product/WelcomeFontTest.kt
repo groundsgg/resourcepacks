@@ -16,12 +16,12 @@ class WelcomeFontTest {
         val logo = font.get("providers").get(1)
         assertEquals("grounds:font/welcome_logo.png", logo.get("file").asString())
         assertEquals("\uE403\uE404", logo.get("chars").get(0).asString())
-        assertEquals(56, logo.get("height").asInt())
-        assertEquals(50, logo.get("ascent").asInt())
+        assertEquals(42, logo.get("height").asInt())
+        assertEquals(41, logo.get("ascent").asInt())
         val join = font.get("providers").get(2)
         assertEquals("space", join.get("type").asString())
         val joinAdvance = join.get("advances").get("\uE405").asDouble()
-        assertEquals(56.0 * 256 / 241, 60.0 + joinAdvance, 0.00001)
+        assertEquals(42.0 * 256 / 241, 46.0 + joinAdvance, 0.00001)
         val root =
             generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
                 .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }

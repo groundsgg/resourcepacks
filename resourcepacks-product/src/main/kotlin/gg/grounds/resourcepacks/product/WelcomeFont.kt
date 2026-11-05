@@ -77,7 +77,7 @@ internal object WelcomeFont {
         )
 
     fun json(): String =
-        """{"providers":[{"type":"bitmap","file":"grounds:font/welcome_icons.png","ascent":12,"height":14,"chars":["\uE400\uE401\uE402"]},{"type":"bitmap","file":"grounds:font/welcome_logo.png","ascent":50,"height":56,"chars":["\uE403\uE404"]},{"type":"space","advances":{"\uE405":-0.51452282157676}}]}"""
+        """{"providers":[{"type":"bitmap","file":"grounds:font/welcome_icons.png","ascent":12,"height":14,"chars":["\uE400\uE401\uE402"]},{"type":"bitmap","file":"grounds:font/welcome_logo.png","ascent":41,"height":42,"chars":["\uE403\uE404"]},{"type":"space","advances":{"\uE405":-1.38589211618257}}]}"""
 
     fun texture(): ByteArray {
         val image = BufferedImage(SIZE * icons.size, SIZE, BufferedImage.TYPE_INT_ARGB)
