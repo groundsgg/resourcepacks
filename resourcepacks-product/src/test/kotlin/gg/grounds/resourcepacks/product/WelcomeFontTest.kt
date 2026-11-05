@@ -15,19 +15,23 @@ class WelcomeFontTest {
         val font = JsonMapper.builder().build().readTree(WelcomeFont.json())
         val logo = font.get("providers").get(1)
         assertEquals("grounds:font/welcome_logo.png", logo.get("file").asString())
-        assertEquals("\uE403", logo.get("chars").get(0).asString())
-        assertEquals(40, logo.get("height").asInt())
-        assertEquals(33, logo.get("ascent").asInt())
+        assertEquals("\uE403\uE404", logo.get("chars").get(0).asString())
+        assertEquals(56, logo.get("height").asInt())
+        assertEquals(50, logo.get("ascent").asInt())
+        val join = font.get("providers").get(2)
+        assertEquals("space", join.get("type").asString())
+        val joinAdvance = join.get("advances").get("\uE405").asDouble()
+        assertEquals(56.0 * 256 / 241, 60.0 + joinAdvance, 0.00001)
         val root =
             generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
                 .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
         val image = ImageIO.read(root.resolve("art/platform/welcome/logo.png").toFile())
         assertTrue(
-            image.width <= 256 && image.height <= 256,
-            "A single bitmap glyph must fit Minecraft's 256x256 native font atlas",
+            image.width / 2 <= 256 && image.height <= 256,
+            "Each bitmap cell must fit Minecraft's 256x256 native font atlas",
         )
-        assertEquals(256, image.width)
-        assertEquals(121, image.height)
+        assertEquals(512, image.width)
+        assertEquals(241, image.height)
         assertTrue(
             (0 until image.height / 3).any { y ->
                 (0 until image.width).any { x -> image.getRGB(x, y) ushr 24 != 0 }

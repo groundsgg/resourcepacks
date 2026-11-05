@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ $# != 2 ]]; then
-  echo "Usage: $0 <minecraft-client.jar> <single-glyph-logo.png>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Usage: $0 <minecraft-client.jar> <bitmap.png> [columns]" >&2
   exit 2
 fi
 client_jar=$(realpath "$1")
@@ -12,4 +12,4 @@ atlas_size=$("${JAVA_HOME:+$JAVA_HOME/bin/}javap" -classpath "$client_jar" -p -c
 probe_dir=$(mktemp -d /tmp/grounds-font-atlas.XXXXXX)
 trap 'rm -rf -- "$probe_dir"' EXIT
 "${JAVA_HOME:+$JAVA_HOME/bin/}javac" -cp "$client_jar" -d "$probe_dir" "$script_dir/BitmapFontAtlasProbe.java"
-(cd -- "$probe_dir" && "${JAVA_HOME:+$JAVA_HOME/bin/}java" -Djava.awt.headless=true -cp "$probe_dir:$client_jar" BitmapFontAtlasProbe "$logo_png" "$atlas_size")
+(cd -- "$probe_dir" && "${JAVA_HOME:+$JAVA_HOME/bin/}java" -Djava.awt.headless=true -cp "$probe_dir:$client_jar" BitmapFontAtlasProbe "$logo_png" "$atlas_size" "${3:-1}")
