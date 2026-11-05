@@ -317,6 +317,21 @@
         3555,
         702
       ]
+    },
+    "welcome/logo.png": {
+      "source": "Grounds original brand artwork: logo/logo-png-noglow.png",
+      "sha256": "62df814fd15d788e94eb2ab7f83a9ff27d1de0d19737801a22e5eab2155ffd21",
+      "sourceSha256": "197979c54f2277d7c6d641c18ad3b71551a3f117fb3c5ef6a7bf2a20e78ab93c",
+      "crop": [
+        70,
+        29,
+        3686,
+        1738
+      ],
+      "normalizedSize": [
+        512,
+        241
+      ]
     }
   }
 }

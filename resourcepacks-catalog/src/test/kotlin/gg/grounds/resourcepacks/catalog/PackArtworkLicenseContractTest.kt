@@ -151,6 +151,7 @@ class PackArtworkLicenseContractTest {
         val APPROVED_PLATFORM_IMAGES =
             setOf(
                 "art/platform/pack.png",
+                "art/platform/welcome/logo.png",
                 "art/platform/frames/hover.png",
                 "art/platform/icons/back.png",
                 "art/platform/icons/blank.png",
