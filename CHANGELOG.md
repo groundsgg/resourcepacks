@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.0](https://github.com/groundsgg/resourcepacks/compare/v1.3.0...v1.4.0) (2026-11-05)
+
+
+### Features
+
+* add native welcome and connection font assets ([#64](https://github.com/groundsgg/resourcepacks/issues/64)) ([3a89c9c](https://github.com/groundsgg/resourcepacks/commit/3a89c9cd53d1d8b0c87f14cc49cf174374e3df3c))
+
+
+### Bug Fixes
+
+* **npc:** isolate model resources from legacy pack overrides ([#60](https://github.com/groundsgg/resourcepacks/issues/60)) ([eab25db](https://github.com/groundsgg/resourcepacks/commit/eab25db0546b7271c2357661c5bb61c3d653f979))
+
+
+### Performance Improvements
+
+* **npc:** consolidate validated rigid parts with native item composites ([#63](https://github.com/groundsgg/resourcepacks/issues/63)) ([927a8d5](https://github.com/groundsgg/resourcepacks/commit/927a8d5aca9bab8b685911330bee1446d20b6445))
+
 ## [1.3.0](https://github.com/groundsgg/resourcepacks/compare/v1.2.1...v1.3.0) (2026-11-01)
 
 
