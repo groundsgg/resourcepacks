@@ -50,6 +50,11 @@ class WelcomeFontTest {
         assertEquals(42, image.width)
         assertEquals(14, image.height)
         assertEquals(14, provider.get("height").asInt())
+        assertEquals(
+            12,
+            provider.get("ascent").asInt(),
+            "Keep full icon bitmap above the adjacent voice row",
+        )
         val cells =
             (0..2).map { i ->
                 (0 until 14).flatMap { y -> (0 until 14).map { x -> image.getRGB(i * 14 + x, y) } }

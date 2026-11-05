@@ -119,3 +119,5 @@ resourcepacks-product/src/test/scripts/verify-welcome-atlas.sh /path/to/minecraf
 ## Connection icons
 
 The platform pack adds first-party pin, proxy and server icons in `grounds:connection` (U+E410–U+E412). Render the hard-alpha 10px atlas white after verified compatible pack loading.
+
+The welcome icon baseline uses ascent 12 at height 14, keeping the full bitmap above the adjacent voice line. The personalized greeting retains the player name and the block ends with a blank footer row.
