@@ -103,3 +103,21 @@ CI and the release build/publish jobs require the repository's built-in `GITHUB_
 ## Out of scope
 
 This repository does not activate a PackSet in Config Service, deliver packs from Velocity/Paper/Minestom, operate a portal, introduce mutable CDN aliases, publish reference-pack assets, or implement runtime Scene behavior.
+
+## Welcome link icons
+
+The platform pack includes `grounds:welcome`: Discord (U+E400), TikTok (U+E401) and a shopping bag (U+E402). The 14px hard-edged atlas is generated deterministically by `WelcomeFont`; source silhouettes come from Simple Icons and Lucide, with their license notices included at `assets/grounds/licenses/welcome-icons.txt`. Callers render the multicolor glyphs white and verify pack readiness before use.
+
+The welcome font also provides the original full Grounds logo with floating stones and its gold base as two cells U+E403/U+E404 (42px height, 41px ascent). The separate asset retains the original proportions and colours. Existing tab/sidebar wordmarks are unchanged.
+
+Welcome logo compatibility: each native bitmap cell must fit the client's 256x256 font atlas. The original 512x241 bitmap uses two 256x241 cells. U+E405 removes the rounded native spacing between cells, joining them seamlessly at 42px GUI height. Separate greeting and social rows keep all ten chat rows visible. Validate against the actual Minecraft client before publication:
+
+```sh
+resourcepacks-product/src/test/scripts/verify-welcome-atlas.sh /path/to/minecraft-client.jar art/platform/welcome/logo.png 2
+```
+
+## Connection icons
+
+The platform pack adds first-party pin, proxy and server icons in `grounds:connection` (U+E410–U+E412). Render the hard-alpha 10px atlas white after verified compatible pack loading.
+
+The welcome icon baseline uses ascent 12 at height 14, keeping the full bitmap above the adjacent voice line. The personalized greeting retains the player name and the block ends with a blank footer row.

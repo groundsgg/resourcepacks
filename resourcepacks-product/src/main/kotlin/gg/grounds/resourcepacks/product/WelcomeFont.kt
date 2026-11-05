@@ -1,0 +1,149 @@
+package gg.grounds.resourcepacks.product
+
+import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
+import javax.imageio.ImageIO
+
+/** Actual brand silhouettes rasterized to hard-edged Minecraft pixels; no emoji fallback. */
+internal object WelcomeFont {
+    const val DISCORD = 0xE400
+    const val TIKTOK = 0xE401
+    const val SHOP = 0xE402
+    const val LOGO = 0xE403
+    const val LOGO_RIGHT = 0xE404
+    const val LOGO_JOIN = 0xE405
+    private const val SIZE = 14
+
+    // Sources: simple-icons Discord/TikTok and lucide shopping-bag, retrieved 2026-11-04.
+    // Raster coverage is thresholded before storage: every atlas pixel is opaque or transparent.
+    private val icons =
+        listOf(
+            listOf(
+                "..............",
+                "..............",
+                "....D....D....",
+                "..DDDDDDDDDD..",
+                "..DDDDDDDDDD..",
+                ".DDDDDDDDDDDD.",
+                ".DDDDDDDDDDDD.",
+                ".DDD..DD..DDD.",
+                ".DDDDDDDDDDDD.",
+                ".DDDDDDDDDDDD.",
+                "..DDD.DD.DDD..",
+                "...D......D...",
+                "..............",
+                "..............",
+            ),
+            listOf(
+                "..............",
+                "......CWW.....",
+                "......CWWW....",
+                "......CWWWW...",
+                "......CWWWWW..",
+                "...CWWCWWWWWR.",
+                "..CWWWRWWRRRR.",
+                ".CWWWWRWWR....",
+                ".CWWRRRWWR....",
+                ".CWWR.CWWR....",
+                ".CWWW.CWWR....",
+                ".CWWWWWWWR....",
+                "..CWWWWWRR....",
+                "....RRRRR.....",
+            ),
+            listOf(
+                "..............",
+                "....GGGGGG....",
+                "...GGGGGGGG...",
+                "..GGGGGGGGGG..",
+                "..GGGGGGGGGG..",
+                "..G........G..",
+                "..G.GG..GG.G..",
+                "..G..GGGG..G..",
+                "..G...GG...G..",
+                "..G........G..",
+                "..G........G..",
+                "..GGGGGGGGGG..",
+                "...GGGGGGGG...",
+                "..............",
+            ),
+        )
+    private val colors =
+        mapOf(
+            'D' to 0xFF5865F2.toInt(),
+            'C' to 0xFF25F4EE.toInt(),
+            'R' to 0xFFFE2C55.toInt(),
+            'W' to 0xFFFFFFFF.toInt(),
+            'G' to 0xFFE7B84B.toInt(),
+        )
+
+    fun json(): String =
+        """{"providers":[{"type":"bitmap","file":"grounds:font/welcome_icons.png","ascent":12,"height":14,"chars":["\uE400\uE401\uE402"]},{"type":"bitmap","file":"grounds:font/welcome_logo.png","ascent":41,"height":42,"chars":["\uE403\uE404"]},{"type":"space","advances":{"\uE405":-1.38589211618257}}]}"""
+
+    fun texture(): ByteArray {
+        val image = BufferedImage(SIZE * icons.size, SIZE, BufferedImage.TYPE_INT_ARGB)
+        icons.forEachIndexed { index, rows ->
+            require(rows.size == SIZE && rows.all { it.length == SIZE })
+            rows.forEachIndexed { y, row ->
+                row.forEachIndexed { x, pixel ->
+                    if (pixel != '.') image.setRGB(index * SIZE + x, y, colors.getValue(pixel))
+                }
+            }
+        }
+        return ByteArrayOutputStream().use { out ->
+            check(ImageIO.write(image, "png", out))
+            out.toByteArray()
+        }
+    }
+
+    val attribution: String =
+        """
+        Pixel icon sources: Simple Icons Discord and TikTok (CC0-1.0); Lucide shopping-bag.
+        https://github.com/simple-icons/simple-icons
+        https://github.com/lucide-icons/lucide
+
+        ISC License
+
+        Copyright (c) 2026 Lucide Icons and Contributors
+
+        Permission to use, copy, modify, and/or distribute this software for any
+        purpose with or without fee is hereby granted, provided that the above
+        copyright notice and this permission notice appear in all copies.
+
+        THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+        WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+        MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+        ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+        WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+        ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+        OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+        ---
+
+        The following Lucide icons are derived from the Feather project:
+
+        airplay, alert-circle, alert-octagon, alert-triangle, aperture, arrow-down-circle, arrow-down-left, arrow-down-right, arrow-down, arrow-left-circle, arrow-left, arrow-right-circle, arrow-right, arrow-up-circle, arrow-up-left, arrow-up-right, arrow-up, at-sign, calendar, cast, check, chevron-down, chevron-left, chevron-right, chevron-up, chevrons-down, chevrons-left, chevrons-right, chevrons-up, circle, clipboard, clock, code, columns, command, compass, corner-down-left, corner-down-right, corner-left-down, corner-left-up, corner-right-down, corner-right-up, corner-up-left, corner-up-right, crosshair, database, divide-circle, divide-square, dollar-sign, download, external-link, feather, frown, hash, headphones, help-circle, info, italic, key, layout, life-buoy, link-2, link, loader, lock, log-in, log-out, maximize, meh, minimize, minimize-2, minus-circle, minus-square, minus, monitor, moon, more-horizontal, more-vertical, move, music, navigation-2, navigation, octagon, pause-circle, percent, plus-circle, plus-square, plus, power, radio, rss, search, server, share, shopping-bag, sidebar, smartphone, smile, square, table-2, tablet, target, terminal, trash-2, trash, triangle, tv, type, upload, x-circle, x-octagon, x-square, x, zoom-in, zoom-out
+
+        The MIT License (MIT) (for the icons listed above)
+
+        Copyright (c) 2013-present Cole Bemis
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        """
+            .trimIndent() + "\n"
+}
