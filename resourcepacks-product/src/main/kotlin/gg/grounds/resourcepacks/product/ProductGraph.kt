@@ -132,6 +132,7 @@ internal object ProductGraph {
                     .withMenu(held)
                     .withWelcomeFont(held)
                     .withConnectionFont()
+                    .withPauseMenu()
             val contentContribution =
                 ContentContribution.withModels(held)
                     .withLicense(held.getValue(CONTENT_LICENSE_SOURCE), CONTENT_LICENSE_ENTRY)
@@ -253,6 +254,16 @@ internal object ProductGraph {
             requires,
         )
     }
+
+    private fun PackContribution.withPauseMenu(): PackContribution =
+        PackContribution(
+            id,
+            supportedFormats,
+            entries + PauseMenuPack.entries(),
+            vanillaClaims + PauseMenuPack.vanillaClaims,
+            provides,
+            requires,
+        )
 
     private fun PackContribution.withMenu(held: Map<String, HeldSourceFile>): PackContribution {
         val sprites =

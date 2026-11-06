@@ -46,7 +46,7 @@ class ChatPackTest {
     }
 
     @Test
-    fun `platform pack owns the chat font without overriding the vanilla font`() {
+    fun `platform pack owns the chat font while default font adds only the pause logo`() {
         ProductGraph.secureReleaseInputs().use { secured ->
             val parent = java.nio.file.Files.createTempDirectory("chat-pack-")
             val scratch = SecureOwnedDirectory.create(parent, ".chat-pack-")
@@ -88,7 +88,25 @@ class ChatPackTest {
                                 name,
                             )
                         }
-                    assertTrue(zip.entries().asSequence().none { it.name == VANILLA_DEFAULT_FONT })
+                    val mapper = tools.jackson.databind.json.JsonMapper()
+                    val defaultFont =
+                        zip.getInputStream(assertNotNull(zip.getEntry(VANILLA_DEFAULT_FONT))).use {
+                            mapper.readTree(it)
+                        }
+                    assertEquals(1, defaultFont["providers"].size())
+                    val reference = defaultFont["providers"][0]
+                    assertEquals("reference", reference["type"].asString())
+                    assertEquals("grounds:pause", reference["id"].asString())
+                    val pauseFont =
+                        zip.getInputStream(
+                                assertNotNull(zip.getEntry("assets/grounds/font/pause.json"))
+                            )
+                            .use { mapper.readTree(it) }
+                    assertEquals(1, pauseFont["providers"].size())
+                    val pauseProvider = pauseFont["providers"][0]
+                    assertEquals("bitmap", pauseProvider["type"].asString())
+                    assertEquals(1, pauseProvider["chars"].size())
+                    assertEquals("\uE600", pauseProvider["chars"][0].asString())
                     val font =
                         zip.getInputStream(assertNotNull(zip.getEntry(CHAT_FONT)))
                             .reader()
