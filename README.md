@@ -121,3 +121,28 @@ resourcepacks-product/src/test/scripts/verify-welcome-atlas.sh /path/to/minecraf
 The platform pack adds first-party pin, proxy and server icons in `grounds:connection` (U+E410–U+E412). Render the hard-alpha 10px atlas white after verified compatible pack loading.
 
 The welcome icon baseline uses ascent 12 at height 14, keeping the full bitmap above the adjacent voice line. The personalized greeting retains the player name and the block ends with a blank footer row.
+
+## Escape menu
+
+The platform pack replaces the vanilla pause-menu title with the Grounds wordmark
+using a dedicated U+E600 glyph (26px height, 21px ascent). Its additive default-font
+provider preserves the normal and forced-Unicode fonts. The existing, hash-pinned
+tab wordmark texture is shared; the tab font itself keeps its existing metrics.
+
+All 143 Minecraft 26.3 client languages show the logo. English, German, French,
+and Spanish, including their available regional variants, also receive Grounds
+button labels:
+
+| Language | Back to game | Disconnect |
+| --- | --- | --- |
+| English | Back to Grounds | Leave Grounds |
+| German | Zurück zu Grounds | Grounds verlassen |
+| French | Retour à Grounds | Quitter Grounds |
+| Spanish | Volver a Grounds | Salir de Grounds |
+
+These labels follow the Minecraft client language, independently of `/lang`.
+Other languages retain their vanilla button translations. The buttons keep their
+vanilla actions. Overrides apply while the server pack is loaded and are shared
+by every proxy through the same PackSet. Higher-priority client packs can override
+these entries. The language list is pinned from asset index 34's `pack.mcmeta`;
+building the pack does not read a local Minecraft installation or download assets.
