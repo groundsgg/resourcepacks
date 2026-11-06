@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/groundsgg/resourcepacks/compare/v1.4.0...v1.5.0) (2026-11-06)
+
+
+### Features
+
+* brand the Escape menu with the Grounds logo and labels ([#65](https://github.com/groundsgg/resourcepacks/issues/65)) ([7e69988](https://github.com/groundsgg/resourcepacks/commit/7e699884f9cdd4dd1fb8a11a5149bf0ee22403e3))
+
 ## [1.4.0](https://github.com/groundsgg/resourcepacks/compare/v1.3.0...v1.4.0) (2026-11-05)
 
 
