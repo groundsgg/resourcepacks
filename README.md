@@ -4,6 +4,10 @@ This repository composes the immutable Grounds PackSet: `grounds-content` follow
 
 ## Licensing
 
+Native queue font subsets retain their original rights holders and attribution;
+see the product `queue-source/NOTICE.txt` and `provenance.json`. They are excluded
+from the first-party artwork claim and the product code licence.
+
 The PackSet product code is licensed under AGPL-3.0-only, except artwork under
 [`art/platform/`](art/platform/) and [`art/content/`](art/content/). First-party
 platform artwork is all rights reserved. Third-party files under `art/content/`
@@ -146,3 +150,16 @@ vanilla actions. Overrides apply while the server pack is loaded and are shared
 by every proxy through the same PackSet. Higher-priority client packs can override
 these entries. The language list is pinned from asset index 34's `pack.mcmeta`;
 building the pack does not read a local Minecraft installation or download assets.
+# Queue HUD fonts
+
+The platform contribution includes the private `grounds:queue` font and 25
+`grounds:queue_fade_00`–`grounds:queue_fade_24` variants for the compact match queue
+action bar. The deterministic 160px rail uses Mini-CD colors and mirrored ends.
+No vanilla font or shader is replaced.
+
+Native bitmap atlas subsets, their source hashes and attribution live in
+`resourcepacks-product/src/main/resources/gg/grounds/resourcepacks/product/queue-source/`.
+Production builds consume these checked-in sources and require no local client.
+QueuePackTest pins approved pixel digests, alpha geometry and provider references.
+The runtime must approve the resulting platform ZIP's SHA-1 through
+`QUEUE_FONT_PACK_SHA1S` before it sends these glyphs (see plugin-match/QUEUE-HUD.md).

@@ -71,7 +71,7 @@ class PackArtworkLicenseContractTest {
     }
 
     @Test
-    fun `repository image files are the approved first-party platform set`() {
+    fun `repository images are approved first-party art or attributed native font sources`() {
         val actual = linkedSetOf<String>()
         Files.walk(root).use { paths ->
             paths
@@ -82,7 +82,10 @@ class PackArtworkLicenseContractTest {
                 }
                 .forEach { path -> actual += root.relativize(path).joinToString("/") }
         }
-        assertEquals(APPROVED_PLATFORM_IMAGES, actual)
+        assertEquals(APPROVED_PLATFORM_IMAGES + NATIVE_QUEUE_IMAGES, actual)
+        val notice = Files.readString(root.resolve(QUEUE_SOURCE + "NOTICE.txt"))
+        assertTrue(notice.contains("not first-party Grounds artwork"))
+        assertTrue(Files.isRegularFile(root.resolve(QUEUE_SOURCE + "provenance.json")))
     }
 
     @Test
@@ -148,6 +151,9 @@ class PackArtworkLicenseContractTest {
                 ".cursor",
                 "node_modules",
             )
+        const val QUEUE_SOURCE =
+            "resourcepacks-product/src/main/resources/gg/grounds/resourcepacks/product/queue-source/"
+        val NATIVE_QUEUE_IMAGES = (0..2).map { QUEUE_SOURCE + "latin_$it.png" }.toSet()
         val APPROVED_PLATFORM_IMAGES =
             setOf(
                 "art/platform/pack.png",
