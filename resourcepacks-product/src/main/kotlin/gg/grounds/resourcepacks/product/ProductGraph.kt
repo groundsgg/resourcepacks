@@ -414,7 +414,8 @@ internal object ProductGraph {
                 HudFont.textures().map { (name, bytes) ->
                     PackEntry.bytes("assets/grounds/textures/font/$name", bytes)
                 } +
-                HiddenBossBar.entries(),
+                HiddenBossBar.entries() +
+                QueueFont.entries(),
             vanillaClaims + HiddenBossBar.vanillaClaims,
             provides,
             requires,
