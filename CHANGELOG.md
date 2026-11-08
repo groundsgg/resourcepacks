@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/groundsgg/resourcepacks/compare/v1.5.0...v1.6.0) (2026-11-08)
+
+
+### Features
+
+* add compact queue HUD fonts ([3412dce](https://github.com/groundsgg/resourcepacks/commit/3412dce2df6633751b6521c401c84184ff1847bb))
+
 ## [1.5.0](https://github.com/groundsgg/resourcepacks/compare/v1.4.0...v1.5.0) (2026-11-06)
 
 
