@@ -165,6 +165,20 @@ jobs:
       - name: Publish the unchanged NPC runtime Maven staging workspace
         if: steps.npc-maven-gate.outputs.decision == 'publish'
         run: ./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}'
+      - name: Stage the exact NPC content Maven publication
+        run: ./gradlew :resourcepacks-npc-content:stageExactMavenPublication -PpackSetVersion='${{ needs.build.outputs.version }}'
+      - id: npc-content-maven-gate
+        name: Decide whether GitHub Packages needs NPC content publication
+        run: |
+          decision=$(node release-tools/src/npc-content-maven-create-or-compare.mjs --staging-directory resourcepacks-npc-content/build/release-maven-staging --version '${{ needs.build.outputs.version }}' --username '${{ github.actor }}' --token '${{ secrets.GITHUB_TOKEN }}')
+          case "$decision" in
+            publish|skip) ;;
+            *) echo "NPC content Maven decision is invalid" >&2; exit 1 ;;
+          esac
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+      - name: Publish the unchanged NPC content Maven staging workspace
+        if: steps.npc-content-maven-gate.outputs.decision == 'publish'
+        run: ./gradlew :resourcepacks-npc-content:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}'
       - name: Create or compare immutable R2 ZIP objects
         run: node release-tools/src/r2-create-or-compare.mjs --manifest "$RUNNER_TEMP/release/manifest.json" --release-directory "$RUNNER_TEMP/release" --bucket '${{ secrets.R2_BUCKET }}' --endpoint '${{ secrets.R2_ENDPOINT }}' --access-key '${{ secrets.R2_ACCESS_KEY_ID }}' --secret-key '${{ secrets.R2_SECRET_ACCESS_KEY }}'
 
