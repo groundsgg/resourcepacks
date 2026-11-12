@@ -85,7 +85,7 @@ class AutomationContractTest {
         val sharedCheckoutPath = replaceOnce(ci, "path: run2/src", "path: run1/src")
         assertFails { assertCi(parseText(sharedCheckoutPath)) }
         val maskedDecision =
-            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 4).let {
+            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 5).let {
                 replaceOnce(
                     it,
                     "          case \"\$decision\" in\n" +
@@ -152,16 +152,16 @@ class AutomationContractTest {
         val r2BeforeNpcPublication =
             replaceOnce(
                 release,
-                "      - name: Publish the unchanged NPC runtime Maven staging workspace\n" +
-                    "        if: steps.npc-maven-gate.outputs.decision == 'publish'\n" +
-                    "        run: ./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n" +
+                "      - name: Publish the unchanged NPC content Maven staging workspace\n" +
+                    "        if: steps.npc-content-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-npc-content:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n" +
                     "      - name: Create or compare immutable R2 ZIP objects\n" +
                     "        run: $r2Command\n",
                 "      - name: Create or compare immutable R2 ZIP objects\n" +
                     "        run: $r2Command\n" +
-                    "      - name: Publish the unchanged NPC runtime Maven staging workspace\n" +
-                    "        if: steps.npc-maven-gate.outputs.decision == 'publish'\n" +
-                    "        run: ./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n",
+                    "      - name: Publish the unchanged NPC content Maven staging workspace\n" +
+                    "        if: steps.npc-content-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-npc-content:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n",
             )
         assertFails { assertRelease(parseText(r2BeforeNpcPublication)) }
         val releaseWithSecretInsteadOfBuiltInToken =
@@ -263,6 +263,15 @@ class AutomationContractTest {
         val gate =
             workflowSource("release.yml")
                 .substringAfter("id: client-maven-gate")
+                .substringBefore("      - name: Publish")
+        assertMavenDecisionGateRejects(gate)
+    }
+
+    @Test
+    fun `NPC content Maven decision gate rejects failed empty and invalid output before its successor`() {
+        val gate =
+            workflowSource("release.yml")
+                .substringAfter("id: npc-content-maven-gate")
                 .substringBefore("      - name: Publish")
         assertMavenDecisionGateRejects(gate)
     }
@@ -796,7 +805,37 @@ class AutomationContractTest {
         assertEquals(clientPublish + 1, npcStage)
         assertEquals(npcStage + 1, npcGate)
         assertEquals(npcGate + 1, npcPublish)
-        assertEquals(npcPublish + 1, r2)
+        val contentStage =
+            steps.indexOf(stepByName(steps, "Stage the exact NPC content Maven publication"))
+        val contentGate = steps.indexOfFirst { scalar(it, "id") == "npc-content-maven-gate" }
+        val contentPublish =
+            steps.indexOf(
+                stepByName(steps, "Publish the unchanged NPC content Maven staging workspace")
+            )
+        assertEquals(npcPublish + 1, contentStage)
+        assertEquals(contentStage + 1, contentGate)
+        assertEquals(contentGate + 1, contentPublish)
+        assertEquals(contentPublish + 1, r2)
+        assertEquals(
+            "./gradlew :resourcepacks-npc-content:stageExactMavenPublication " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contentStage], "run"),
+        )
+        assertEquals(
+            clientMavenDecisionScript
+                .replace("client", "npc-content")
+                .replace("Client", "NPC content"),
+            scalar(steps[contentGate], "run"),
+        )
+        assertEquals(
+            "steps.npc-content-maven-gate.outputs.decision == 'publish'",
+            scalar(steps[contentPublish], "if"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-npc-content:publishMavenJavaPublicationToGitHubPackagesRepository " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[contentPublish], "run"),
+        )
         assertEquals(
             "./gradlew :resourcepacks-npc-runtime:stageExactMavenPublication " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",

@@ -1,3 +1,5 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.jar.JarFile
 
 plugins {
@@ -31,7 +33,25 @@ tasks.test {
     systemProperty("npcContentJar", tasks.jar.get().archiveFile.get().asFile.absolutePath)
 }
 
-publishing { publications { create<MavenPublication>("mavenJava") { from(components["java"]) } } }
+publishing {
+    publications { create<MavenPublication>("mavenJava") { from(components["java"]) } }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/groundsgg/resourcepacks")
+            credentials {
+                username =
+                    providers.gradleProperty("github.user").orNull
+                        ?: System.getenv("GITHUB_ACTOR")
+                        ?: ""
+                password =
+                    providers.gradleProperty("github.token").orNull
+                        ?: System.getenv("GITHUB_TOKEN")
+                        ?: ""
+            }
+        }
+    }
+}
 
 // Public Maven content packages contain only a neutral index and digests. Licensed model
 // resources may only be bundled into the private Stage host/preview artifacts.
@@ -109,3 +129,50 @@ providers.gradleProperty("npcReviewRepository").orNull?.let { location ->
 tasks.withType<org.gradle.api.publish.maven.tasks.PublishToMavenLocal>().configureEach {
     dependsOn(verifyNeutralNpcPublication)
 }
+
+val stageExactMavenPublication by
+    tasks.registering {
+        group = "publishing"
+        description =
+            "Stages exactly the four immutable NPC content Maven publication files for the decision gate."
+        dependsOn(
+            verifyNeutralNpcPublication,
+            tasks.named("jar"),
+            tasks.named("sourcesJar"),
+            tasks.named("generatePomFileForMavenJavaPublication"),
+            tasks.named("generateMetadataFileForMavenJavaPublication"),
+        )
+        doLast {
+            val versionText = project.version.toString()
+            val artifact = "resourcepacks-npc-content"
+            val target = layout.buildDirectory.dir("release-maven-staging").get().asFile.toPath()
+            check(Files.notExists(target)) { "Maven staging directory already exists: $target" }
+            val versionDirectory = target.resolve("gg/grounds/$artifact/$versionText")
+            Files.createDirectories(versionDirectory)
+            mapOf(
+                    layout.buildDirectory
+                        .file("libs/$artifact-$versionText.jar")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.jar"),
+                    layout.buildDirectory
+                        .file("libs/$artifact-$versionText-sources.jar")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText-sources.jar"),
+                    layout.buildDirectory
+                        .file("publications/mavenJava/pom-default.xml")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.pom"),
+                    layout.buildDirectory
+                        .file("publications/mavenJava/module.json")
+                        .get()
+                        .asFile
+                        .toPath() to versionDirectory.resolve("$artifact-$versionText.module"),
+                )
+                .forEach { (source, destination) ->
+                    Files.copy(source, destination, StandardCopyOption.COPY_ATTRIBUTES)
+                }
+        }
+    }

@@ -12,3 +12,8 @@ npcSourceDirectory/grounds.npc.sources input. Purchased model payload must never
 published to a Maven repository: verifyNeutralNpcPublication gates publishing.
 Sources archives exclude all JSON payload. Keep private content and public engine
 release decisions separate.
+
+The existing tagged PackSet release workflow stages exactly the JAR, source JAR,
+POM and Gradle module metadata, compares immutable GitHub Packages publication
+bytes, then publishes only neutral content. It preserves the old runtime
+publication for existing consumers. This module does not activate private NPCs.

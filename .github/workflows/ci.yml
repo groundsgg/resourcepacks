@@ -47,6 +47,9 @@ jobs:
       - name: Verify NPC compiler geometry regressions
         working-directory: run1/src
         run: python3 -B -m unittest discover -s tools -p 'test_*.py'
+      - name: Reject private NPC content in binary and source publications
+        working-directory: run1/src
+        run: python3 -B tools/test_npc_content_publication.py
       - name: Run Node release-tool tests twice and audit dependencies
         working-directory: run1/src/release-tools
         run: |
