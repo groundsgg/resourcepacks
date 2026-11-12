@@ -20,3 +20,22 @@ test('Maven comparison rejects attacker repository origin before sending authori
 test('Maven comparison times out pending headers and stalled response bodies',async()=>{const directory=await stage();for(const fetchImpl of [()=>new Promise(()=>{}),async()=>new Response(new ReadableStream({start(){}}),{status:200})]){const operation=mavenCreateOrCompare({repositoryUrl:'http://127.0.0.1:1',directory,allowLocalhostForTests:true,fetchImpl,timeoutMs:20});assert.equal(await Promise.race([assert.rejects(()=>operation,/Maven request timed out/).then(()=> 'timeout'),new Promise(resolve=>setTimeout(()=>resolve('hung'),200))]),'timeout');}});
 
 test('NPC runtime Maven staging accepts only its exact four coordinate-bound files',async()=>{const root=await mkdtemp(join(tmpdir(),'resourcepacks-npc-runtime-maven-'));const version=join(root,'gg','grounds','resourcepacks-npc-runtime','0.2.0');await mkdir(version,{recursive:true});for(const[name,bytes]of new Map([['resourcepacks-npc-runtime-0.2.0.jar',Buffer.from('client')],['resourcepacks-npc-runtime-0.2.0-sources.jar',Buffer.from('sources')],['resourcepacks-npc-runtime-0.2.0.pom',Buffer.from('<project/>')],['resourcepacks-npc-runtime-0.2.0.module',Buffer.from('{}')]]))await writeFile(join(version,name),bytes);await assert.rejects(()=>collectMavenPublication({stagingDirectory:root,coordinate:'gg.grounds:resourcepacks-npc-runtime:../../attacker'}),/coordinate is invalid/);const publication=await collectMavenPublication({stagingDirectory:root,coordinate:'gg.grounds:resourcepacks-npc-runtime:0.2.0'});try{assert.equal(publication.files.length,4);assert.ok(publication.files.every(file=>file.path.startsWith('gg/grounds/resourcepacks-npc-runtime/0.2.0/')));}finally{await publication.close();}await writeFile(join(version,'unexpected.jar'),'x');await assert.rejects(()=>collectMavenPublication({stagingDirectory:root,coordinate:'gg.grounds:resourcepacks-npc-runtime:0.2.0'}),/exact Maven publication/);});
+
+test('NPC content Maven staging accepts only its exact four coordinate-bound files', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'resourcepacks-npc-content-maven-'));
+  const directory = join(root, 'gg', 'grounds', 'resourcepacks-npc-content', '1.7.0');
+  await mkdir(directory, {recursive: true});
+  for (const suffix of ['.jar', '-sources.jar', '.pom', '.module']) {
+    await writeFile(join(directory, 'resourcepacks-npc-content-1.7.0' + suffix), 'original synthetic publication');
+  }
+  await assert.rejects(() => collectMavenPublication({stagingDirectory: root, coordinate: 'gg.grounds:resourcepacks-npc-content:../../attacker'}), /coordinate is invalid/);
+  const publication = await collectMavenPublication({stagingDirectory: root, coordinate: 'gg.grounds:resourcepacks-npc-content:1.7.0'});
+  try {
+    assert.equal(publication.files.length, 4);
+    assert.ok(publication.files.every(file => file.path.startsWith('gg/grounds/resourcepacks-npc-content/1.7.0/')));
+  } finally {
+    await publication.close();
+  }
+  await writeFile(join(directory, 'unexpected.jar'), 'unexpected synthetic payload');
+  await assert.rejects(() => collectMavenPublication({stagingDirectory: root, coordinate: 'gg.grounds:resourcepacks-npc-content:1.7.0'}), /exact Maven publication/);
+});
