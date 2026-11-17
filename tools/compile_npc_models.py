@@ -247,7 +247,9 @@ def compile_model(data, collection, character, output, geometry_mode='rigid', co
     asset = f'grounds:npc/{collection}/{character}'
     with tempfile.TemporaryDirectory(prefix='grounds-npc-model-') as temporary:
         source = Path(temporary) / 'source.bbmodel'
-        write_json(source, data)
+        # Preserve authored encoding and duplicate keys for the one authoritative parser.
+        if isinstance(data, bytes): source.write_bytes(data)
+        else: write_json(source, data)
         imported = Path(temporary) / 'imported'
         run_importer('import', source, asset, imported)
         model = json.loads((imported / 'model.json').read_bytes())
@@ -267,7 +269,8 @@ def compile_model(data, collection, character, output, geometry_mode='rigid', co
             else: shutil.copyfile(path, target)
     parts = isolate_part_models(group_rigid_parts(model['parts'], output), output)
     if geometry_mode == 'composite':
-        allowed = eligible_composite_bones(composite_policy, data, asset, parts)
+        policy_data = json.loads(data.decode('utf-8')) if isinstance(data, bytes) and composite_policy is not None else data
+        allowed = eligible_composite_bones(composite_policy, policy_data, asset, parts)
         parts = group_bone_composites(parts, model['bones'], output, allowed)
     model['parts'] = parts
     return model
@@ -314,8 +317,7 @@ def compile_archives(sources, output, geometry_mode='rigid', composite_policy=No
                     stem = PurePosixPath(info.filename).stem
                     if not stem.startswith(prefix) or not re.fullmatch('[a-z0-9_]+', stem[len(prefix):]): raise ValueError('invalid model filename')
                     character = stem[len(prefix):]
-                    try: data = json.loads(archive.read(info))
-                    except Exception as e: raise ValueError(f'invalid model {info.filename}: {e}') from e
+                    data = archive.read(info)
                     try: model = compile_model(data, collection, character, temp, geometry_mode, composite_policy)
                     except (ValueError, KeyError, TypeError) as e: raise ValueError(f'{info.filename}: {e}') from e
                     if collection == 'craftmasters':

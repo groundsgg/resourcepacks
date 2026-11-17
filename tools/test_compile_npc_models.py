@@ -33,7 +33,28 @@ def native_part(output, part):
     return json.loads((Path(output) / 'pack/assets/grounds/models' / suffix).read_text())
 
 
+def source_archives(root, first=None):
+    root.mkdir()
+    for collection in compiler.COLLECTIONS:
+        with zipfile.ZipFile(root / f'Ginko-fantasy_{collection}_NPCs.zip', 'w') as archive:
+            if collection == 'craftmasters':
+                archive.writestr('pack/ResourcePack/assets/ginko_fantasy_craftmasters/sounds.json', '{}')
+            for i, character in enumerate(('alpha', 'beta', 'gamma', 'delta', 'epsilon')):
+                data = first if collection == 'craftmasters' and i == 0 and first is not None else json.dumps(fixture()).encode()
+                archive.writestr(f'ginko_fantasy_{collection}_{character}.bbmodel', data)
+
+
 class CompilerTest(unittest.TestCase):
+    def test_original_archive_member_bytes_reach_the_shared_utf8_json_parser(self):
+        original = json.dumps(fixture())
+        duplicate = original.replace('"resolution":', '"resolution":{},"resolution":', 1).encode()
+        for i, raw in enumerate((duplicate, original.encode('utf-16'))):
+            with self.subTest(i=i), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source_archives(root / 'sources', raw)
+                with self.assertRaises(ValueError):
+                    compiler.compile_archives(root / 'sources', root / 'out')
+
     def test_shared_importer_validates_actual_png_payload_instead_of_only_its_signature(self):
         data = fixture()
         data['textures'][0]['source'] = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\nbroken').decode()

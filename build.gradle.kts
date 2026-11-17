@@ -141,6 +141,7 @@ tasks.register<Exec>("compileNpcModels") {
     npcSourceDirectory.orNull?.let {
         inputs.dir(file(it))
         inputs.files(provider { npcImporterClasspath.get().split(java.io.File.pathSeparator).map(::file) })
+        inputs.property("npcImporterClasspathOrder", npcImporterClasspath.map { it.split(java.io.File.pathSeparator).map { entry -> file(entry).canonicalPath } })
     }
     outputs.dir(npcOutput)
     doFirst {
