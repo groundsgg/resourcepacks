@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Compile licensed Blockbench NPC archives into deterministic Grounds resources."""
 import argparse
-import base64
+import atexit
+import functools
+import subprocess
 import hashlib
 import json
 import math
@@ -14,20 +16,6 @@ import zipfile
 
 COLLECTIONS = ('craftmasters', 'guildfolk', 'townfolk')
 FACES = {'north', 'south', 'east', 'west', 'up', 'down'}
-
-
-def number(value):
-    if isinstance(value, bool): raise ValueError('boolean is not a number')
-    try: value = float(value)
-    except (ValueError, TypeError): raise ValueError(f'unsupported numeric expression: {value!r}')
-    if not math.isfinite(value): raise ValueError('nonfinite number')
-    return value
-
-
-def vec(value, default=None, divisor=1):
-    value = default if value is None else value
-    if not isinstance(value, list) or len(value) != 3: raise ValueError(f'invalid vector: {value!r}')
-    return [number(x) / divisor for x in value]
 
 
 def write_json(path, data):
@@ -145,7 +133,7 @@ def eligible_composite_bones(policy, data, asset, parts):
     if policy is None: return None
     if not isinstance(policy, dict) or type(policy.get('schemaVersion')) is not int or policy['schemaVersion'] != 1:
         raise ValueError('invalid composite eligibility schema')
-    if policy.get('compilerSha256') != hashlib.sha256(Path(__file__).read_bytes()).hexdigest():
+    if policy.get('compilerSha256') != compiler_identity():
         raise ValueError('composite eligibility belongs to another compiler')
     models = policy.get('models')
     if not isinstance(models, dict) or asset not in models: raise ValueError(f'missing composite eligibility: {asset}')
@@ -206,107 +194,83 @@ def group_bone_composites(parts, bones, output, allowed=None):
     return result
 
 
+def importer_classpath():
+    value = os.environ.get('NPC_IMPORTER_CLASSPATH')
+    if not value or any(not Path(p).is_file() for p in value.split(os.pathsep)):
+        raise ValueError('Set NPC_IMPORTER_CLASSPATH to the pinned npc-cli runtime classpath')
+    return value
+
+
+def compiler_identity():
+    value = hashlib.sha256(Path(__file__).read_bytes())
+    value.update(Path(__file__).with_name('GroundsNpcImporter.java').read_bytes())
+    for item in importer_classpath().split(os.pathsep):
+        value.update(hashlib.sha256(Path(item).read_bytes()).digest())
+    return value.hexdigest()
+
+
+@functools.lru_cache(maxsize=1)
+def importer_bridge():
+    temporary = tempfile.TemporaryDirectory(prefix='grounds-npc-importer-')
+    atexit.register(temporary.cleanup)
+    directory = Path(temporary.name)
+    home = os.environ.get('JAVA_HOME')
+    java = str(Path(home) / 'bin/java') if home else 'java'
+    javac = str(Path(home) / 'bin/javac') if home else 'javac'
+    run = subprocess.run([javac, '-cp', importer_classpath(), '-d', str(directory),
+                          str(Path(__file__).with_name('GroundsNpcImporter.java'))],
+                         capture_output=True, text=True, timeout=120)
+    if run.returncode: raise ValueError('Cannot build shared NPC adapter: ' + run.stderr)
+    return java, str(directory) + os.pathsep + importer_classpath()
+
+
+def run_importer(*args):
+    java, classpath = importer_bridge()
+    run = subprocess.run([java, '-cp', classpath, 'GroundsNpcImporter', *map(str, args)],
+                         capture_output=True, text=True, timeout=120)
+    if run.returncode: raise ValueError('Shared NPC importer failed: ' + run.stderr)
+
+
+def package_content(output):
+    run_importer('package', output, 'grounds:' + compiler_identity())
+
+
+def validate_content(content, pack):
+    run_importer('verify', content, pack)
+
+
 def compile_model(data, collection, character, output, geometry_mode='rigid', composite_policy=None):
+    """Import with the public library, then apply the qualified Grounds mesh optimizer."""
     if geometry_mode not in ('rigid', 'composite'): raise ValueError('invalid NPC geometry mode')
     if composite_policy is not None and geometry_mode != 'composite': raise ValueError('composite policy requires composite mode')
-    output = Path(output); prefix = f'{collection}/{character}'
-    asset = f'grounds:npc/{prefix}'
-    elements = {e['uuid']: e for e in data['elements']}
-    groups = {g['uuid']: g for g in data['groups']}
-    if len(elements) != len(data['elements']) or len(groups) != len(data['groups']): raise ValueError('duplicate UUID')
-    textures = data.get('textures', [])
-    texture_ids = []
-    for i, tex in enumerate(textures):
-        source = tex.get('source', '')
-        if not source.startswith('data:image/png;base64,'): raise ValueError('texture is not embedded PNG')
-        try: png = base64.b64decode(source.split(',', 1)[1], validate=True)
-        except Exception as e: raise ValueError('invalid PNG base64') from e
-        if not png.startswith(b'\x89PNG\r\n\x1a\n'): raise ValueError('invalid PNG')
-        texture_name = f'texture_{i:03d}_{hashlib.sha256(png).hexdigest()}'
-        texture_ids.append(f'grounds:item/npc/{prefix}/{texture_name}')
-        path = output / f'pack/assets/grounds/textures/item/npc/{prefix}/{texture_name}.png'
-        path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(png)
-    bones, parts, hitboxes, seen, bone_ids = [], [], [], set(), set()
-    resolution = data['resolution']; uvw, uvh = number(resolution['width']), number(resolution['height'])
-    if uvw <= 0 or uvh <= 0: raise ValueError('invalid UV resolution')
-    def walk(node, parent=None, hidden=False, hitbox=False):
-        if isinstance(node, str):
-            if node not in elements or node in seen: raise ValueError(f'unknown or duplicate element {node}')
-            seen.add(node); e = elements[node]
-            if e.get('export', True) is False or (hidden and not hitbox): return
-            if e.get('type', 'cube') != 'cube': raise ValueError(f'unsupported geometry {e.get("type")}')
-            lo, hi = vec(e.get('from')), vec(e.get('to'))
-            signed_scale = [-1 if a > b else 1 for a,b in zip(lo,hi)]
-            lo, hi = [min(a,b) for a,b in zip(lo,hi)], [max(a,b) for a,b in zip(lo,hi)]
-            if hitbox:
-                hitboxes.append((lo, hi)); return
-            inflate = number(e.get('inflate', 0)); lo = [x-inflate for x in lo]; hi = [x+inflate for x in hi]
-            size = [b-a for a,b in zip(lo,hi)]
-            if any(x > 48 for x in size): raise ValueError('cube too large for native model')
-            faces = {}
-            for face, f in e.get('faces', {}).items():
-                if face not in FACES or not isinstance(f, dict): raise ValueError(f'invalid face {face}')
-                tex = f.get('texture')
-                if tex is None: continue
-                if not isinstance(tex, int) or isinstance(tex, bool) or not 0 <= tex < len(textures): raise ValueError('invalid face texture')
-                uv = f.get('uv')
-                if not isinstance(uv, list) or len(uv) != 4: raise ValueError('invalid face UV')
-                uv = [number(x)*16/(uvw if j % 2 == 0 else uvh) for j,x in enumerate(uv)]
-                rotation = f.get('rotation', 0)
-                if rotation not in (0,90,180,270): raise ValueError('invalid face rotation')
-                faces[face] = {'uv': uv, 'texture': f'#{tex}'}
-                if rotation: faces[face]['rotation'] = rotation
-            if not faces: raise ValueError('visible cube has no textured faces')
-            idx = len(parts); model = f'grounds:npc_parts/{prefix}/part_{idx:03d}'
-            native = {'textures': {str(i): t for i,t in enumerate(texture_ids)}, 'elements': [{'from': [8-x/2 for x in size], 'to': [8+x/2 for x in size], 'faces': faces}]}
-            native['textures']['particle'] = next(iter(faces.values()))['texture']
-            write_json(output / f'pack/assets/grounds/models/npc_parts/{prefix}/part_{idx:03d}.json', native)
-            write_json(output / f'pack/assets/grounds/items/npc_parts/{prefix}/part_{idx:03d}.json', {'model': {'type': 'minecraft:model', 'model': model}})
-            part = {'bone': parent, 'model': model, 'center': [(a+b)/32 for a,b in zip(lo,hi)], 'pivot': vec(e.get('origin'), [0,0,0], 16), 'rotation': vec(e.get('rotation'), [0,0,0])}
-            if signed_scale != [1,1,1]: part['scale'] = signed_scale
-            parts.append(part)
-            return
-        if not isinstance(node, dict) or node.get('uuid') not in groups: raise ValueError('invalid outliner group')
-        g = groups[node['uuid']]; gid = g['uuid']
-        if gid in bone_ids: raise ValueError('duplicate bone')
-        bone_ids.add(gid)
-        hitbox = hitbox or g.get('name', '').lower() == 'hitbox'
-        hidden = hidden or g.get('export', True) is False
-        bones.append({'id': gid, 'name': g['name'], 'parent': parent, 'origin': vec(g.get('origin'), [0,0,0], 16), 'rotation': vec(g.get('rotation'), [0,0,0])})
-        for child in node.get('children', []): walk(child, gid, hidden, hitbox)
-    for node in data['outliner']: walk(node)
-    if set(elements) != seen: raise ValueError('elements missing from outliner')
-    animations = {}
-    for a in data.get('animations', []):
-        name = a['name']
-        if name in animations: raise ValueError('duplicate animation')
-        loop = a.get('loop', 'once')
-        if loop not in ('once', 'loop', 'hold'): raise ValueError('unsupported loop')
-        tracks = {}
-        for gid, animator in a.get('animators', {}).items():
-            frames = animator.get('keyframes', [])
-            if not frames: continue
-            if gid not in bone_ids or animator.get('type', 'bone') != 'bone' or animator.get('rotation_global') or animator.get('quaternion_interpolation'): raise ValueError(f'unsupported animator {gid}')
-            track = {'rotation': [], 'position': [], 'scale': []}
-            for k in frames:
-                channel = k['channel']; interp = k.get('interpolation', 'linear'); points = k.get('data_points', [])
-                if channel not in track or interp not in ('linear','catmullrom','step') or len(points) != 1: raise ValueError('unsupported keyframe')
-                p = points[0]; v = [number(p[c]) / (16 if channel == 'position' else 1) for c in 'xyz']
-                track[channel].append({'time': number(k['time']), 'value': v, 'interpolation': interp})
-            for values in track.values(): values.sort(key=lambda x: x['time'])
-            tracks[gid] = track
-        animations[name] = {'loop': loop, 'length': number(a['length']), 'tracks': tracks}
-    if hitboxes:
-        lo = [min(p[0][i] for p in hitboxes) for i in range(3)]; hi = [max(p[1][i] for p in hitboxes) for i in range(3)]
-    else:
-        lo, hi = [0,0,0], [0,0,0]
-    bounds = {'center': [(a+b)/32 for a,b in zip(lo,hi)], 'size': [(b-a)/16 for a,b in zip(lo,hi)]}
-    write_json(output / f'pack/assets/grounds/models/npc_bodies/npc/{prefix}.json', {'elements': []})
-    parts = isolate_part_models(group_rigid_parts(parts, output), output)
+    output = Path(output)
+    asset = f'grounds:npc/{collection}/{character}'
+    with tempfile.TemporaryDirectory(prefix='grounds-npc-model-') as temporary:
+        source = Path(temporary) / 'source.bbmodel'
+        write_json(source, data)
+        imported = Path(temporary) / 'imported'
+        run_importer('import', source, asset, imported)
+        model = json.loads((imported / 'model.json').read_bytes())
+        for part in model['parts']: part.setdefault('bone', None)
+        for bone in model['bones']: bone.setdefault('parent', None)
+        # The particle slot's indirection is kept for compatibility with old Grounds packs.
+        for path in (imported / 'pack').rglob('*'):
+            if not path.is_file(): continue
+            relative = path.relative_to(imported / 'pack')
+            target = output / 'pack' / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if str(relative).startswith('assets/grounds/models/'):
+                native = json.loads(path.read_bytes())
+                textures = native['textures']
+                textures['particle'] = '#' + next(k for k,v in textures.items() if k != 'particle' and v == textures['particle'])
+                write_json(target, native)
+            else: shutil.copyfile(path, target)
+    parts = isolate_part_models(group_rigid_parts(model['parts'], output), output)
     if geometry_mode == 'composite':
         allowed = eligible_composite_bones(composite_policy, data, asset, parts)
-        parts = group_bone_composites(parts, bones, output, allowed)
-    return {'schemaVersion': 1, 'asset': asset, 'bounds': bounds, 'bones': bones, 'parts': parts, 'animations': animations, 'sounds': {}}
+        parts = group_bone_composites(parts, model['bones'], output, allowed)
+    model['parts'] = parts
+    return model
 
 
 def remap_sound_event(event, character, clip):
@@ -386,6 +350,7 @@ def compile_archives(sources, output, geometry_mode='rigid', composite_policy=No
         files=sorted(str(p.relative_to(temp/'pack')) for p in (temp/'pack').rglob('*') if p.is_file())
         write_json(temp/'catalog-resources/gg/grounds/resourcepacks/npc/pack-digests.json', {p: hashlib.sha256((temp/'pack'/p).read_bytes()).hexdigest() for p in files})
         write_json(temp/'bundle.json', {'partModelPaths':[p for p in files if p.startswith('assets/grounds/models/npc_parts/')], 'files': files, 'sourceSha256':hashes, 'models':[m['asset'] for m in models]})
+        package_content(temp)
         if output.exists():
             backup = Path(tempfile.mkdtemp(prefix='.npc-old-',dir=output.parent)); backup.rmdir(); os.replace(output, backup)
         try: os.replace(temp, output)
@@ -422,7 +387,8 @@ def compile_empty(output):
 
 
 def main():
-    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); parser.add_argument('--geometry-mode', choices=('rigid', 'composite'), default='rigid'); parser.add_argument('--composite-policy', type=Path); args=parser.parse_args()
+    parser=argparse.ArgumentParser(); parser.add_argument('--sources', type=Path); parser.add_argument('--output', required=True, type=Path); parser.add_argument('--geometry-mode', choices=('rigid', 'composite'), default='rigid'); parser.add_argument('--composite-policy', type=Path); parser.add_argument('--importer-classpath'); args=parser.parse_args()
+    if args.importer_classpath: os.environ['NPC_IMPORTER_CLASSPATH'] = args.importer_classpath
     try:
         policy = None
         if args.composite_policy:

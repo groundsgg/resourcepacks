@@ -99,24 +99,64 @@ subprojects {
     tasks.named("check") { dependsOn(rootProject.tasks.named("verifyDependencyLocks")) }
 }
 
+// Build-time tooling only. Normal neutral builds do not resolve this configuration.
+val npcImporter by configurations.creating
+repositories {
+    mavenCentral()
+    providers.gradleProperty("npcRepository").orNull?.let { location ->
+        exclusiveContent {
+            forRepository { maven { url = uri(location) } }
+            filter { listOf("npc-core", "npc-importer", "npc-cli").forEach { includeModule("gg.grounds", it) } }
+        }
+    }
+    maven {
+        url = uri("https://maven.pkg.github.com/groundsgg/library-npc")
+        credentials {
+            username = providers.gradleProperty("github.user").orNull ?: System.getenv("GITHUB_ACTOR") ?: ""
+            password = providers.gradleProperty("github.token").orNull ?: System.getenv("GITHUB_TOKEN") ?: ""
+        }
+    }
+}
+providers.gradleProperty("npcImporterVersion").orNull?.let { version ->
+    dependencies.add(npcImporter.name, "gg.grounds:npc-cli:$version")
+}
+val npcImporterClasspath = providers.gradleProperty("npcImporterClasspath").orElse(provider {
+    check(providers.gradleProperty("npcImporterVersion").isPresent) {
+        "Licensed NPC imports require npcImporterVersion or an explicit npcImporterClasspath"
+    }
+    npcImporter.asPath
+})
+
 val npcSourceDirectory = providers.systemProperty("grounds.npc.sources")
     .orElse(providers.gradleProperty("npcSourceDirectory"))
 val npcOutput = layout.buildDirectory.dir("generated/npc-models")
 val npcGeometryMode = providers.gradleProperty("npcGeometryMode").orElse("rigid")
 val npcCompositePolicy = providers.gradleProperty("npcCompositePolicy")
 tasks.register<Exec>("compileNpcModels") {
-    inputs.file(layout.projectDirectory.file("tools/compile_npc_models.py"))
+    inputs.files(layout.projectDirectory.file("tools/compile_npc_models.py"), layout.projectDirectory.file("tools/GroundsNpcImporter.java"))
     inputs.property("npcSourceDirectory", npcSourceDirectory.orElse(""))
     inputs.property("npcGeometryMode", npcGeometryMode)
     inputs.property("npcCompositePolicy", npcCompositePolicy.orElse(""))
     npcCompositePolicy.orNull?.let { inputs.file(file(it)) }
-    npcSourceDirectory.orNull?.let { inputs.dir(file(it)) }
+    npcSourceDirectory.orNull?.let {
+        inputs.dir(file(it))
+        inputs.files(provider { npcImporterClasspath.get().split(java.io.File.pathSeparator).map(::file) })
+    }
     outputs.dir(npcOutput)
     doFirst {
         val arguments = mutableListOf("python3", layout.projectDirectory.file("tools/compile_npc_models.py").asFile.absolutePath, "--output", npcOutput.get().asFile.absolutePath)
         arguments.addAll(listOf("--geometry-mode", npcGeometryMode.get()))
         npcCompositePolicy.orNull?.let { arguments.addAll(listOf("--composite-policy", file(it).absolutePath)) }
-        npcSourceDirectory.orNull?.let { arguments.addAll(listOf("--sources", it)) }
+        npcSourceDirectory.orNull?.let { arguments.addAll(listOf("--sources", it, "--importer-classpath", npcImporterClasspath.get())) }
         commandLine(arguments)
+    }
+}
+
+// Exercise the real importer boundary, including all retained product optimizer regressions.
+tasks.register<Exec>("verifyNpcCompiler") {
+    inputs.dir(layout.projectDirectory.dir("tools"))
+    doFirst {
+        environment("NPC_IMPORTER_CLASSPATH", npcImporterClasspath.get())
+        commandLine("python3", "-m", "unittest", "discover", "-s", "tools")
     }
 }

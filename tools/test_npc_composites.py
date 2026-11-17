@@ -54,7 +54,7 @@ class CompositeCompilerTest(unittest.TestCase):
         data = two_cubes()
         data['textures'].append(copy.deepcopy(data['textures'][0]))
         data['elements'][0]['faces']['south'] = dict(data['elements'][0]['faces']['north'], texture=1)
-        policy = {'schemaVersion': 1, 'compilerSha256': hashlib.sha256(Path(compiler.__file__).read_bytes()).hexdigest(),
+        policy = {'schemaVersion': 1, 'compilerSha256': compiler.compiler_identity(),
                   'models': {'grounds:npc/townfolk/builder': {'sourceSha256': hashlib.sha256(
                       json.dumps(data, separators=(',', ':'), allow_nan=False).encode()).hexdigest(), 'bones': ['child']}}}
         changed = copy.deepcopy(data)
@@ -66,7 +66,7 @@ class CompositeCompilerTest(unittest.TestCase):
     def test_eligibility_policy_keeps_unapproved_bones_rigid_and_binds_source_and_compiler(self):
         data = two_cubes()
         source_hash = hashlib.sha256(json.dumps(data, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
-        policy = {'schemaVersion': 1, 'compilerSha256': hashlib.sha256(Path(compiler.__file__).read_bytes()).hexdigest(),
+        policy = {'schemaVersion': 1, 'compilerSha256': compiler.compiler_identity(),
                   'models': {'grounds:npc/townfolk/builder': {'sourceSha256': source_hash, 'bones': []}}}
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

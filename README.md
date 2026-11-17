@@ -137,12 +137,12 @@ All 143 Minecraft 26.3 client languages show the logo. English, German, French,
 and Spanish, including their available regional variants, also receive Grounds
 button labels:
 
-| Language | Back to game | Disconnect |
-| --- | --- | --- |
-| English | Back to Grounds | Leave Grounds |
-| German | Zurück zu Grounds | Grounds verlassen |
-| French | Retour à Grounds | Quitter Grounds |
-| Spanish | Volver a Grounds | Salir de Grounds |
+| Language | Back to game      | Disconnect        |
+| -------- | ----------------- | ----------------- |
+| English  | Back to Grounds   | Leave Grounds     |
+| German   | Zurück zu Grounds | Grounds verlassen |
+| French   | Retour à Grounds  | Quitter Grounds   |
+| Spanish  | Volver a Grounds  | Salir de Grounds  |
 
 These labels follow the Minecraft client language, independently of `/lang`.
 Other languages retain their vanilla button translations. The buttons keep their
@@ -150,6 +150,7 @@ vanilla actions. Overrides apply while the server pack is loaded and are shared
 by every proxy through the same PackSet. Higher-priority client packs can override
 these entries. The language list is pinned from asset index 34's `pack.mcmeta`;
 building the pack does not read a local Minecraft installation or download assets.
+
 # Queue HUD fonts
 
 The platform contribution includes the private `grounds:queue` font and 25
@@ -163,3 +164,30 @@ Production builds consume these checked-in sources and require no local client.
 QueuePackTest pins approved pixel digests, alpha geometry and provider references.
 The runtime must approve the resulting platform ZIP's SHA-1 through
 `QUEUE_FONT_PACK_SHA1S` before it sends these glyphs (see plugin-match/QUEUE-HUD.md).
+
+### NPC import tooling and explicit server content
+
+The Grounds adapter uses the public `library-npc` importer. It owns collection/archive
+names, sound remapping, qualified rigid/composite optimization and Scene catalogue generation;
+it does not parse Blockbench geometry or animation itself.
+
+Neutral builds need no licensed inputs or importer download. For a licensed build, select
+`-PnpcSourceDirectory=/private/sources -PnpcImporterVersion=1.1.0` and, when qualified,
+`-PnpcGeometryMode=composite -PnpcCompositePolicy=/private/qualified-policy.json`.
+The Library release must exist first. Local review can instead supply an exact
+`-PnpcImporterClasspath=/private/npc-cli-VERSION-all.jar`; an explicit Maven candidate uses
+`-PnpcRepository=file:///... -PnpcImporterVersion=...`. `verifyNpcCompiler` resolves the same
+tooling and exercises the product optimizer against the real public importer.
+
+`compileNpcModels` emits `build/generated/npc-models/server-content.zip` and
+`resourcepack.zip`, plus the product catalogue sources. The shared runtime loader validates
+every optimized model and the complete client contract before either ZIP is written.
+The host receives the server bundle as an explicit startup file; the catalogue JAR contains
+metadata and no model payload. There is no new `resourcepacks-npc-content` Maven module.
+Existing `resourcepacks-npc-runtime` remains available for older consumers and retains its
+neutral-publication guards; new hosts use the shared Library and external content instead.
+
+Composite eligibility is tied to the adapter sources **and every importer JAR's bytes**.
+Changing either requires a newly qualified policy; old policies fail instead of silently
+dropping optimization. Keep paid sources, generated content and qualification evidence private.
+These tasks do not publish, activate a PackSet/CDN or restart a host.
