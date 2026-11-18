@@ -1,4 +1,6 @@
 import base64
+import struct
+import zlib
 import copy
 import json
 import hashlib
@@ -10,10 +12,16 @@ import zipfile
 import compile_npc_models as compiler
 
 
+def png(color=b'\xff\x00\x00\xff'):
+    def chunk(name, data):
+        return struct.pack('>I', len(data)) + name + data + struct.pack('>I', zlib.crc32(name + data))
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 6, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\x00' + color)) + chunk(b'IEND', b'')
+
+
 def fixture():
     face = {'uv': [0, 8, 16, 24], 'texture': 0, 'rotation': 90}
-    return {'resolution': {'width': 32, 'height': 64},
-        'textures': [{'source': 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode()}],
+    return {'meta': {'format_version': '5.0', 'model_format': 'free'}, 'resolution': {'width': 32, 'height': 64},
+        'textures': [{'source': 'data:image/png;base64,' + base64.b64encode(png()).decode()}],
         'elements': [{'uuid': 'cube', 'type': 'cube', 'from': [0, 16, 0], 'to': [4, 24, 2], 'origin': [1, 18, 1], 'rotation': [0, 30, 0], 'faces': {'north': face}}],
         'groups': [{'uuid': 'root', 'name': 'body', 'origin': [0, 16, 0]}, {'uuid': 'child', 'name': 'head', 'origin': [0, 24, 0], 'rotation': [1, 2, 3]}],
         'outliner': [{'uuid': 'root', 'children': [{'uuid': 'child', 'children': ['cube']}]}],
@@ -25,7 +33,55 @@ def native_part(output, part):
     return json.loads((Path(output) / 'pack/assets/grounds/models' / suffix).read_text())
 
 
+def source_archives(root, first=None):
+    root.mkdir()
+    for collection in compiler.COLLECTIONS:
+        with zipfile.ZipFile(root / f'Ginko-fantasy_{collection}_NPCs.zip', 'w') as archive:
+            if collection == 'craftmasters':
+                archive.writestr('pack/ResourcePack/assets/ginko_fantasy_craftmasters/sounds.json', '{}')
+            for i, character in enumerate(('alpha', 'beta', 'gamma', 'delta', 'epsilon')):
+                data = first if collection == 'craftmasters' and i == 0 and first is not None else json.dumps(fixture()).encode()
+                archive.writestr(f'ginko_fantasy_{collection}_{character}.bbmodel', data)
+
+
 class CompilerTest(unittest.TestCase):
+    def test_original_archive_member_bytes_reach_the_shared_utf8_json_parser(self):
+        original = json.dumps(fixture())
+        duplicate = original.replace('"resolution":', '"resolution":{},"resolution":', 1).encode()
+        for i, raw in enumerate((duplicate, original.encode('utf-16'))):
+            with self.subTest(i=i), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source_archives(root / 'sources', raw)
+                with self.assertRaises(ValueError):
+                    compiler.compile_archives(root / 'sources', root / 'out')
+
+    def test_shared_importer_validates_actual_png_payload_instead_of_only_its_signature(self):
+        data = fixture()
+        data['textures'][0]['source'] = 'data:image/png;base64,' + base64.b64encode(b'\x89PNG\r\n\x1a\nbroken').decode()
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, 'PNG|image|Image'):
+                compiler.compile_model(data, 'townfolk', 'builder', Path(tmp))
+
+    def test_explicit_bundle_is_accepted_by_the_runtime_loader_and_detects_model_tampering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model = compiler.compile_model(fixture(), 'townfolk', 'builder', root)
+            compiler.write_json(root / 'catalog-resources/gg/grounds/resourcepacks/npc/townfolk/builder.json', model)
+            compiler.write_json(root / 'catalog-resources/gg/grounds/resourcepacks/npc/index.json', {
+                'schemaVersion': 1, 'models': [{'asset': model['asset'], 'resource': '/gg/grounds/resourcepacks/npc/townfolk/builder.json'}]})
+            compiler.write_json(root / 'pack/assets/grounds/sounds.json', {})
+            compiler.package_content(root)
+            self.assertTrue((root / 'server-content.zip').is_file())
+            compiler.validate_content(root / 'server-content.zip', root / 'resourcepack.zip')
+            with zipfile.ZipFile(root / 'server-content.zip') as archive:
+                entries = {name: archive.read(name) for name in archive.namelist()}
+            resource = next(name for name in entries if name != 'bundle.json')
+            entries[resource] += b' '
+            with zipfile.ZipFile(root / 'server-content.zip', 'w') as archive:
+                for name, data in entries.items(): archive.writestr(name, data)
+            with self.assertRaisesRegex(ValueError, 'HASH|contract|differ'):
+                compiler.validate_content(root / 'server-content.zip', root / 'resourcepack.zip')
+
     def test_legacy_global_pack_cannot_replace_grouped_meshes_or_materials_in_either_order(self):
         data = fixture()
         data['elements'][0]['rotation'] = [0, 0, 0]
@@ -61,8 +117,8 @@ class CompilerTest(unittest.TestCase):
             changed_mesh = copy.deepcopy(original)
             changed_mesh['elements'][0]['to'][0] += 2
             changed_texture = copy.deepcopy(original)
-            png = b'\x89PNG\r\n\x1a\nchanged'
-            changed_texture['textures'][0]['source'] = 'data:image/png;base64,' + base64.b64encode(png).decode()
+            changed_png = png(b'\x00\xff\x00\xff')
+            changed_texture['textures'][0]['source'] = 'data:image/png;base64,' + base64.b64encode(changed_png).decode()
             variants = [compiler.compile_model(data, 'townfolk', 'builder', Path(tmp) / str(i))
                         for i, data in enumerate([original, changed_mesh, changed_texture])]
             self.assertEqual(len({v['parts'][0]['model'] for v in variants}), 3)
@@ -86,7 +142,7 @@ class CompilerTest(unittest.TestCase):
             native = native_part(tmp, result['parts'][0])
             self.assertEqual([e['from'] for e in native['elements']], [[2, 4, 7], [10, 4, 7]])
             self.assertEqual([e['to'] for e in native['elements']], [[6, 12, 9], [14, 12, 9]])
-            self.assertFalse((Path(tmp) / 'pack/assets/grounds/models/npc_parts/townfolk/builder/part_001.json').exists())
+            self.assertEqual(len(list((Path(tmp) / 'pack/assets/grounds/models').rglob('*.json'))), 1)
 
     def test_differently_rotated_cubes_keep_independent_displays(self):
         data = fixture()
@@ -190,7 +246,7 @@ class CompilerTest(unittest.TestCase):
             result = compiler.compile_model(model, 'townfolk', 'builder', Path(tmp) / 'mixed')
             self.assertEqual(result['parts'][0]['scale'], [-1, 1, -1])
             model['groups'][1]['export'] = False
-            self.assertEqual(compiler.compile_model(model, 'townfolk', 'builder', Path(tmp) / 'hidden')['parts'], [])
+            with self.assertRaises(ValueError): compiler.compile_model(model, 'townfolk', 'builder', Path(tmp) / 'hidden')
 
     def test_rejects_unsupported_geometry_and_expression(self):
         with tempfile.TemporaryDirectory() as tmp:
