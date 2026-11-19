@@ -11,10 +11,12 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import struct
 import tempfile
 import zipfile
 
 COLLECTIONS = ('craftmasters', 'guildfolk', 'townfolk')
+SOUND_CLIPS = {'craftmasters': ('idle2', 'wave'), 'guildfolk': ('idle2', 'hello')}
 FACES = {'north', 'south', 'east', 'west', 'up', 'down'}
 
 
@@ -276,16 +278,86 @@ def compile_model(data, collection, character, output, geometry_mode='rigid', co
     return model
 
 
-def remap_sound_event(event, character, clip):
+def remap_sound_event(event, character, clip, collection='craftmasters'):
     if not isinstance(event, dict) or not isinstance(event.get('sounds'), list) or len(event['sounds']) != 1:
         raise ValueError(f'invalid source sound event: {character}.{clip}')
     sound = event['sounds'][0]
-    expected = f'ginko_fantasy_craftmasters:{character}/{clip}'
+    expected = f'ginko_fantasy_{collection}:{character}/{clip}'
     if not isinstance(sound, dict) or sound.get('name') != expected:
         raise ValueError(f'unexpected source sound: {character}.{clip}')
+    pitch = sound.get('pitch', 1)
+    if sound.get('type', 'file') != 'file' or type(pitch) not in (int, float) or not math.isfinite(pitch) or pitch <= 0:
+        raise ValueError(f'unsupported source sound type or pitch: {character}.{clip}')
     result = dict(event)
-    result['sounds'] = [dict(sound, name=f'grounds:npc/craftmasters/{character}/{clip}')]
+    result['sounds'] = [dict(sound, name=f'grounds:npc/{collection}/{character}/{clip}')]
     return result
+
+
+def archive_members(infos, relative):
+    return [i for i in infos if i.filename == relative or i.filename.endswith('/' + relative)]
+
+
+def vorbis_duration_millis(data):
+    """Read bounded single-stream Vorbis timing, not codec samples, at pack build time.
+
+    Ogg pages: RFC3533 section6. Vorbis sample/granule units: Xiph Vorbis I A.2.
+    Chaining/multiplexing and damaged/incomplete pages are deliberately rejected.
+    """
+    offset, sequence, serial, rate, packets, last_granule = 0, 0, None, None, 0, 0
+    pending = bytearray()
+    continued = False
+    ended = False
+    while offset < len(data):
+        if ended or offset + 27 > len(data) or data[offset:offset + 5] != b'OggS\x00':
+            raise ValueError('invalid or incomplete Ogg page')
+        flags = data[offset + 5]
+        granule, page_serial, page_sequence, checksum = struct.unpack_from('<qIII', data, offset + 6)
+        count = data[offset + 26]
+        body = offset + 27 + count
+        if body > len(data): raise ValueError('incomplete Ogg lacing')
+        lacing = data[offset + 27:body]
+        end = body + sum(lacing)
+        if end > len(data): raise ValueError('incomplete Ogg payload')
+        page = bytearray(data[offset:end]); page[22:26] = b'\x00' * 4
+        crc = 0
+        for byte in page:
+            crc ^= byte << 24
+            for _ in range(8): crc = ((crc << 1) ^ (0x04C11DB7 if crc & 0x80000000 else 0)) & 0xffffffff
+        if crc != checksum: raise ValueError('Ogg checksum mismatch')
+        if flags & ~7 or bool(flags & 1) != continued or page_sequence != sequence:
+            raise ValueError('invalid Ogg page sequence or continuation')
+        if sequence == 0:
+            if flags != 2 or lacing != bytes([30]): raise ValueError('invalid Vorbis beginning')
+            serial = page_serial
+        elif flags & 2 or page_serial != serial: raise ValueError('chained or multiplexed Ogg is unsupported')
+        cursor = body
+        for size in lacing:
+            if packets < 3:
+                pending.extend(data[cursor:cursor + size])
+                if len(pending) > 1_048_576: raise ValueError('Vorbis header too large')
+            cursor += size
+            continued = size == 255
+            if not continued:
+                if packets < 3:
+                    expected = bytes([1 + packets * 2]) + b'vorbis'
+                    if not pending.startswith(expected): raise ValueError('invalid Vorbis header order')
+                    if packets == 0:
+                        if len(pending) != 30: raise ValueError('invalid Vorbis identification')
+                        version, channels, rate = struct.unpack_from('<IBI', pending, 7)
+                        small, large = pending[28] & 15, pending[28] >> 4
+                        if version != 0 or not channels or not rate or not 6 <= small <= large <= 13 or pending[29] != 1:
+                            raise ValueError('invalid Vorbis identification')
+                    pending.clear()
+                packets += 1
+        if granule != -1:
+            if granule < last_granule: raise ValueError('invalid Vorbis sample position')
+            last_granule = granule
+        ended = bool(flags & 4)
+        if ended and (granule < 1 or continued or packets < 4): raise ValueError('invalid Vorbis end')
+        offset, sequence = end, sequence + 1
+    if not ended or not rate or last_granule > rate * 300: raise ValueError('missing or excessive Vorbis duration')
+    return (last_granule * 1000 + rate - 1) // rate
+
 
 
 def compile_archives(sources, output, geometry_mode='rigid', composite_policy=None):
@@ -307,10 +379,13 @@ def compile_archives(sources, output, geometry_mode='rigid', composite_policy=No
                     name = i.filename
                     if '\\' in name or PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts or i.file_size > 30_000_000: raise ValueError(f'unsafe archive path or size: {name}')
                 source_sounds = {}
-                if collection == 'craftmasters':
-                    sound_manifests = [i for i in infos if i.filename.endswith('/ResourcePack/assets/ginko_fantasy_craftmasters/sounds.json')]
-                    if len(sound_manifests) != 1: raise ValueError('missing or duplicate source sounds.json')
+                sound_root = f'ResourcePack/assets/ginko_fantasy_{collection}/'
+                sound_manifests = archive_members(infos, sound_root + 'sounds.json') if collection in SOUND_CLIPS else []
+                if len(sound_manifests) > 1 or (collection == 'craftmasters' and not sound_manifests):
+                    raise ValueError('missing or duplicate source sounds.json')
+                if sound_manifests:
                     source_sounds = json.loads(archive.read(sound_manifests[0]))
+                    if not isinstance(source_sounds, dict): raise ValueError('invalid source sounds.json')
                 prefix = f'ginko_fantasy_{collection}_'
                 entries = sorted((i for i in infos if i.filename.endswith('.bbmodel')), key=lambda i: i.filename)
                 for info in entries:
@@ -320,14 +395,26 @@ def compile_archives(sources, output, geometry_mode='rigid', composite_policy=No
                     data = archive.read(info)
                     try: model = compile_model(data, collection, character, temp, geometry_mode, composite_policy)
                     except (ValueError, KeyError, TypeError) as e: raise ValueError(f'{info.filename}: {e}') from e
-                    if collection == 'craftmasters':
-                        for clip in ('idle2', 'wave'):
-                            match = [i for i in infos if i.filename.endswith(f'/ResourcePack/assets/ginko_fantasy_craftmasters/sounds/{character}/{clip}.ogg')]
-                            if len(match) > 1: raise ValueError('duplicate sound')
-                            if match:
-                                key = f'npc/craftmasters/{character}/{clip}'; target = temp / f'pack/assets/grounds/sounds/{key}.ogg'
-                                target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(archive.read(match[0]))
-                                sounds[key] = remap_sound_event(source_sounds.get(f'{character}.{clip}'), character, clip); model['sounds'][clip] = {'key': f'grounds:{key}', 'volume': 0.8, 'pitch': 1.0, 'radius': 12.0}
+                    for clip in SOUND_CLIPS.get(collection, ()):
+                        event_key = f'{character}.{clip}'
+                        event = source_sounds.get(event_key)
+                        match = archive_members(infos, sound_root + f'sounds/{character}/{clip}.ogg')
+                        if len(match) > 1: raise ValueError('duplicate sound')
+                        if event_key in source_sounds and not match: raise ValueError('missing source sound')
+                        if match:
+                            if not sound_manifests or match[0].filename != sound_manifests[0].filename.removesuffix('sounds.json') + f'sounds/{character}/{clip}.ogg':
+                                raise ValueError('sound is outside source sounds.json root')
+                            if clip not in model['animations']: raise ValueError('sound references missing animation')
+                            key = f'npc/{collection}/{character}/{clip}'; target = temp / f'pack/assets/grounds/sounds/{key}.ogg'
+                            mapped = remap_sound_event(event, character, clip, collection)
+                            audio = archive.read(match[0])
+                            raw_duration = vorbis_duration_millis(audio)
+                            event_pitch = min(mapped['sounds'][0].get('pitch', 1), 1)
+                            if raw_duration > 300_000 * event_pitch: raise ValueError('source sound duration exceeds supported range')
+                            duration = math.ceil(raw_duration / event_pitch)
+                            if not 1 <= duration <= 300_000: raise ValueError('source sound duration exceeds supported range')
+                            target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(audio)
+                            sounds[key] = mapped; model['sounds'][clip] = {'key': f'grounds:{key}', 'volume': 0.8, 'pitch': 1.0, 'radius': 12.0, 'durationMillis': duration}
                     models.append(model)
         if len(models) != 15 or len({m['asset'] for m in models}) != 15: raise ValueError('expected 15 unique NPCs')
         if composite_policy is not None and set(composite_policy['models']) != {m['asset'] for m in models}:

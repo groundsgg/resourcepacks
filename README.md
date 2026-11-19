@@ -191,3 +191,9 @@ Composite eligibility is tied to the adapter sources **and every importer JAR's 
 Changing either requires a newly qualified policy; old policies fail instead of silently
 dropping optimization. Keep paid sources, generated content and qualification evidence private.
 These tasks do not publish, activate a PackSet/CDN or restart a host.
+
+The private NPC importer retains Craftmasters and Guildfolk source sound events,
+including their original Ogg bytes, attenuation and stream settings. It derives
+bounded effective Vorbis durations for clip admission and accepts the older
+Guildfolk archive without audio. Malformed or mismatched sound inputs fail the
+transaction without replacing an existing output.
