@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import zipfile
 
-ARTIFACT_SHA256 = "901daad4f1f8280b1e2be90f415af8dc9a520c2f6c509d33c6f6c0c4ef128c12"
+ARTIFACT_SHA256 = "88c933e48ecb73d3b69f1832ffa2035a81d7864f296c74c937eb5a6823438fe4"
 PROFILE = "grounds-26.3"
 
 
@@ -37,7 +37,7 @@ def main(artifact, overlay, output):
     files["manifest.json"] = canonical(manifest)
     files["theme.json"] = canonical({
         "schemaVersion": 1, "profile": PROFILE, "assetPin": manifest["pin"],
-        "upstream": "gg.grounds:dialogue-minestom:1.0.0", "upstreamSha256": ARTIFACT_SHA256,
+        "upstream": "gg.grounds:dialogue-minestom:1.1.2", "upstreamSha256": ARTIFACT_SHA256,
         "text": "F3F0EA", "secondary": "C1B9AA", "accent": "E7B84B",
     })
     base = Path(output) / "grounds-dialogue" / PROFILE

@@ -1,7 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
-gg.grounds:dialogue-minestom:1.0.0=dialogueAssets
+gg.grounds:dialogue-minestom:1.1.2=dialogueAssets
 io.github.java-diff-utils:java-diff-utils:4.12=kotlinInternalAbiValidation
 org.jetbrains.kotlin:abi-tools-api:2.3.20=kotlinInternalAbiValidation
 org.jetbrains.kotlin:abi-tools:2.3.20=kotlinInternalAbiValidation
