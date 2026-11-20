@@ -192,7 +192,7 @@ internal object ProductGraph {
                         packIcon,
                         PackPolicy(VanillaPathPolicy.ALLOW_CLAIMED, PackSetConstants.platformLimits),
                     ),
-                contributions = listOf(platformContribution),
+                contributions = listOf(platformContribution, DialogueContribution.create()),
             ),
         )
 

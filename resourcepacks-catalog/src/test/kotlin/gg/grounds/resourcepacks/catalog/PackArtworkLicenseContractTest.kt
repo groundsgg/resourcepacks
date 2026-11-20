@@ -8,6 +8,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PackArtworkLicenseContractTest {
+    private val DIALOGUE_THEME_IMAGES =
+        setOf("panels-normal.png", "panels-selected.png", "panels-back.png")
+            .map { "resourcepacks-dialogue-runtime/src/main/resources/grounds-dialogue/theme/$it" }
+            .toSet()
+
     private val root: Path =
         generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
             .first { Files.isRegularFile(it.resolve("settings.gradle.kts")) }
@@ -82,7 +87,7 @@ class PackArtworkLicenseContractTest {
                 }
                 .forEach { path -> actual += root.relativize(path).joinToString("/") }
         }
-        assertEquals(APPROVED_PLATFORM_IMAGES + NATIVE_QUEUE_IMAGES, actual)
+        assertEquals(APPROVED_PLATFORM_IMAGES + NATIVE_QUEUE_IMAGES + DIALOGUE_THEME_IMAGES, actual)
         val notice = Files.readString(root.resolve(QUEUE_SOURCE + "NOTICE.txt"))
         assertTrue(notice.contains("not first-party Grounds artwork"))
         assertTrue(Files.isRegularFile(root.resolve(QUEUE_SOURCE + "provenance.json")))

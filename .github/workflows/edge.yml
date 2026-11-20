@@ -64,6 +64,43 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  publish-dialogue-runtime:
+    needs: [wait-for-ci, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Stage exact Edge dialogue runtime
+        run: ./gradlew :resourcepacks-dialogue-runtime:stageExactMavenPublication -PpackSetVersion='${{ needs.build.outputs.version }}' -PprovenanceCommit='${{ needs.build.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ needs.build.outputs.commit }}'
+      - id: dialogue-maven-gate
+        name: Compare immutable Edge dialogue runtime
+        run: |
+          decision=$(node release-tools/src/dialogue-runtime-maven-create-or-compare.mjs --staging-directory resourcepacks-dialogue-runtime/build/release-maven-staging --version '${{ needs.build.outputs.version }}' --username '${{ github.actor }}' --token '${{ github.token }}')
+          case "$decision" in
+            publish|skip) ;;
+            *) echo "Dialogue runtime Maven decision is invalid" >&2; exit 1 ;;
+          esac
+          echo "decision=$decision" >> "$GITHUB_OUTPUT"
+      - name: Publish immutable Edge dialogue runtime
+        if: steps.dialogue-maven-gate.outputs.decision == 'publish'
+        run: ./gradlew :resourcepacks-dialogue-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${{ needs.build.outputs.version }}' -PprovenanceCommit='${{ needs.build.outputs.commit }}' -PpublicationType=build -PpublicationId='${{ needs.build.outputs.commit }}'
+
   wait-for-ci:
     runs-on: ubuntu-24.04
     permissions:

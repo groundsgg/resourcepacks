@@ -239,6 +239,7 @@ class BuildBoundaryTest {
             ":resourcepacks-client",
             ":resourcepacks-contract",
             ":resourcepacks-npc-runtime",
+            ":resourcepacks-dialogue-runtime",
             ":resourcepacks-product",
         )
 }

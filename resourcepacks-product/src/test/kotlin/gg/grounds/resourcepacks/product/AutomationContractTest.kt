@@ -85,7 +85,7 @@ class AutomationContractTest {
         val sharedCheckoutPath = replaceOnce(ci, "path: run2/src", "path: run1/src")
         assertFails { assertCi(parseText(sharedCheckoutPath)) }
         val maskedDecision =
-            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 4).let {
+            replaceFirstOf(release, "decision=$(node", "echo \"decision=$(node", 5).let {
                 replaceOnce(
                     it,
                     "          case \"\$decision\" in\n" +
@@ -152,16 +152,16 @@ class AutomationContractTest {
         val r2BeforeNpcPublication =
             replaceOnce(
                 release,
-                "      - name: Publish the unchanged NPC runtime Maven staging workspace\n" +
-                    "        if: steps.npc-maven-gate.outputs.decision == 'publish'\n" +
-                    "        run: ./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n" +
+                "      - name: Publish the unchanged dialogue runtime Maven staging workspace\n" +
+                    "        if: steps.dialogue-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-dialogue-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n" +
                     "      - name: Create or compare immutable R2 ZIP objects\n" +
                     "        run: $r2Command\n",
                 "      - name: Create or compare immutable R2 ZIP objects\n" +
                     "        run: $r2Command\n" +
-                    "      - name: Publish the unchanged NPC runtime Maven staging workspace\n" +
-                    "        if: steps.npc-maven-gate.outputs.decision == 'publish'\n" +
-                    "        run: ./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n",
+                    "      - name: Publish the unchanged dialogue runtime Maven staging workspace\n" +
+                    "        if: steps.dialogue-maven-gate.outputs.decision == 'publish'\n" +
+                    "        run: ./gradlew :resourcepacks-dialogue-runtime:publishMavenJavaPublicationToGitHubPackagesRepository -PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'\n",
             )
         assertFails { assertRelease(parseText(r2BeforeNpcPublication)) }
         val releaseWithSecretInsteadOfBuiltInToken =
@@ -547,7 +547,14 @@ class AutomationContractTest {
         )
         val jobs = mapping(edge, "jobs")
         assertEquals(
-            setOf("build", "wait-for-ci", "publish", "public-cdn", "edge-channel"),
+            setOf(
+                "build",
+                "wait-for-ci",
+                "publish",
+                "public-cdn",
+                "edge-channel",
+                "publish-dialogue-runtime",
+            ),
             jobs.keys,
         )
         assertEquals(null, mapping(jobs, "build")["needs"])
@@ -571,6 +578,7 @@ class AutomationContractTest {
             assertEquals(
                 when (name) {
                     "build" -> mapOf("contents" to "read", "packages" to "read")
+                    "publish-dialogue-runtime" -> mapOf("contents" to "read", "packages" to "write")
                     "wait-for-ci" -> mapOf("actions" to "read")
                     else -> mapOf("contents" to "read")
                 },
@@ -580,6 +588,39 @@ class AutomationContractTest {
         }
         val steps = jobs.mapValues { steps(mapping(it.value)) }
         steps.forEach { (name, jobSteps) ->
+            if (name == "publish-dialogue-runtime") {
+                assertEquals(listOf("wait-for-ci", "build"), mapping(jobs, name)["needs"])
+                assertEquals(
+                    "${'$'}{{ needs.build.outputs.commit }}",
+                    mapping(actionSteps(jobSteps, "actions/checkout@v7").single(), "with")["ref"],
+                )
+                assertEquals(
+                    "steps.dialogue-maven-gate.outputs.decision == 'publish'",
+                    scalar(stepByName(jobSteps, "Publish immutable Edge dialogue runtime"), "if"),
+                )
+                val identity =
+                    "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}' -PprovenanceCommit='${'$'}{{ needs.build.outputs.commit }}' -PpublicationType=build -PpublicationId='${'$'}{{ needs.build.outputs.commit }}'"
+                assertEquals(
+                    "./gradlew :resourcepacks-dialogue-runtime:stageExactMavenPublication $identity",
+                    scalar(stepByName(jobSteps, "Stage exact Edge dialogue runtime"), "run"),
+                )
+                assertEquals(
+                    "./gradlew :resourcepacks-dialogue-runtime:publishMavenJavaPublicationToGitHubPackagesRepository $identity",
+                    scalar(stepByName(jobSteps, "Publish immutable Edge dialogue runtime"), "run"),
+                )
+                val gate =
+                    scalar(stepByName(jobSteps, "Compare immutable Edge dialogue runtime"), "run")
+                assertTrue(
+                    gate.startsWith(
+                        "decision=$(node release-tools/src/dialogue-runtime-maven-create-or-compare.mjs --staging-directory resourcepacks-dialogue-runtime/build/release-maven-staging --version '${'$'}{{ needs.build.outputs.version }}' --username '${'$'}{{ github.actor }}' --token '${'$'}{{ github.token }}')"
+                    )
+                )
+                assertTrue(gate.contains("publish|skip) ;;"))
+                assertTrue(gate.contains("exit 1"))
+                assertEquals(3, jobSteps.count { it.containsKey("run") })
+                assertNoDestructiveCommands(jobSteps)
+                return@forEach
+            }
             if (name == "wait-for-ci") {
                 assertTrue(actionSteps(jobSteps, "actions/checkout@v7").isEmpty(), name)
                 assertTrue(actionSteps(jobSteps, "actions/setup-node@v5").isEmpty(), name)
@@ -709,7 +750,13 @@ class AutomationContractTest {
                 "with",
             ),
         )
-        listOf("maven", "release-assets", "stable", "github release").forEach { forbidden ->
+        val mavenReferences = Regex("maven", RegexOption.IGNORE_CASE)
+        assertEquals(
+            mavenReferences.findAll(mapping(jobs, "publish-dialogue-runtime").toString()).count(),
+            mavenReferences.findAll(edge.toString()).count(),
+            "Maven references are restricted to the validated immutable dialogue publication job",
+        )
+        listOf("release-assets", "stable", "github release").forEach { forbidden ->
             assertFalse(edge.toString().lowercase().contains(forbidden), forbidden)
         }
     }
@@ -796,7 +843,6 @@ class AutomationContractTest {
         assertEquals(clientPublish + 1, npcStage)
         assertEquals(npcStage + 1, npcGate)
         assertEquals(npcGate + 1, npcPublish)
-        assertEquals(npcPublish + 1, r2)
         assertEquals(
             "./gradlew :resourcepacks-npc-runtime:stageExactMavenPublication " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
@@ -816,6 +862,37 @@ class AutomationContractTest {
             "./gradlew :resourcepacks-npc-runtime:publishMavenJavaPublicationToGitHubPackagesRepository " +
                 "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
             scalar(steps[npcPublish], "run"),
+        )
+        val dialogueStage =
+            steps.indexOf(stepByName(steps, "Stage the exact dialogue runtime Maven publication"))
+        val dialogueGate = steps.indexOfFirst { scalar(it, "id") == "dialogue-maven-gate" }
+        val dialoguePublish =
+            steps.indexOf(
+                stepByName(steps, "Publish the unchanged dialogue runtime Maven staging workspace")
+            )
+        assertEquals(npcPublish + 1, dialogueStage)
+        assertEquals(dialogueStage + 1, dialogueGate)
+        assertEquals(dialogueGate + 1, dialoguePublish)
+        assertEquals(dialoguePublish + 1, r2)
+        assertEquals(
+            "./gradlew :resourcepacks-dialogue-runtime:stageExactMavenPublication " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[dialogueStage], "run"),
+        )
+        assertEquals(
+            clientMavenDecisionScript
+                .replace("client", "dialogue-runtime")
+                .replace("Client", "dialogue runtime"),
+            scalar(steps[dialogueGate], "run"),
+        )
+        assertEquals(
+            "steps.dialogue-maven-gate.outputs.decision == 'publish'",
+            scalar(steps[dialoguePublish], "if"),
+        )
+        assertEquals(
+            "./gradlew :resourcepacks-dialogue-runtime:publishMavenJavaPublicationToGitHubPackagesRepository " +
+                "-PpackSetVersion='${'$'}{{ needs.build.outputs.version }}'",
+            scalar(steps[dialoguePublish], "run"),
         )
         assertEquals(
             "./gradlew :resourcepacks-catalog:stageExactMavenPublication " +
