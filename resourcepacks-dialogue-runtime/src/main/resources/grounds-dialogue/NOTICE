@@ -1,0 +1,40 @@
+Grounds Dialogue Library
+Copyright Grounds contributors.
+Licensed under the MIT License. See LICENSE.
+
+Default theme font: DejaVu Sans, Bitstream Vera license and public-domain DejaVu changes.
+See default-theme/FONT-LICENSE.txt in dialogue-presentation. The font is not relicensed under MIT.
+
+The optional Minestom adapter includes an unchanged DejaVu Sans font source and
+original generated glyph/skin assets. Font license and provenance are included
+in each default-minecraft profile under assets/dialogue/font-source/.
+
+The dialogue-minestom native glyph atlases and UI geometry are generated original
+sample assets using the same licensed DejaVu Sans source. Each frozen profile
+ships its source font and license under assets/dialogue/font-source and a verified
+manifest. The optional post-effect shader is original project code. Minecraft
+client metadata/bytecode was inspected locally for compatibility; no Minecraft
+client code or texture files are redistributed.
+
+The independent NPC dialogue example reuses the original neutral MIT example
+model/clip/JSON from groundsgg/library-npc, by the same project owner. Its JSON
+references vanilla texture identifiers without redistributing vanilla textures.
+
+Native dialogue panel tiles reuse the original blue/gold pixel-frame painter
+from the Grounds dialogue-java-probe preview (HudPackCompiler.pixelPanel).
+They are original Grounds assets, not copied from Rivet or LuxDialogues.
+The native encoder places precomposed, adjacent texture tiles instead of
+overpainting coplanar border/fill glyphs. The maintenance generator retains
+the preview palette and contour; the server never rasterizes these assets.
+
+The compact HUD additionally reuses the original rounded modal and frozen
+Monospaced glyph raster from the Grounds dialogue-java-probe preview. Source
+pixels are retained under tools/prototype-hud; the generator pads bitmap cells
+and uses native scaling without redrawing the source font. The font raster keeps
+the bundled DejaVu/Bitstream license. No third-party server artwork is included.
+
+Grounds panel palette overlays adapt the frozen dialogue-minestom 1.0.0 panel
+atlases. Original stepped panel geometry is preserved. Only colors are changed:
+normal border C1B9AA, selected border E7B84B, warm dark background.
+The upstream artifact and individual imported assets are SHA-256 verified by
+tools/import_dialogue_assets.py. DejaVu license remains in the complete bundle.

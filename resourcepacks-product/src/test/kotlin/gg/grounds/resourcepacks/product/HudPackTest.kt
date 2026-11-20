@@ -74,7 +74,7 @@ class HudPackTest {
             ProductGraph.packs
                 .last()
                 .contributions
-                .single()
+                .single { it.id.toString() != "grounds:dialogue" }
                 .vanillaClaims
                 .map { it.path.toString() }
                 .filter { it.contains("/boss_bar/") }

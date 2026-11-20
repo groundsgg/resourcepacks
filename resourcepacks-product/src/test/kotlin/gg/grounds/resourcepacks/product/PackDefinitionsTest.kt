@@ -40,7 +40,7 @@ class PackDefinitionsTest {
             listOf(ContentContribution.id.toString(), "grounds:npc-models"),
             packs.first().contributions.map { it.id.toString() },
         )
-        assertEquals(1, packs.last().contributions.size)
+        assertEquals(2, packs.last().contributions.size)
     }
 
     @Test
@@ -65,7 +65,10 @@ class PackDefinitionsTest {
 
     @Test
     fun `platform vanilla paths have same-owner exact claims`() {
-        val contribution = ProductGraph.packs.last().contributions.single()
+        val contribution =
+            ProductGraph.packs.last().contributions.single {
+                it.id.toString() != "grounds:dialogue"
+            }
         val vanillaEntries =
             contribution.entries
                 .map { it.path.toString() }
