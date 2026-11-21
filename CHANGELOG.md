@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/groundsgg/resourcepacks/compare/v1.6.0...v1.7.0) (2026-11-21)
+
+
+### Features
+
+* **dialogue:** import verified NPC effect fade assets ([d017a95](https://github.com/groundsgg/resourcepacks/commit/d017a957a7b768b779f5f18d4c244422c468e3b5))
+* **packs:** add Grounds NPC dialogue theme ([#72](https://github.com/groundsgg/resourcepacks/issues/72)) ([2501966](https://github.com/groundsgg/resourcepacks/commit/25019661bfeea8d22e87a8d8def932e86412bf06))
+
+
+### Bug Fixes
+
+* **dialogue:** import corrected bitmap glyph assets ([#73](https://github.com/groundsgg/resourcepacks/issues/73)) ([5c72313](https://github.com/groundsgg/resourcepacks/commit/5c72313357ce25d73e9624a2561787f77894414b))
+* retain Guildfolk clip sounds and effective audio duration ([dd294ca](https://github.com/groundsgg/resourcepacks/commit/dd294ca011ef3116ae6a4a5ac9a87c9df95cf4ad))
+
 ## [1.6.0](https://github.com/groundsgg/resourcepacks/compare/v1.5.0...v1.6.0) (2026-11-08)
 
 
