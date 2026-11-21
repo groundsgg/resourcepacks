@@ -12,7 +12,7 @@ val dialogueAssets by
         isTransitive = false
     }
 
-dependencies { dialogueAssets("gg.grounds:dialogue-minestom:1.1.2") }
+dependencies { dialogueAssets("gg.grounds:dialogue-minestom:1.2.0") }
 
 val generatedResources = layout.buildDirectory.dir("generated/dialogue-resources")
 val importDialogueAssets by
