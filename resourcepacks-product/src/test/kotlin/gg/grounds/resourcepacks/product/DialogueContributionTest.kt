@@ -27,6 +27,33 @@ class DialogueContributionTest {
     }
 
     @Test
+    fun `imported bundle contains all four vignette fade strengths`() {
+        val base = "/grounds-dialogue/grounds-26.3/"
+        fun read(name: String) =
+            checkNotNull(javaClass.getResourceAsStream(base + name)) {
+                    "Missing imported dialogue asset: $name"
+                }
+                .use { it.readBytes() }
+        val mapper = JsonMapper.builder().build()
+        val manifest = mapper.readTree(read("manifest.json"))
+        val strengths = listOf("0.03", "0.06", "0.09", "0.12")
+        strengths.forEachIndexed { index, strength ->
+            val suffix = index + 1
+            val effectPath = "assets/dialogue/post_effect/vignette_fade_${suffix}.json"
+            val shaderPath = "assets/dialogue/shaders/post/vignette_fade_${suffix}.fsh"
+            assertTrue(manifest.get("files").has(effectPath), effectPath)
+            assertTrue(manifest.get("files").has(shaderPath), shaderPath)
+            val effect = mapper.readTree(read(effectPath))
+            assertEquals(
+                "dialogue:post/vignette_fade_${suffix}",
+                effect.get("passes").get(0).get("fragment_shader").asString(),
+            )
+            val shader = String(read(shaderPath), Charsets.UTF_8)
+            assertTrue(shader.contains("scene.rgb * (1.0 - ${strength} * edge)"), shaderPath)
+        }
+    }
+
+    @Test
     fun `every imported native dialogue glyph advance matches its atlas ink`() {
         val base = "/grounds-dialogue/grounds-26.3/"
         fun read(name: String) =
