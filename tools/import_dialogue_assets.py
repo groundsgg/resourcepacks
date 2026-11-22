@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import zipfile
 
-ARTIFACT_SHA256 = "caadc23b6a96c2bfbd7bd0718b5618b7f13fe0003a61bc31af2396aa68b5bfdd"
+ARTIFACT_SHA256 = "4e6be2e0ca53fc21129a3e9d7ca118362756c7c18b2deb085b36c5b2a89e1a1b"
 PROFILE = "grounds-26.3"
 VIGNETTE_STRENGTH = 0.20
 VIGNETTE_CONFIGS = {
@@ -68,7 +68,7 @@ def main(artifact, overlay, output):
     files["manifest.json"] = canonical(manifest)
     files["theme.json"] = canonical({
         "schemaVersion": 1, "profile": PROFILE, "assetPin": manifest["pin"],
-        "upstream": "gg.grounds:dialogue-minestom:1.3.0", "upstreamSha256": ARTIFACT_SHA256,
+        "upstream": "gg.grounds:dialogue-minestom:1.4.0", "upstreamSha256": ARTIFACT_SHA256,
         "vignetteStrength": VIGNETTE_STRENGTH,
         "text": "F3F0EA", "secondary": "C1B9AA", "accent": "E7B84B",
     })
