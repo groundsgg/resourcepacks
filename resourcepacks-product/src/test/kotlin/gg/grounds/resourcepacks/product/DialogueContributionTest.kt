@@ -1,6 +1,7 @@
 package gg.grounds.resourcepacks.product
 
 import java.io.ByteArrayInputStream
+import java.util.Properties
 import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -9,6 +10,52 @@ import kotlin.test.assertTrue
 import tools.jackson.databind.json.JsonMapper
 
 class DialogueContributionTest {
+    @Test
+    fun `imported control glyphs have native and hud providers with matching metrics`() {
+        val base = "/grounds-dialogue/grounds-26.3/"
+        fun read(name: String) =
+            checkNotNull(javaClass.getResourceAsStream(base + name)) {
+                    "Missing imported dialogue asset: $name"
+                }
+                .use { it.readBytes() }
+
+        val mapper = JsonMapper.builder().build()
+        val manifest = mapper.readTree(read("manifest.json"))
+        val imagePath = "assets/dialogue/textures/font/controls.png"
+        val metricsPath = "assets/dialogue/control_glyphs.properties"
+        assertTrue(manifest.get("files").has(imagePath), imagePath)
+        assertTrue(manifest.get("files").has(metricsPath), metricsPath)
+
+        val image = assertNotNull(ImageIO.read(ByteArrayInputStream(read(imagePath))))
+        assertEquals(64, image.width)
+        assertEquals(256, image.height)
+
+        val expectedCharacters = "\uE790\uE791\uE792\uE793"
+        val fonts = listOf("assets/dialogue/font/a_0.json", "assets/dialogue/font/hud_a_0.json")
+        fonts.forEach { path ->
+            val font = mapper.readTree(read(path))
+            val controlProvider =
+                font.get("providers").firstOrNull { provider ->
+                    provider.get("file")?.asString() == "dialogue:font/controls.png"
+                }
+            val provider = assertNotNull(controlProvider, "$path control glyph provider")
+            assertEquals(
+                expectedCharacters,
+                provider.get("chars").get(0).asString(),
+                "$path control glyph codepoints",
+            )
+        }
+
+        val metrics = Properties().apply { load(ByteArrayInputStream(read(metricsPath))) }
+        assertEquals("1", metrics.getProperty("schemaVersion"))
+        for (codepoint in 0xE790..0xE793) {
+            assertEquals("13", metrics.getProperty("native.advance.$codepoint"))
+            assertEquals("1.0,11.0", metrics.getProperty("native.ink.$codepoint"))
+            assertEquals("10", metrics.getProperty("hud.advance.$codepoint"))
+            assertEquals("0.75,8.25", metrics.getProperty("hud.ink.$codepoint"))
+        }
+    }
+
     @Test
     fun `dialogue bundle declares verified assets and Grounds palette`() {
         val base = "/grounds-dialogue/grounds-26.3/"
