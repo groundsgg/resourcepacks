@@ -54,6 +54,46 @@ class DialogueContributionTest {
     }
 
     @Test
+    fun `imported bundle contains native vignette clocks and paired effects`() {
+        val base = "/grounds-dialogue/grounds-26.3/"
+        fun read(name: String) =
+            checkNotNull(javaClass.getResourceAsStream(base + name)) { name }.use { it.readBytes() }
+        val mapper = JsonMapper.builder().build()
+        val manifest = mapper.readTree(read("manifest.json"))
+        for (bank in listOf("a", "b")) {
+            for (mode in listOf("enter", "exit")) {
+                val path = "assets/dialogue/post_effect/vignette_250_${mode}_${bank}.json"
+                assertTrue(manifest.get("files").has(path), path)
+                val effect = mapper.readTree(read(path))
+                val clock = effect.get("targets").get("clock")
+                assertEquals(1, clock.get("width").asInt())
+                assertEquals(1, clock.get("height").asInt())
+                assertTrue(clock.get("persistent").asBoolean())
+                assertEquals(0, clock.get("clear_color").asInt())
+                assertEquals(4, effect.get("passes").size())
+                val uniforms = effect.get("passes").get(1).get("uniforms").get("FadeConfig")
+                val values =
+                    (0 until uniforms.size()).associate { index ->
+                        val value = uniforms.get(index)
+                        value.get("name").asString() to value.get("value").asDouble()
+                    }
+                assertEquals(5.0, values["DurationTicks"])
+                assertEquals(0.0, values["From"])
+                assertEquals(0.15, values["To"])
+                assertEquals(if (mode == "exit") 1.0 else 0.0, values["Inverse"])
+            }
+        }
+        for (name in listOf("vignette_state", "vignette_animated", "vignette_copy")) {
+            assertTrue(manifest.get("files").has("assets/dialogue/shaders/post/$name.fsh"))
+        }
+        assertTrue(manifest.get("files").has("assets/dialogue/shaders/include/vignette_clock.glsl"))
+        assertTrue(
+            String(read("assets/dialogue/shaders/post/vignette_state.fsh"))
+                .contains("#include <minecraft:globals.glsl>")
+        )
+    }
+
+    @Test
     fun `every imported native dialogue glyph advance matches its atlas ink`() {
         val base = "/grounds-dialogue/grounds-26.3/"
         fun read(name: String) =
