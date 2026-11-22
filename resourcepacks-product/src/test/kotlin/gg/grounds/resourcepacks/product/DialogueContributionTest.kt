@@ -22,6 +22,7 @@ class DialogueContributionTest {
         assertEquals("F3F0EA", theme.get("text").asString())
         assertEquals("C1B9AA", theme.get("secondary").asString())
         assertEquals("E7B84B", theme.get("accent").asString())
+        assertEquals(0.20, theme.get("vignetteStrength").asDouble())
         assertTrue(manifest.get("files").has("assets/dialogue/font-source/font-license.txt"))
         DialogueContribution.create()
     }
@@ -71,16 +72,20 @@ class DialogueContributionTest {
                 assertTrue(clock.get("persistent").asBoolean())
                 assertEquals(0, clock.get("clear_color").asInt())
                 assertEquals(4, effect.get("passes").size())
-                val uniforms = effect.get("passes").get(1).get("uniforms").get("FadeConfig")
-                val values =
-                    (0 until uniforms.size()).associate { index ->
-                        val value = uniforms.get(index)
-                        value.get("name").asString() to value.get("value").asDouble()
-                    }
-                assertEquals(5.0, values["DurationTicks"])
-                assertEquals(0.0, values["From"])
-                assertEquals(0.15, values["To"])
-                assertEquals(if (mode == "exit") 1.0 else 0.0, values["Inverse"])
+                for (passIndex in 0..1) {
+                    val uniforms =
+                        effect.get("passes").get(passIndex).get("uniforms").get("FadeConfig")
+                    val values =
+                        (0 until uniforms.size()).associate { index ->
+                            val value = uniforms.get(index)
+                            value.get("name").asString() to value.get("value").asDouble()
+                        }
+                    assertEquals(5.0, values["DurationTicks"])
+                    assertEquals(0.0, values["From"])
+                    assertEquals(0.20, values["To"])
+                    assertEquals(if (mode == "exit") 1.0 else 0.0, values["Inverse"])
+                    assertEquals(setOf("DurationTicks", "From", "To", "Inverse"), values.keys)
+                }
             }
         }
         for (name in listOf("vignette_state", "vignette_animated", "vignette_copy")) {
