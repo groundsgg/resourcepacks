@@ -10,6 +10,11 @@ import tools.jackson.databind.json.JsonMapper
 /** Frozen library assets and the Grounds palette form one independently pinned contribution. */
 internal object DialogueContribution {
     private const val BASE = "/grounds-dialogue/grounds-26.3/"
+    private val voicePaths =
+        setOf("assets/grounds/sounds.json") +
+            listOf("bwa", "li", "bup", "wee", "mwa").map {
+                "assets/grounds/sounds/dialogue/guide/$it.ogg"
+            }
     private val mapper = JsonMapper.builder().build()
 
     private fun resource(name: String): ByteArray =
@@ -28,7 +33,10 @@ internal object DialogueContribution {
                 .properties()
                 .sortedBy { it.key }
                 .map { (path, hash) ->
-                    check(path.startsWith("assets/dialogue/") && !path.contains(".."))
+                    check(
+                        (path.startsWith("assets/dialogue/") || path in voicePaths) &&
+                            !path.contains("..")
+                    )
                     val bytes = resource(path)
                     val digest =
                         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
@@ -47,6 +55,15 @@ internal object DialogueContribution {
                     PackEntry.bytes(
                         "assets/grounds/licenses/dialogue.txt",
                         checkNotNull(javaClass.getResourceAsStream("/grounds-dialogue/LICENSE"))
+                            .use { it.readBytes() },
+                    ),
+                    PackEntry.bytes(
+                        "assets/grounds/licenses/guide-voice-provenance.txt",
+                        checkNotNull(
+                                javaClass.getResourceAsStream(
+                                    "/grounds-dialogue/GUIDE-VOICE-PROVENANCE.txt"
+                                )
+                            )
                             .use { it.readBytes() },
                     ),
                     PackEntry.bytes(

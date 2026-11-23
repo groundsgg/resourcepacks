@@ -56,6 +56,23 @@ class DialogueVoiceImportTest(unittest.TestCase):
             for name in self.names:
                 self.assertEqual(files[f'assets/grounds/sounds/dialogue/guide/{name}.ogg'], fixture)
 
+    def test_shipped_bank_has_five_distinct_valid_samples_and_resolvable_event(self):
+        source = Path(__file__).resolve().parents[1] / (
+            'resourcepacks-dialogue-runtime/src/main/resources/grounds-dialogue/voice'
+        )
+        files = {}
+        importer.add_guide_voice_assets(files, source)
+        event = json.loads(files['assets/grounds/sounds.json'])[importer.GUIDE_VOICE_EVENT]
+        self.assertEqual(len(event['sounds']), 5)
+        payloads = []
+        for sound in event['sounds']:
+            namespace, path = sound['name'].split(':', 1)
+            payload = files[f'assets/{namespace}/sounds/{path}.ogg']
+            self.assertGreater(len(payload), 1000)
+            self.assertFalse(sound['stream'])
+            payloads.append(hashlib.sha256(payload).hexdigest())
+        self.assertEqual(len(set(payloads)), 5)
+
     def test_empty_source_is_a_noop_until_approved_voice_is_available(self):
         with tempfile.TemporaryDirectory() as temporary:
             files = {'assets/dialogue/example.json': b'unchanged'}

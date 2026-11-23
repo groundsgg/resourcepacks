@@ -11,6 +11,28 @@ import tools.jackson.databind.json.JsonMapper
 
 class DialogueContributionTest {
     @Test
+    fun `Guide speech event resolves every sample in the assembled contribution`() {
+        val base = "/grounds-dialogue/grounds-26.3/"
+        val mapper = JsonMapper.builder().build()
+        val manifest =
+            mapper.readTree(checkNotNull(javaClass.getResourceAsStream(base + "manifest.json")))
+        assertEquals(604, manifest.get("files").size())
+        val sounds =
+            mapper.readTree(
+                checkNotNull(javaClass.getResourceAsStream(base + "assets/grounds/sounds.json"))
+            )
+        val event = sounds.get("dialogue/guide/speech")
+        assertEquals(5, event.get("sounds").size())
+        event.get("sounds").forEach { sample ->
+            val (namespace, path) = sample.get("name").asString().split(":", limit = 2)
+            assertEquals("grounds", namespace)
+            assertTrue(manifest.get("files").has("assets/$namespace/sounds/$path.ogg"))
+            assertEquals(false, sample.get("stream").asBoolean())
+        }
+        DialogueContribution.create()
+    }
+
+    @Test
     fun `imported control glyphs have native and hud providers with matching metrics`() {
         val base = "/grounds-dialogue/grounds-26.3/"
         fun read(name: String) =

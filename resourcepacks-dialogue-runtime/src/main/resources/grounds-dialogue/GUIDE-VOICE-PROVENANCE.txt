@@ -1,0 +1,30 @@
+Guide speech provenance
+
+Original AI-generated audio: ElevenLabs Sound Effects v3 via fal.ai
+Generation date: 2026-11-23
+Endpoint: elevenlabs/sound-effects/v3
+Request: 01a20a5e-d122-7273-b050-dd30c6264a8f
+Source: sound_effect.mp3 (97845 bytes, stereo 44100 Hz, 4 seconds)
+Source SHA-256: 9a83c126a17062fb36b800097a00b0da2d4bff1d562cc65a9555a4af1f020625
+
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Five to eight distinct short vocal syllables with playful irregular rising/falling inflection, each around 0.2 seconds with small silent gaps. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+
+Settings: duration_seconds=4, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+The user selected this first generated performance. Samples use only this
+recording, mixed to mono without pitch shifts. Complete vocal bursts were
+selected, with six millisecond edge fades. Two longer bursts use Rubber Band
+pitch-preserving time compression. Encoding: libsndfile Ogg Vorbis, 44100 Hz.
+The loudest burst is attenuated to retain a quiet bank; runtime volume is 0.4.
+
+Sample: source milliseconds -> output milliseconds; linear gain
+bwa: 275-495 -> 220; 1.0
+li: 880-1240 -> 235.011; 1.0
+bup: 2410-2590 -> 180; 0.7174522967040646
+wee: 2865-3050 -> 185.011; 1.0
+mwa: 3270-3760 -> 240; 1.0
+
+No copied franchise audio or named character voice is used. These samples
+are project audio assets; the bundled font license does not apply to them.
