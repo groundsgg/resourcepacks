@@ -28,3 +28,40 @@ mwa: 3270-3760 -> 240; 1.0
 
 No copied franchise audio or named character voice is used. These samples
 are project audio assets; the bundled font license does not apply to them.
+
+Additional variation and wordless greeting/farewell contours
+Generated 2026-11-23, ElevenLabs Sound Effects v3 via fal.ai.
+The original five selected samples above remain byte-identical. v06 uses the
+unused sixth original vocal burst. v07-v09 use different greeting bursts;
+v10 uses a short farewell burst. Greetings/farewells retain whole contours.
+No duplicate pitch-shifted variants are used. All samples are mono 44100 Hz
+Vorbis with six millisecond edge fades and attenuation matching the quiet bank.
+Longer source bursts use pitch-preserving Rubber Band compression as indicated
+by the source/output durations below. Runtime selects individual event aliases.
+
+Greeting source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz, 2 seconds)
+Request: 01a20a6b-2073-7fe3-828b-3817734aa519
+Source SHA-256: cc45e3e43608dcb36aeb033f0534bb29eeaaed73c359e78398e9c9188da8e001
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two soft inviting upward-inflected murmurs, like a wordless greeting, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+Settings: duration_seconds=2, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+Farewell source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz, 2 seconds)
+Request: 01a20a6b-20cd-7052-a3e6-57f4e9847e12
+Source SHA-256: 88148cffc9b78a7e1c6c9c4f5ee4201329bc234afc5e7826f34144fee9affa48
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two gentle descending closing murmurs, like a wordless farewell, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+Settings: duration_seconds=2, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+Sample: source milliseconds -> output milliseconds; linear gain
+v06: first 1680-2120 -> 235.011; 1
+v07: greeting 140-505 -> 230.000; 0.294942271907009
+v08: greeting 515-850 -> 224.989; 0.727410101718906
+v09: greeting 860-1145 -> 220.000; 0.926327196965217
+v10: farewell 265-475 -> 210.023; 0.306631041288745
+hello01: greeting 140-505 -> 364.989; 0.261352364629912
+hello02: greeting 1180-1800 -> 500.000; 0.741308645229421
+bye01: farewell 265-710 -> 445.011; 0.306631041288745
+bye02: farewell 740-1510 -> 530.000; 0.250085748904303

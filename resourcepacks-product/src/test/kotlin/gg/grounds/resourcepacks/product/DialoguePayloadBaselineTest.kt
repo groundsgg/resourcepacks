@@ -19,9 +19,9 @@ class DialoguePayloadBaselineTest {
         val files = manifest.get("files")
         val futureVoicePaths =
             setOf("assets/grounds/sounds.json") +
-                listOf("bwa", "li", "bup", "wee", "mwa").map {
-                    "assets/grounds/sounds/dialogue/guide/$it.ogg"
-                }
+                (listOf("bwa", "li", "bup", "wee", "mwa", "hello01", "hello02", "bye01", "bye02") +
+                        (6..10).map { "v%02d".format(it) })
+                    .map { "assets/grounds/sounds/dialogue/guide/$it.ogg" }
         val existingPayloads = files.properties().filterNot { it.key in futureVoicePaths }
         assertEquals(598, existingPayloads.size)
 

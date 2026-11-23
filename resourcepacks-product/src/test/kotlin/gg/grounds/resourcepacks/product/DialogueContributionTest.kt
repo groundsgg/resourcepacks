@@ -16,18 +16,35 @@ class DialogueContributionTest {
         val mapper = JsonMapper.builder().build()
         val manifest =
             mapper.readTree(checkNotNull(javaClass.getResourceAsStream(base + "manifest.json")))
-        assertEquals(604, manifest.get("files").size())
+        assertEquals(613, manifest.get("files").size())
         val sounds =
             mapper.readTree(
                 checkNotNull(javaClass.getResourceAsStream(base + "assets/grounds/sounds.json"))
             )
         val event = sounds.get("dialogue/guide/speech")
-        assertEquals(5, event.get("sounds").size())
+        assertEquals(10, event.get("sounds").size())
         event.get("sounds").forEach { sample ->
             val (namespace, path) = sample.get("name").asString().split(":", limit = 2)
             assertEquals("grounds", namespace)
             assertTrue(manifest.get("files").has("assets/$namespace/sounds/$path.ogg"))
             assertEquals(false, sample.get("stream").asBoolean())
+        }
+        for ((category, names) in
+            mapOf(
+                "speech" to
+                    (listOf("bwa", "li", "bup", "wee", "mwa") + (6..10).map { "v%02d".format(it) }),
+                "greeting" to listOf("hello01", "hello02"),
+                "farewell" to listOf("bye01", "bye02"),
+            )) {
+            assertEquals(names.size, sounds.get("dialogue/guide/$category").get("sounds").size())
+            for (name in names) {
+                val alias = sounds.get("dialogue/guide/$category/$name").get("sounds")
+                assertEquals(1, alias.size())
+                assertEquals("grounds:dialogue/guide/$name", alias.get(0).get("name").asString())
+                assertTrue(
+                    manifest.get("files").has("assets/grounds/sounds/dialogue/guide/$name.ogg")
+                )
+            }
         }
         DialogueContribution.create()
     }

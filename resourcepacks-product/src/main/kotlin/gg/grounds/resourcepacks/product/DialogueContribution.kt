@@ -12,9 +12,9 @@ internal object DialogueContribution {
     private const val BASE = "/grounds-dialogue/grounds-26.3/"
     private val voicePaths =
         setOf("assets/grounds/sounds.json") +
-            listOf("bwa", "li", "bup", "wee", "mwa").map {
-                "assets/grounds/sounds/dialogue/guide/$it.ogg"
-            }
+            (listOf("bwa", "li", "bup", "wee", "mwa", "hello01", "hello02", "bye01", "bye02") +
+                    (6..10).map { "v%02d".format(it) })
+                .map { "assets/grounds/sounds/dialogue/guide/$it.ogg" }
     private val mapper = JsonMapper.builder().build()
 
     private fun resource(name: String): ByteArray =

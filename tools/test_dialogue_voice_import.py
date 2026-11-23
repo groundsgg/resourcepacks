@@ -35,14 +35,17 @@ def vorbis_fixture(samples=9600, rate=48000, channels=1):
 
 
 class DialogueVoiceImportTest(unittest.TestCase):
-    names = ('bwa', 'li', 'bup', 'wee', 'mwa')
+    names = importer.GUIDE_VOICE_NAMES
 
-    def test_import_maps_five_short_mono_syllables_without_changing_existing_payloads(self):
+    def fixture_for(self, name, **kwargs):
+        kwargs.setdefault('samples', 9600 if name in importer.GUIDE_TALK_NAMES else 19200)
+        return vorbis_fixture(**kwargs)
+
+    def test_import_maps_all_categorized_mono_vocalizations_without_changing_existing_payloads(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
-            fixture = vorbis_fixture()
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(fixture)
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name))
             files = {'assets/dialogue/textures/font/letters.png': b'old-visual-payload'}
 
             importer.add_guide_voice_assets(files, source)
@@ -50,28 +53,67 @@ class DialogueVoiceImportTest(unittest.TestCase):
             event_path = 'assets/grounds/sounds.json'
             event = json.loads(files[event_path])['dialogue/guide/speech']
             self.assertEqual(event['sounds'], [
-                {'name': f'grounds:dialogue/guide/{name}', 'stream': False} for name in self.names
+                {'name': f'grounds:dialogue/guide/{name}', 'stream': False} for name in importer.GUIDE_TALK_NAMES
             ])
             self.assertEqual(files['assets/dialogue/textures/font/letters.png'], b'old-visual-payload')
             for name in self.names:
-                self.assertEqual(files[f'assets/grounds/sounds/dialogue/guide/{name}.ogg'], fixture)
+                self.assertEqual(files[f'assets/grounds/sounds/dialogue/guide/{name}.ogg'], self.fixture_for(name))
 
-    def test_shipped_bank_has_five_distinct_valid_samples_and_resolvable_event(self):
+    def test_shipped_bank_has_distinct_valid_samples_and_resolvable_event(self):
         source = Path(__file__).resolve().parents[1] / (
             'resourcepacks-dialogue-runtime/src/main/resources/grounds-dialogue/voice'
         )
         files = {}
         importer.add_guide_voice_assets(files, source)
         event = json.loads(files['assets/grounds/sounds.json'])[importer.GUIDE_VOICE_EVENT]
-        self.assertEqual(len(event['sounds']), 5)
+        self.assertEqual(len(event['sounds']), 10)
         payloads = []
-        for sound in event['sounds']:
+        all_sounds = [sound for category in importer.GUIDE_VOICE_CATEGORIES
+                      for sound in json.loads(files['assets/grounds/sounds.json'])[f'dialogue/guide/{category}']['sounds']]
+        for sound in all_sounds:
             namespace, path = sound['name'].split(':', 1)
             payload = files[f'assets/{namespace}/sounds/{path}.ogg']
             self.assertGreater(len(payload), 1000)
             self.assertFalse(sound['stream'])
             payloads.append(hashlib.sha256(payload).hexdigest())
-        self.assertEqual(len(set(payloads)), 5)
+        self.assertEqual(len(set(payloads)), 14)
+
+    def test_original_selected_five_clips_remain_byte_identical(self):
+        source = Path(__file__).resolve().parents[1] / (
+            'resourcepacks-dialogue-runtime/src/main/resources/grounds-dialogue/voice'
+        )
+        expected = {
+            'bwa': '9f749315977bfd16e22cffbbd7b0935630b47be6f81f1e99eed25619ea3a4112',
+            'li': '6c3eee129da12ab716e003fae1271e32d78b98394aa04167b76658e1984a885d',
+            'bup': 'edc1b00da21218255fb98658f4d7d9cf3d440ef33d28176d3cab14a5ff326ab4',
+            'wee': '2f794fe3e47a0a23de4356daa8815b4e58d6f72dbe8a78e123c4eb70d15f7498',
+            'mwa': '54e4554848cd4b09780fe9eaf772687f2d270e7e352d8b9248de5fe7d9622d32',
+        }
+        for name, digest in expected.items():
+            self.assertEqual(hashlib.sha256((source / f'{name}.ogg').read_bytes()).hexdigest(), digest, name)
+
+    def test_category_aliases_use_explicit_namespace_and_mood_duration_bounds(self):
+        for samples, valid in ((12000, True), (26400, True), (11952, False), (26448, False)):
+            with self.subTest(samples=samples), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary)
+                for name in self.names:
+                    fixture = self.fixture_for(name, **({'samples': samples} if name not in importer.GUIDE_TALK_NAMES else {}))
+                    (source / f'{name}.ogg').write_bytes(fixture)
+                files = {}
+                if not valid:
+                    with self.assertRaises(ValueError):
+                        importer.add_guide_voice_assets(files, source)
+                    self.assertEqual(files, {})
+                    continue
+                importer.add_guide_voice_assets(files, source)
+                events = json.loads(files['assets/grounds/sounds.json'])
+                self.assertEqual(len(events), 17)
+                for category, names in importer.GUIDE_VOICE_CATEGORIES.items():
+                    self.assertEqual(len(events[f'dialogue/guide/{category}']['sounds']), len(names))
+                    for name in names:
+                        self.assertEqual(events[f'dialogue/guide/{category}/{name}']['sounds'], [
+                            {'name': f'grounds:dialogue/guide/{name}', 'stream': False}
+                        ])
 
     def test_empty_source_is_a_noop_until_approved_voice_is_available(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -84,7 +126,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
             with self.subTest(names=names), tempfile.TemporaryDirectory() as temporary:
                 source = Path(temporary)
                 for name in names:
-                    (source / f'{name}.ogg').write_bytes(vorbis_fixture())
+                    (source / f'{name}.ogg').write_bytes(self.fixture_for(name))
                 files = {'assets/dialogue/example.json': b'unchanged'}
                 with self.assertRaises(ValueError):
                     importer.add_guide_voice_assets(files, source)
@@ -94,7 +136,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(vorbis_fixture(channels=2))
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name, channels=2))
             files = {'assets/dialogue/example.json': b'unchanged'}
             with self.assertRaises(ValueError):
                 importer.add_guide_voice_assets(files, source)
@@ -104,7 +146,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(vorbis_fixture(samples=11568))
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name, samples=11568 if name in importer.GUIDE_TALK_NAMES else 26448))
             files = {'assets/dialogue/example.json': b'unchanged'}
             with self.assertRaises(ValueError):
                 importer.add_guide_voice_assets(files, source)
@@ -113,9 +155,8 @@ class DialogueVoiceImportTest(unittest.TestCase):
     def test_existing_sample_collision_is_rejected_without_mutating_payloads(self):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
-            fixture = vorbis_fixture()
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(fixture)
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name))
             existing_path = 'assets/grounds/sounds/dialogue/guide/bwa.ogg'
             files = {'assets/dialogue/example.json': b'unchanged', existing_path: b'existing'}
             with self.assertRaises(ValueError):
@@ -130,7 +171,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
             source = root / 'voice'; source.mkdir()
             output = root / 'output'
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(vorbis_fixture())
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name))
             visual_path = 'assets/dialogue/textures/font/letters.png'
             visual_payload = b'unchanged visual fixture'
             effect_path = 'assets/dialogue/post_effect/test.json'

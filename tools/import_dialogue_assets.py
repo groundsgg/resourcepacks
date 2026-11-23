@@ -16,7 +16,15 @@ VIGNETTE_CONFIGS = {
     for mode in ("enter", "exit")
     for bank in ("a", "b")
 }
-GUIDE_VOICE_NAMES = ("bwa", "li", "bup", "wee", "mwa")
+GUIDE_TALK_NAMES = ("bwa", "li", "bup", "wee", "mwa") + tuple(f"v{index:02}" for index in range(6, 11))
+GUIDE_GREETING_NAMES = ("hello01", "hello02")
+GUIDE_FAREWELL_NAMES = ("bye01", "bye02")
+GUIDE_VOICE_CATEGORIES = {
+    "speech": GUIDE_TALK_NAMES,
+    "greeting": GUIDE_GREETING_NAMES,
+    "farewell": GUIDE_FAREWELL_NAMES,
+}
+GUIDE_VOICE_NAMES = GUIDE_TALK_NAMES + GUIDE_GREETING_NAMES + GUIDE_FAREWELL_NAMES
 GUIDE_VOICE_EVENT = "dialogue/guide/speech"
 
 
@@ -60,15 +68,16 @@ def add_guide_voice_assets(files, voice_source):
     expected = {f"{name}.ogg" for name in GUIDE_VOICE_NAMES}
     actual = {entry.name for entry in entries if entry.is_file()}
     if actual != expected or len(entries) != len(expected):
-        raise ValueError("Guide voice source must contain exactly the five approved OGG syllables")
+        raise ValueError("Guide voice source must contain exactly the fourteen approved OGG vocalizations")
 
     additions = {}
     for name in GUIDE_VOICE_NAMES:
         relative = f"assets/grounds/sounds/dialogue/guide/{name}.ogg"
         payload = (voice_source / f"{name}.ogg").read_bytes()
         duration_millis = npc_compiler.vorbis_duration_millis(payload)
-        if not 150 <= duration_millis <= 240:
-            raise ValueError(f"Guide voice syllable duration is outside 150-240ms: {name}")
+        minimum, maximum = (150, 240) if name in GUIDE_TALK_NAMES else (250, 550)
+        if not minimum <= duration_millis <= maximum:
+            raise ValueError(f"Guide voice duration is outside {minimum}-{maximum}ms: {name}")
         first_page_segments = payload[26]
         identification = 27 + first_page_segments
         if payload[identification:identification + 7] != b"\x01vorbis":
@@ -82,14 +91,19 @@ def add_guide_voice_assets(files, voice_source):
 
     sounds_path = "assets/grounds/sounds.json"
     sounds = json.loads(files[sounds_path]) if sounds_path in files else {}
-    if GUIDE_VOICE_EVENT in sounds:
-        raise ValueError(f"Guide voice event already exists: {GUIDE_VOICE_EVENT}")
-    sounds[GUIDE_VOICE_EVENT] = {
-        "sounds": [
-            {"name": f"grounds:dialogue/guide/{name}", "stream": False}
-            for name in GUIDE_VOICE_NAMES
-        ],
-    }
+    for category, names in GUIDE_VOICE_CATEGORIES.items():
+        event = f"dialogue/guide/{category}"
+        events = {event: {"sounds": [
+            {"name": f"grounds:dialogue/guide/{name}", "stream": False} for name in names
+        ]}}
+        for name in names:
+            events[f"{event}/{name}"] = {"sounds": [
+                {"name": f"grounds:dialogue/guide/{name}", "stream": False}
+            ]}
+        for event_name, definition in events.items():
+            if event_name in sounds:
+                raise ValueError(f"Guide voice event already exists: {event_name}")
+            sounds[event_name] = definition
     additions[sounds_path] = canonical(sounds)
     files.update(additions)
 
