@@ -25,7 +25,8 @@ GUIDE_VOICE_CATEGORIES = {
     "farewell": GUIDE_FAREWELL_NAMES,
 }
 GUIDE_VOICE_NAMES = GUIDE_TALK_NAMES + GUIDE_GREETING_NAMES + GUIDE_FAREWELL_NAMES
-GUIDE_VOICE_EVENT = "dialogue/guide/speech"
+GUIDE_VOICE_METADATA = "assets/dialogue/guide/voice-bank.json"
+GUIDE_VOICE_EVENT = "guide/speech"
 
 
 def canonical(value):
@@ -58,7 +59,7 @@ def strengthen_vignette(name, payload):
 
 
 def add_guide_voice_assets(files, voice_source):
-    """Add the approved short mono Guide voice bank, if the source bank is present."""
+    """Add the approved fluent mono Guide phrases and actual encoded timing."""
     voice_source = Path(voice_source)
     if not voice_source.exists():
         return
@@ -71,11 +72,12 @@ def add_guide_voice_assets(files, voice_source):
         raise ValueError("Guide voice source must contain exactly the fourteen approved OGG vocalizations")
 
     additions = {}
+    clips = {}
     for name in GUIDE_VOICE_NAMES:
-        relative = f"assets/grounds/sounds/dialogue/guide/{name}.ogg"
+        relative = f"assets/dialogue/sounds/guide/{name}.ogg"
         payload = (voice_source / f"{name}.ogg").read_bytes()
         duration_millis = npc_compiler.vorbis_duration_millis(payload)
-        minimum, maximum = (150, 240) if name in GUIDE_TALK_NAMES else (250, 550)
+        minimum, maximum = (600, 1800) if name in GUIDE_TALK_NAMES else (450, 1100)
         if not minimum <= duration_millis <= maximum:
             raise ValueError(f"Guide voice duration is outside {minimum}-{maximum}ms: {name}")
         first_page_segments = payload[26]
@@ -88,22 +90,27 @@ def add_guide_voice_assets(files, voice_source):
         if relative in files:
             raise ValueError(f"Guide voice asset already exists: {relative}")
         additions[relative] = payload
+        kind = next(category for category, names in GUIDE_VOICE_CATEGORIES.items() if name in names)
+        clips[name] = {"kind": kind, "durationMillis": duration_millis}
 
-    sounds_path = "assets/grounds/sounds.json"
+    sounds_path = "assets/dialogue/sounds.json"
     sounds = json.loads(files[sounds_path]) if sounds_path in files else {}
     for category, names in GUIDE_VOICE_CATEGORIES.items():
-        event = f"dialogue/guide/{category}"
+        event = f"guide/{category}"
         events = {event: {"sounds": [
-            {"name": f"grounds:dialogue/guide/{name}", "stream": False} for name in names
+            {"name": f"dialogue:guide/{name}", "stream": False} for name in names
         ]}}
         for name in names:
             events[f"{event}/{name}"] = {"sounds": [
-                {"name": f"grounds:dialogue/guide/{name}", "stream": False}
+                {"name": f"dialogue:guide/{name}", "stream": False}
             ]}
         for event_name, definition in events.items():
             if event_name in sounds:
                 raise ValueError(f"Guide voice event already exists: {event_name}")
             sounds[event_name] = definition
+    if GUIDE_VOICE_METADATA in files:
+        raise ValueError("Guide voice metadata already exists")
+    additions[GUIDE_VOICE_METADATA] = canonical({"schemaVersion": 1, "clips": clips})
     additions[sounds_path] = canonical(sounds)
     files.update(additions)
 

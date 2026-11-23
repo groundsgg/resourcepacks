@@ -24,7 +24,7 @@ def ogg_page(payload, flags, samples, sequence):
     return bytes(page)
 
 
-def vorbis_fixture(samples=9600, rate=48000, channels=1):
+def vorbis_fixture(samples=48000, rate=48000, channels=1):
     identification = b'\x01vorbis' + struct.pack('<IBIiiiBB', 0, channels, rate, 0, 0, 0, 0xB8, 1)
     return b''.join(ogg_page(payload, flags, granule, sequence) for sequence, (payload, flags, granule) in enumerate([
         (identification, 2, 0),
@@ -38,7 +38,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
     names = importer.GUIDE_VOICE_NAMES
 
     def fixture_for(self, name, **kwargs):
-        kwargs.setdefault('samples', 9600 if name in importer.GUIDE_TALK_NAMES else 19200)
+        kwargs.setdefault('samples', 48000 if name in importer.GUIDE_TALK_NAMES else 33600)
         return vorbis_fixture(**kwargs)
 
     def test_import_maps_all_categorized_mono_vocalizations_without_changing_existing_payloads(self):
@@ -50,14 +50,14 @@ class DialogueVoiceImportTest(unittest.TestCase):
 
             importer.add_guide_voice_assets(files, source)
 
-            event_path = 'assets/grounds/sounds.json'
-            event = json.loads(files[event_path])['dialogue/guide/speech']
+            event_path = 'assets/dialogue/sounds.json'
+            event = json.loads(files[event_path])['guide/speech']
             self.assertEqual(event['sounds'], [
-                {'name': f'grounds:dialogue/guide/{name}', 'stream': False} for name in importer.GUIDE_TALK_NAMES
+                {'name': f'dialogue:guide/{name}', 'stream': False} for name in importer.GUIDE_TALK_NAMES
             ])
             self.assertEqual(files['assets/dialogue/textures/font/letters.png'], b'old-visual-payload')
             for name in self.names:
-                self.assertEqual(files[f'assets/grounds/sounds/dialogue/guide/{name}.ogg'], self.fixture_for(name))
+                self.assertEqual(files[f'assets/dialogue/sounds/guide/{name}.ogg'], self.fixture_for(name))
 
     def test_shipped_bank_has_distinct_valid_samples_and_resolvable_event(self):
         source = Path(__file__).resolve().parents[1] / (
@@ -65,11 +65,11 @@ class DialogueVoiceImportTest(unittest.TestCase):
         )
         files = {}
         importer.add_guide_voice_assets(files, source)
-        event = json.loads(files['assets/grounds/sounds.json'])[importer.GUIDE_VOICE_EVENT]
+        event = json.loads(files['assets/dialogue/sounds.json'])[importer.GUIDE_VOICE_EVENT]
         self.assertEqual(len(event['sounds']), 10)
         payloads = []
         all_sounds = [sound for category in importer.GUIDE_VOICE_CATEGORIES
-                      for sound in json.loads(files['assets/grounds/sounds.json'])[f'dialogue/guide/{category}']['sounds']]
+                      for sound in json.loads(files['assets/dialogue/sounds.json'])[f'guide/{category}']['sounds']]
         for sound in all_sounds:
             namespace, path = sound['name'].split(':', 1)
             payload = files[f'assets/{namespace}/sounds/{path}.ogg']
@@ -78,22 +78,26 @@ class DialogueVoiceImportTest(unittest.TestCase):
             payloads.append(hashlib.sha256(payload).hexdigest())
         self.assertEqual(len(set(payloads)), 14)
 
-    def test_original_selected_five_clips_remain_byte_identical(self):
+    def test_generated_timing_uses_actual_vorbis_granules_for_all_approved_phrases(self):
         source = Path(__file__).resolve().parents[1] / (
             'resourcepacks-dialogue-runtime/src/main/resources/grounds-dialogue/voice'
         )
-        expected = {
-            'bwa': '9f749315977bfd16e22cffbbd7b0935630b47be6f81f1e99eed25619ea3a4112',
-            'li': '6c3eee129da12ab716e003fae1271e32d78b98394aa04167b76658e1984a885d',
-            'bup': 'edc1b00da21218255fb98658f4d7d9cf3d440ef33d28176d3cab14a5ff326ab4',
-            'wee': '2f794fe3e47a0a23de4356daa8815b4e58d6f72dbe8a78e123c4eb70d15f7498',
-            'mwa': '54e4554848cd4b09780fe9eaf772687f2d270e7e352d8b9248de5fe7d9622d32',
-        }
-        for name, digest in expected.items():
-            self.assertEqual(hashlib.sha256((source / f'{name}.ogg').read_bytes()).hexdigest(), digest, name)
+        files = {}
+        importer.add_guide_voice_assets(files, source)
+        metadata = json.loads(files[importer.GUIDE_VOICE_METADATA])
+        self.assertEqual(metadata['schemaVersion'], 1)
+        self.assertEqual(set(metadata['clips']), set(self.names))
+        for category, names in importer.GUIDE_VOICE_CATEGORIES.items():
+            for name in names:
+                clip = metadata['clips'][name]
+                self.assertEqual(clip['kind'], category)
+                self.assertEqual(clip['durationMillis'], importer.npc_compiler.vorbis_duration_millis(
+                    (source / f'{name}.ogg').read_bytes()))
+                minimum, maximum = (600, 1800) if category == 'speech' else (450, 1100)
+                self.assertTrue(minimum <= clip['durationMillis'] <= maximum)
 
     def test_category_aliases_use_explicit_namespace_and_mood_duration_bounds(self):
-        for samples, valid in ((12000, True), (26400, True), (11952, False), (26448, False)):
+        for samples, valid in ((21600, True), (52800, True), (21552, False), (52848, False)):
             with self.subTest(samples=samples), tempfile.TemporaryDirectory() as temporary:
                 source = Path(temporary)
                 for name in self.names:
@@ -106,13 +110,13 @@ class DialogueVoiceImportTest(unittest.TestCase):
                     self.assertEqual(files, {})
                     continue
                 importer.add_guide_voice_assets(files, source)
-                events = json.loads(files['assets/grounds/sounds.json'])
+                events = json.loads(files['assets/dialogue/sounds.json'])
                 self.assertEqual(len(events), 17)
                 for category, names in importer.GUIDE_VOICE_CATEGORIES.items():
-                    self.assertEqual(len(events[f'dialogue/guide/{category}']['sounds']), len(names))
+                    self.assertEqual(len(events[f'guide/{category}']['sounds']), len(names))
                     for name in names:
-                        self.assertEqual(events[f'dialogue/guide/{category}/{name}']['sounds'], [
-                            {'name': f'grounds:dialogue/guide/{name}', 'stream': False}
+                        self.assertEqual(events[f'guide/{category}/{name}']['sounds'], [
+                            {'name': f'dialogue:guide/{name}', 'stream': False}
                         ])
 
     def test_empty_source_is_a_noop_until_approved_voice_is_available(self):
@@ -146,7 +150,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary)
             for name in self.names:
-                (source / f'{name}.ogg').write_bytes(self.fixture_for(name, samples=11568 if name in importer.GUIDE_TALK_NAMES else 26448))
+                (source / f'{name}.ogg').write_bytes(self.fixture_for(name, samples=86448 if name in importer.GUIDE_TALK_NAMES else 52848))
             files = {'assets/dialogue/example.json': b'unchanged'}
             with self.assertRaises(ValueError):
                 importer.add_guide_voice_assets(files, source)
@@ -157,7 +161,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
             source = Path(temporary)
             for name in self.names:
                 (source / f'{name}.ogg').write_bytes(self.fixture_for(name))
-            existing_path = 'assets/grounds/sounds/dialogue/guide/bwa.ogg'
+            existing_path = 'assets/dialogue/sounds/guide/bwa.ogg'
             files = {'assets/dialogue/example.json': b'unchanged', existing_path: b'existing'}
             with self.assertRaises(ValueError):
                 importer.add_guide_voice_assets(files, source)
@@ -201,8 +205,9 @@ class DialogueVoiceImportTest(unittest.TestCase):
             self.assertEqual(manifest['files'][visual_path], hashlib.sha256(visual_payload).hexdigest())
             self.assertEqual(manifest['pin'], json.loads((generated / 'theme.json').read_bytes())['assetPin'])
             self.assertTrue(all(path in manifest['files'] for path in [
-                'assets/grounds/sounds.json',
-                *[f'assets/grounds/sounds/dialogue/guide/{name}.ogg' for name in self.names],
+                'assets/dialogue/sounds.json',
+                importer.GUIDE_VOICE_METADATA,
+                *[f'assets/dialogue/sounds/guide/{name}.ogg' for name in self.names],
             ]))
 
 
