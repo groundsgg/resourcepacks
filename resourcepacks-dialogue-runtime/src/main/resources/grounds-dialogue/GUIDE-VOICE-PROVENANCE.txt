@@ -1,0 +1,67 @@
+Guide fluent speech provenance
+
+Original AI-generated fictional vocalizations, ElevenLabs Sound Effects v3
+via fal.ai, generated 2026-11-23. No copied franchise audio or named character
+voice is used. Font licenses do not apply to these project audio assets.
+
+The user selected the first raw performance and approved connected phrases
+assembled from its complete natural vocal bursts. All ten speech clips use
+only that first raw recording. No pitch shifting or time compression is used.
+Phrases join two to four whole bursts with short 10-25ms natural gaps or soft
+12-15ms edge crossfades, preserving consonants and tails. Individual raw burst
+edges use six millisecond fades. Quiet source levels are preserved, attenuating
+only peaks above 0.145. Greeting and farewell cues use complete natural contours
+from the corresponding two generated recordings, without time compression.
+Encoding: mono Ogg Vorbis, 44100 Hz. Timing metadata is derived from the encoded
+Vorbis granules, rounded upward to whole milliseconds. The earlier short,
+time-compressed sample bank was superseded after the user approved fluent flow.
+
+First source: sound_effect.mp3 (97845 bytes, stereo 44100 Hz)
+Endpoint: elevenlabs/sound-effects/v3
+Request: 01a20a5e-d122-7273-b050-dd30c6264a8f
+Source SHA-256: 9a83c126a17062fb36b800097a00b0da2d4bff1d562cc65a9555a4af1f020625
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Five to eight distinct short vocal syllables with playful irregular rising/falling inflection, each around 0.2 seconds with small silent gaps. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+Settings: duration_seconds=4, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+Greeting source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz)
+Endpoint: elevenlabs/sound-effects/v3
+Request: 01a20a6b-2073-7fe3-828b-3817734aa519
+Source SHA-256: cc45e3e43608dcb36aeb033f0534bb29eeaaed73c359e78398e9c9188da8e001
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two soft inviting upward-inflected murmurs, like a wordless greeting, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+Settings: duration_seconds=2, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+Farewell source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz)
+Endpoint: elevenlabs/sound-effects/v3
+Request: 01a20a6b-20cd-7052-a3e6-57f4e9847e12
+Source SHA-256: 88148cffc9b78a7e1c6c9c4f5ee4201329bc234afc5e7826f34144fee9affa48
+Submitted prompt:
+An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two gentle descending closing murmurs, like a wordless farewell, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
+Settings: duration_seconds=2, output_format=mp3_44100_192,
+prompt_influence=0.6, loop=false.
+
+Raw first-source bursts (milliseconds): a=265-510, b=865-1300,
+c=1670-2140, d=2400-2610, e=2855-3075, f=3260-3800.
+bwa: b@0.000ms, a@450.023ms, c@683.039ms; duration=1153.039ms
+li: f@0.000ms, e@524.989ms, b@764.989ms; duration=1200.000ms
+bup: c@0.000ms, d@480.000ms, f@680.000ms, a@1235.011ms; duration=1480.023ms
+wee: a@0.000ms, b@265.011ms; duration=700.023ms
+mwa: e@0.000ms, c@235.011ms; duration=705.011ms
+v06: f@0.000ms, d@528.005ms; duration=738.005ms
+v07: b@0.000ms, f@460.000ms; duration=1000.000ms
+v08: c@0.000ms, a@480.000ms; duration=725.011ms
+v09: d@0.000ms, b@225.011ms, e@648.027ms; duration=868.027ms
+v10: f@0.000ms, c@524.989ms, b@1014.989ms; duration=1450.000ms
+hello01: greeting 140-850ms; duration=710.000ms, gain=0.291508406702594
+hello02: greeting 1170-1810ms; duration=640.000ms, gain=0.753258521110573
+bye01: farewell 260-720ms; duration=460.000ms, gain=0.34201154605283
+bye02: farewell 735-1520ms; duration=784.989ms, gain=0.260263066478501
+
+Events use dialogue:guide/speech, dialogue:guide/greeting and
+dialogue:guide/farewell, with per-clip aliases beneath each event. Physical
+samples live in assets/dialogue/sounds/guide; actual encoded timing lives in
+assets/dialogue/guide/voice-bank.json. All pinned profile files remain in the
+namespace accepted by the published dialogue AssetBundle loader.

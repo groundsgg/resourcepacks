@@ -2,8 +2,11 @@
 import hashlib
 import json
 from pathlib import Path
+import struct
 import sys
 import zipfile
+
+import compile_npc_models as npc_compiler
 
 ARTIFACT_SHA256 = "4e6be2e0ca53fc21129a3e9d7ca118362756c7c18b2deb085b36c5b2a89e1a1b"
 PROFILE = "grounds-26.3"
@@ -13,6 +16,17 @@ VIGNETTE_CONFIGS = {
     for mode in ("enter", "exit")
     for bank in ("a", "b")
 }
+GUIDE_TALK_NAMES = ("bwa", "li", "bup", "wee", "mwa") + tuple(f"v{index:02}" for index in range(6, 11))
+GUIDE_GREETING_NAMES = ("hello01", "hello02")
+GUIDE_FAREWELL_NAMES = ("bye01", "bye02")
+GUIDE_VOICE_CATEGORIES = {
+    "speech": GUIDE_TALK_NAMES,
+    "greeting": GUIDE_GREETING_NAMES,
+    "farewell": GUIDE_FAREWELL_NAMES,
+}
+GUIDE_VOICE_NAMES = GUIDE_TALK_NAMES + GUIDE_GREETING_NAMES + GUIDE_FAREWELL_NAMES
+GUIDE_VOICE_METADATA = "assets/dialogue/guide/voice-bank.json"
+GUIDE_VOICE_EVENT = "guide/speech"
 
 
 def canonical(value):
@@ -44,7 +58,64 @@ def strengthen_vignette(name, payload):
     return canonical(effect)
 
 
-def main(artifact, overlay, output):
+def add_guide_voice_assets(files, voice_source):
+    """Add the approved fluent mono Guide phrases and actual encoded timing."""
+    voice_source = Path(voice_source)
+    if not voice_source.exists():
+        return
+    entries = list(voice_source.iterdir())
+    if not entries:
+        return
+    expected = {f"{name}.ogg" for name in GUIDE_VOICE_NAMES}
+    actual = {entry.name for entry in entries if entry.is_file()}
+    if actual != expected or len(entries) != len(expected):
+        raise ValueError("Guide voice source must contain exactly the fourteen approved OGG vocalizations")
+
+    additions = {}
+    clips = {}
+    for name in GUIDE_VOICE_NAMES:
+        relative = f"assets/dialogue/sounds/guide/{name}.ogg"
+        payload = (voice_source / f"{name}.ogg").read_bytes()
+        duration_millis = npc_compiler.vorbis_duration_millis(payload)
+        minimum, maximum = (600, 1800) if name in GUIDE_TALK_NAMES else (450, 1100)
+        if not minimum <= duration_millis <= maximum:
+            raise ValueError(f"Guide voice duration is outside {minimum}-{maximum}ms: {name}")
+        first_page_segments = payload[26]
+        identification = 27 + first_page_segments
+        if payload[identification:identification + 7] != b"\x01vorbis":
+            raise ValueError(f"Guide voice syllable is missing its Vorbis identification packet: {name}")
+        _, channels, _ = struct.unpack_from("<IBI", payload, identification + 7)
+        if channels != 1:
+            raise ValueError(f"Guide voice syllable must be mono: {name}")
+        if relative in files:
+            raise ValueError(f"Guide voice asset already exists: {relative}")
+        additions[relative] = payload
+        kind = next(category for category, names in GUIDE_VOICE_CATEGORIES.items() if name in names)
+        clips[name] = {"kind": kind, "durationMillis": duration_millis}
+
+    sounds_path = "assets/dialogue/sounds.json"
+    sounds = json.loads(files[sounds_path]) if sounds_path in files else {}
+    for category, names in GUIDE_VOICE_CATEGORIES.items():
+        event = f"guide/{category}"
+        events = {event: {"sounds": [
+            {"name": f"dialogue:guide/{name}", "stream": False} for name in names
+        ]}}
+        for name in names:
+            events[f"{event}/{name}"] = {"sounds": [
+                {"name": f"dialogue:guide/{name}", "stream": False}
+            ]}
+        for event_name, definition in events.items():
+            if event_name in sounds:
+                raise ValueError(f"Guide voice event already exists: {event_name}")
+            sounds[event_name] = definition
+    if GUIDE_VOICE_METADATA in files:
+        raise ValueError("Guide voice metadata already exists")
+    additions[GUIDE_VOICE_METADATA] = canonical({"schemaVersion": 1, "clips": clips})
+    additions[sounds_path] = canonical(sounds)
+    files.update(additions)
+
+
+def main(artifact, overlay, output, voice_source=None):
     artifact = Path(artifact)
     if digest(artifact.read_bytes()) != ARTIFACT_SHA256:
         raise ValueError("Dialogue release artifact SHA-256 mismatch")
@@ -63,6 +134,8 @@ def main(artifact, overlay, output):
         if name not in files:
             raise ValueError("Unknown dialogue theme overlay")
         files[name] = texture.read_bytes()
+    if voice_source is not None:
+        add_guide_voice_assets(files, voice_source)
     manifest["files"] = {name: digest(value) for name, value in files.items()}
     manifest["pin"] = digest(canonical({key: manifest[key] for key in ("profile", "files", "glyphs")}))
     files["manifest.json"] = canonical(manifest)

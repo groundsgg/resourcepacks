@@ -38,3 +38,9 @@ atlases. Original stepped panel geometry is preserved. Only colors are changed:
 normal border C1B9AA, selected border E7B84B, warm dark background.
 The upstream artifact and individual imported assets are SHA-256 verified by
 tools/import_dialogue_assets.py. DejaVu license remains in the complete bundle.
+
+Guide speech samples and wordless greeting/farewell cues are original
+AI-generated fictional vocalizations created
+with ElevenLabs Sound Effects v3 through fal.ai on 2026-11-23. No franchise
+recordings or imitated named character voices are included. See
+the bundled Guide voice provenance for the source request and extraction details.

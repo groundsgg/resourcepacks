@@ -50,6 +50,15 @@ internal object DialogueContribution {
                             .use { it.readBytes() },
                     ),
                     PackEntry.bytes(
+                        "assets/grounds/licenses/guide-voice-provenance.txt",
+                        checkNotNull(
+                                javaClass.getResourceAsStream(
+                                    "/grounds-dialogue/GUIDE-VOICE-PROVENANCE.txt"
+                                )
+                            )
+                            .use { it.readBytes() },
+                    ),
+                    PackEntry.bytes(
                         "assets/grounds/licenses/dialogue-notice.txt",
                         checkNotNull(javaClass.getResourceAsStream("/grounds-dialogue/NOTICE"))
                             .use { it.readBytes() },

@@ -11,6 +11,55 @@ import tools.jackson.databind.json.JsonMapper
 
 class DialogueContributionTest {
     @Test
+    fun `Guide speech event resolves every sample in the assembled contribution`() {
+        val base = "/grounds-dialogue/grounds-26.3/"
+        val mapper = JsonMapper.builder().build()
+        val manifest =
+            mapper.readTree(checkNotNull(javaClass.getResourceAsStream(base + "manifest.json")))
+        assertEquals(614, manifest.get("files").size())
+        val sounds =
+            mapper.readTree(
+                checkNotNull(javaClass.getResourceAsStream(base + "assets/dialogue/sounds.json"))
+            )
+        val event = sounds.get("guide/speech")
+        assertEquals(10, event.get("sounds").size())
+        event.get("sounds").forEach { sample ->
+            val (namespace, path) = sample.get("name").asString().split(":", limit = 2)
+            assertEquals("dialogue", namespace)
+            assertTrue(manifest.get("files").has("assets/$namespace/sounds/$path.ogg"))
+            assertEquals(false, sample.get("stream").asBoolean())
+        }
+        val timing =
+            mapper.readTree(
+                checkNotNull(
+                    javaClass.getResourceAsStream(base + "assets/dialogue/guide/voice-bank.json")
+                )
+            )
+        assertEquals(1, timing.get("schemaVersion").asInt())
+        assertEquals(14, timing.get("clips").size())
+        for ((category, names) in
+            mapOf(
+                "speech" to
+                    (listOf("bwa", "li", "bup", "wee", "mwa") + (6..10).map { "v%02d".format(it) }),
+                "greeting" to listOf("hello01", "hello02"),
+                "farewell" to listOf("bye01", "bye02"),
+            )) {
+            assertEquals(names.size, sounds.get("guide/$category").get("sounds").size())
+            for (name in names) {
+                val alias = sounds.get("guide/$category/$name").get("sounds")
+                val clip = timing.get("clips").get(name)
+                assertEquals(category, clip.get("kind").asString())
+                val duration = clip.get("durationMillis").asInt()
+                assertTrue(duration in if (category == "speech") 600..1800 else 450..1100)
+                assertEquals(1, alias.size())
+                assertEquals("dialogue:guide/$name", alias.get(0).get("name").asString())
+                assertTrue(manifest.get("files").has("assets/dialogue/sounds/guide/$name.ogg"))
+            }
+        }
+        DialogueContribution.create()
+    }
+
+    @Test
     fun `imported control glyphs have native and hud providers with matching metrics`() {
         val base = "/grounds-dialogue/grounds-26.3/"
         fun read(name: String) =

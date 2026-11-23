@@ -19,7 +19,9 @@ val importDialogueAssets by
     tasks.registering(Exec::class) {
         inputs.files(dialogueAssets)
         inputs.file(rootProject.file("tools/import_dialogue_assets.py"))
+        inputs.file(rootProject.file("tools/compile_npc_models.py"))
         inputs.dir("src/main/resources/grounds-dialogue/theme")
+        inputs.files(fileTree("src/main/resources/grounds-dialogue/voice"))
         outputs.dir(generatedResources)
         doFirst {
             commandLine(
@@ -28,6 +30,7 @@ val importDialogueAssets by
                 dialogueAssets.singleFile,
                 file("src/main/resources/grounds-dialogue/theme"),
                 generatedResources.get().asFile,
+                file("src/main/resources/grounds-dialogue/voice"),
             )
         }
     }
