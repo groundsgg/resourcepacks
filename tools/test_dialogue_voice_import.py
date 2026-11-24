@@ -38,7 +38,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
     names = importer.GUIDE_VOICE_NAMES
 
     def fixture_for(self, name, **kwargs):
-        kwargs.setdefault('samples', 48000 if name in importer.GUIDE_TALK_NAMES else 33600)
+        kwargs.setdefault('samples', 21600 if name.startswith('end') else (48000 if name in importer.GUIDE_TALK_NAMES else 33600))
         return vorbis_fixture(**kwargs)
 
     def test_import_maps_all_categorized_mono_vocalizations_without_changing_existing_payloads(self):
@@ -76,7 +76,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
             self.assertGreater(len(payload), 1000)
             self.assertFalse(sound['stream'])
             payloads.append(hashlib.sha256(payload).hexdigest())
-        self.assertEqual(len(set(payloads)), 14)
+        self.assertEqual(len(set(payloads)), 17)
 
     def test_generated_timing_uses_actual_vorbis_granules_for_all_approved_phrases(self):
         source = Path(__file__).resolve().parents[1] / (
@@ -85,7 +85,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
         files = {}
         importer.add_guide_voice_assets(files, source)
         metadata = json.loads(files[importer.GUIDE_VOICE_METADATA])
-        self.assertEqual(metadata['schemaVersion'], 1)
+        self.assertEqual(metadata['schemaVersion'], 2)
         self.assertEqual(set(metadata['clips']), set(self.names))
         for category, names in importer.GUIDE_VOICE_CATEGORIES.items():
             for name in names:
@@ -93,7 +93,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
                 self.assertEqual(clip['kind'], category)
                 self.assertEqual(clip['durationMillis'], importer.npc_compiler.vorbis_duration_millis(
                     (source / f'{name}.ogg').read_bytes()))
-                minimum, maximum = (600, 1800) if category == 'speech' else (450, 1100)
+                minimum, maximum = (300, 600) if category == 'ending' else ((600, 1800) if category == 'speech' else (450, 1100))
                 self.assertTrue(minimum <= clip['durationMillis'] <= maximum)
 
     def test_category_aliases_use_explicit_namespace_and_mood_duration_bounds(self):
@@ -101,7 +101,7 @@ class DialogueVoiceImportTest(unittest.TestCase):
             with self.subTest(samples=samples), tempfile.TemporaryDirectory() as temporary:
                 source = Path(temporary)
                 for name in self.names:
-                    fixture = self.fixture_for(name, **({'samples': samples} if name not in importer.GUIDE_TALK_NAMES else {}))
+                    fixture = self.fixture_for(name, **({'samples': samples} if name in importer.GUIDE_GREETING_NAMES + importer.GUIDE_FAREWELL_NAMES else {}))
                     (source / f'{name}.ogg').write_bytes(fixture)
                 files = {}
                 if not valid:
@@ -111,13 +111,30 @@ class DialogueVoiceImportTest(unittest.TestCase):
                     continue
                 importer.add_guide_voice_assets(files, source)
                 events = json.loads(files['assets/dialogue/sounds.json'])
-                self.assertEqual(len(events), 17)
+                self.assertEqual(len(events), 21)
                 for category, names in importer.GUIDE_VOICE_CATEGORIES.items():
                     self.assertEqual(len(events[f'guide/{category}']['sounds']), len(names))
                     for name in names:
                         self.assertEqual(events[f'guide/{category}/{name}']['sounds'], [
                             {'name': f'dialogue:guide/{name}', 'stream': False}
                         ])
+
+    def test_ending_names_and_encoded_duration_bounds_are_strict(self):
+        self.assertEqual(importer.GUIDE_ENDING_NAMES, ('end01', 'end02', 'end03'))
+        for samples, valid in ((14400, True), (28800, True), (14352, False), (28848, False)):
+            with self.subTest(samples=samples), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary)
+                for name in self.names:
+                    (source / f'{name}.ogg').write_bytes(self.fixture_for(
+                        name, **({'samples': samples} if name.startswith('end') else {})))
+                files = {}
+                if valid:
+                    importer.add_guide_voice_assets(files, source)
+                    self.assertTrue(all(path.startswith('assets/dialogue/') for path in files))
+                else:
+                    with self.assertRaises(ValueError):
+                        importer.add_guide_voice_assets(files, source)
+                    self.assertEqual(files, {})
 
     def test_empty_source_is_a_noop_until_approved_voice_is_available(self):
         with tempfile.TemporaryDirectory() as temporary:

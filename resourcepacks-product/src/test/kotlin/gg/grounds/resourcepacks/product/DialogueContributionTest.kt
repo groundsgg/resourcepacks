@@ -16,7 +16,7 @@ class DialogueContributionTest {
         val mapper = JsonMapper.builder().build()
         val manifest =
             mapper.readTree(checkNotNull(javaClass.getResourceAsStream(base + "manifest.json")))
-        assertEquals(614, manifest.get("files").size())
+        assertEquals(617, manifest.get("files").size())
         val sounds =
             mapper.readTree(
                 checkNotNull(javaClass.getResourceAsStream(base + "assets/dialogue/sounds.json"))
@@ -35,14 +35,15 @@ class DialogueContributionTest {
                     javaClass.getResourceAsStream(base + "assets/dialogue/guide/voice-bank.json")
                 )
             )
-        assertEquals(1, timing.get("schemaVersion").asInt())
-        assertEquals(14, timing.get("clips").size())
+        assertEquals(2, timing.get("schemaVersion").asInt())
+        assertEquals(17, timing.get("clips").size())
         for ((category, names) in
             mapOf(
                 "speech" to
                     (listOf("bwa", "li", "bup", "wee", "mwa") + (6..10).map { "v%02d".format(it) }),
                 "greeting" to listOf("hello01", "hello02"),
                 "farewell" to listOf("bye01", "bye02"),
+                "ending" to listOf("end01", "end02", "end03"),
             )) {
             assertEquals(names.size, sounds.get("guide/$category").get("sounds").size())
             for (name in names) {
@@ -50,7 +51,14 @@ class DialogueContributionTest {
                 val clip = timing.get("clips").get(name)
                 assertEquals(category, clip.get("kind").asString())
                 val duration = clip.get("durationMillis").asInt()
-                assertTrue(duration in if (category == "speech") 600..1800 else 450..1100)
+                assertTrue(
+                    duration in
+                        when (category) {
+                            "speech" -> 600..1800
+                            "ending" -> 300..600
+                            else -> 450..1100
+                        }
+                )
                 assertEquals(1, alias.size())
                 assertEquals("dialogue:guide/$name", alias.get(0).get("name").asString())
                 assertTrue(manifest.get("files").has("assets/dialogue/sounds/guide/$name.ogg"))

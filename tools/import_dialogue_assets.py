@@ -19,12 +19,14 @@ VIGNETTE_CONFIGS = {
 GUIDE_TALK_NAMES = ("bwa", "li", "bup", "wee", "mwa") + tuple(f"v{index:02}" for index in range(6, 11))
 GUIDE_GREETING_NAMES = ("hello01", "hello02")
 GUIDE_FAREWELL_NAMES = ("bye01", "bye02")
+GUIDE_ENDING_NAMES = ("end01", "end02", "end03")
 GUIDE_VOICE_CATEGORIES = {
     "speech": GUIDE_TALK_NAMES,
     "greeting": GUIDE_GREETING_NAMES,
     "farewell": GUIDE_FAREWELL_NAMES,
+    "ending": GUIDE_ENDING_NAMES,
 }
-GUIDE_VOICE_NAMES = GUIDE_TALK_NAMES + GUIDE_GREETING_NAMES + GUIDE_FAREWELL_NAMES
+GUIDE_VOICE_NAMES = GUIDE_TALK_NAMES + GUIDE_GREETING_NAMES + GUIDE_FAREWELL_NAMES + GUIDE_ENDING_NAMES
 GUIDE_VOICE_METADATA = "assets/dialogue/guide/voice-bank.json"
 GUIDE_VOICE_EVENT = "guide/speech"
 
@@ -69,7 +71,7 @@ def add_guide_voice_assets(files, voice_source):
     expected = {f"{name}.ogg" for name in GUIDE_VOICE_NAMES}
     actual = {entry.name for entry in entries if entry.is_file()}
     if actual != expected or len(entries) != len(expected):
-        raise ValueError("Guide voice source must contain exactly the fourteen approved OGG vocalizations")
+        raise ValueError("Guide voice source must contain exactly the seventeen Guide OGG vocalizations")
 
     additions = {}
     clips = {}
@@ -77,7 +79,7 @@ def add_guide_voice_assets(files, voice_source):
         relative = f"assets/dialogue/sounds/guide/{name}.ogg"
         payload = (voice_source / f"{name}.ogg").read_bytes()
         duration_millis = npc_compiler.vorbis_duration_millis(payload)
-        minimum, maximum = (600, 1800) if name in GUIDE_TALK_NAMES else (450, 1100)
+        minimum, maximum = (300, 600) if name in GUIDE_ENDING_NAMES else ((600, 1800) if name in GUIDE_TALK_NAMES else (450, 1100))
         if not minimum <= duration_millis <= maximum:
             raise ValueError(f"Guide voice duration is outside {minimum}-{maximum}ms: {name}")
         first_page_segments = payload[26]
@@ -110,7 +112,7 @@ def add_guide_voice_assets(files, voice_source):
             sounds[event_name] = definition
     if GUIDE_VOICE_METADATA in files:
         raise ValueError("Guide voice metadata already exists")
-    additions[GUIDE_VOICE_METADATA] = canonical({"schemaVersion": 1, "clips": clips})
+    additions[GUIDE_VOICE_METADATA] = canonical({"schemaVersion": 2, "clips": clips})
     additions[sounds_path] = canonical(sounds)
     files.update(additions)
 

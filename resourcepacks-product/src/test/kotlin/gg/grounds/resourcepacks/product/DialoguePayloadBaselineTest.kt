@@ -19,11 +19,9 @@ class DialoguePayloadBaselineTest {
         val files = manifest.get("files")
         val futureVoicePaths =
             setOf("assets/dialogue/sounds.json", "assets/dialogue/guide/voice-bank.json") +
-                (listOf("bwa", "li", "bup", "wee", "mwa", "hello01", "hello02", "bye01", "bye02") +
-                        (6..10).map { "v%02d".format(it) })
-                    .map { "assets/dialogue/sounds/guide/$it.ogg" }
+                (1..3).map { "assets/dialogue/sounds/guide/end%02d.ogg".format(it) }
         val existingPayloads = files.properties().filterNot { it.key in futureVoicePaths }
-        assertEquals(598, existingPayloads.size)
+        assertEquals(612, existingPayloads.size)
 
         val aggregate = MessageDigest.getInstance("SHA-256")
         existingPayloads
@@ -38,7 +36,7 @@ class DialoguePayloadBaselineTest {
                 aggregate.update('\n'.code.toByte())
             }
         assertEquals(
-            "82ee70a5c6cb2ea949b4e42e009c5b4b933de191988ade98c78a8e1a9e6d0990",
+            "05e07b3b1223744062a056094160c12356b2b9621ecf4c39e9b8a3485d597c4f",
             aggregate.digest().joinToString("") { "%02x".format(it) },
             "Existing dialogue payload set changed",
         )
