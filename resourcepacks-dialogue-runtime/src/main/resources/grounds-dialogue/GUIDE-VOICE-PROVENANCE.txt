@@ -65,3 +65,27 @@ dialogue:guide/farewell, with per-clip aliases beneath each event. Physical
 samples live in assets/dialogue/sounds/guide; actual encoded timing lives in
 assets/dialogue/guide/voice-bank.json. All pinned profile files remain in the
 namespace accepted by the published dialogue AssetBundle loader.
+
+Natural closing excerpts, prepared offline 2026-11-24:
+Three endings reuse the already approved AI-derived material above; no new
+voice generation was performed. Existing fourteen OGGs remain byte-identical.
+Source frames below are half-open ranges at 44100 Hz. Excerpts use linear
+resampling to 48000 Hz, mono Vorbis encoding, 12ms linear fade-in and 65ms
+linear fade-out, with gain 1.0. No pitch shifting or time compression is used.
+Encoded granules and decoded frame counts both verify the stated durations.
+A 150ms candidate was rejected because it could not retain a natural contour.
+
+end01.ogg: wee.ogg, frames 17640-30870; duration=300ms, decodedFrames=14400.
+Source SHA-256: 36471d6dabeabce7e0ad818a2908d4ba866afe06d06ad3a617b84458003cd918
+Output SHA-256: 80866da65a97b5e5b93342fc10209f4b5cbd20bfd778ee5fb76a6ed9271807c1
+
+end02.ogg: hello01.ogg, frames 11466-31311; duration=450ms, decodedFrames=21600.
+Source SHA-256: 63ff53377fbb1b80766733e9ce8aeb0d8a95230c864b7881dd1557ebed39b0c2
+Output SHA-256: 920989da31e2134228fa65c0d883b480e4291cbf0875ac94ecc39e891e16f696
+
+end03.ogg: mwa.ogg, frames 4630-31090; duration=600ms, decodedFrames=28800.
+Source SHA-256: 892fbad55fbda42e40c4fbfe0390033748c2306a08b84f739db016adee87887e
+Output SHA-256: 78484a29476d74504ffd029142ddf16b5ed44a6dfd7327e8f28287e821aad522
+
+Ending events: dialogue:guide/ending and dialogue:guide/ending/end01 through
+dialogue:guide/ending/end03. Schema 2 timing metadata adds kind ending.
