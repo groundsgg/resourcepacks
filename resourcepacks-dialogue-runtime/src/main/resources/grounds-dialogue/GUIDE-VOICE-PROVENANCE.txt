@@ -31,7 +31,7 @@ Active RMS:20ms windows, gate=max(-50dBFS,loudest window minus35dB).
 Measured postencoding category median differences+0.12..+0.55dB.
 Four-times oversampled maximum peak0.233107 (~-12.65dBFS); no clipping.
 These objective checks do not claim subjective listening approval.
-Runtime VOICE multiplier0.55 is unchanged.
+This asset update preserves the consumer VOICE gain; target main uses0.4.
 Timing metadata uses final encoded Vorbis granules, rounded upward to ms.
 FFmpeg decoded samples may differ from final granule at codec overlap/padding.
 The li decoder adds930 quiet frames after final granule (RMS-82.35dBFS);
