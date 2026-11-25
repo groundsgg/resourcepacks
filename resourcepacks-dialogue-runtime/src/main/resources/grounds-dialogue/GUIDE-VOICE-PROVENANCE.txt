@@ -1,91 +1,122 @@
-Guide fluent speech provenance
+Guide original Puck phrase bank provenance
 
-Original AI-generated fictional vocalizations, ElevenLabs Sound Effects v3
-via fal.ai, generated 2026-11-23. No copied franchise audio or named character
-voice is used. Font licenses do not apply to these project audio assets.
+Original AI-generated invented-language performances, 2026-11-25.
+Provider: fal.ai; endpoint: google/gemini-3.8-flash-tts; prebuilt voice: Puck.
+No original NPC/model recordings, franchise audio, or cloned voices were inputs.
+The replaced bank assembled repeated raw bursts; this bank uses whole takes.
 
-The user selected the first raw performance and approved connected phrases
-assembled from its complete natural vocal bursts. All ten speech clips use
-only that first raw recording. No pitch shifting or time compression is used.
-Phrases join two to four whole bursts with short 10-25ms natural gaps or soft
-12-15ms edge crossfades, preserving consonants and tails. Individual raw burst
-edges use six millisecond fades. Quiet source levels are preserved, attenuating
-only peaks above 0.145. Greeting and farewell cues use complete natural contours
-from the corresponding two generated recordings, without time compression.
-Encoding: mono Ogg Vorbis, 44100 Hz. Timing metadata is derived from the encoded
-Vorbis granules, rounded upward to whole milliseconds. The earlier short,
-time-compressed sample bank was superseded after the user approved fluent flow.
+Main17-take request: 01a213bf-bf79-71b2-855f-3b2ab5c30445
+Source bank-takes.wav SHA-256: 355b2c386001ed2c36d8d78499f03bbdf00040ff3dac2669c24a355a72df0e96
+Source: mono PCM16,24000Hz. First15 takes selected in supplied line order.
+Targeted ending repair request: 01a213c2-dc11-75d3-8f45-c2c3c99a82dd
+Source ending-repair.wav SHA-256: dcc30b6ba7cda75bd23efeb3991a2c5cdc53f0269d90b71193264db8c330a004
+Repair lines: Véa, Náru, Mhm-hm, Vemi, Náve, Hanu, Vénu, Nóra.
+Only complete repair take4 Vemi and take6 Hanu replace the final two endings.
 
-First source: sound_effect.mp3 (97845 bytes, stereo 44100 Hz)
-Endpoint: elevenlabs/sound-effects/v3
-Request: 01a20a5e-d122-7273-b050-dd30c6264a8f
-Source SHA-256: 9a83c126a17062fb36b800097a00b0da2d4bff1d562cc65a9555a4af1f020625
-Submitted prompt:
-An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Five to eight distinct short vocal syllables with playful irregular rising/falling inflection, each around 0.2 seconds with small silent gaps. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
-Settings: duration_seconds=4, output_format=mp3_44100_192,
-prompt_influence=0.6, loop=false.
+Acting direction:
+An original friendly fantasy village guide speaking its own invented language naturally. Warm rounded human male mid-range voice, slightly nasal and softly breathy, relaxed articulation with a little smile. Deliver the invented words as fluid connected phrases on natural breaths. Lively but restrained pitch contour: warm opening, gently curious rise on the question, softer descending finish. Vary stress, vowel length and timing organically rather than a metronomic syllable rhythm. Keep small consonant attacks soft and linked into vowels. A brief thoughtful hum is allowed. This should feel like unforced conversational acting with a consistent voice and coherent phonetic palette. Dry clean voice only. Speak only the supplied invented text. Record the following as seventeen separate brief conversational takes, in the supplied line order. Every line is one whole fluid utterance on a natural breath. Leave about half a second of clean silence between lines so each complete take can be exported; do not speak line numbers or headings. Within each line keep the syllables connected. The first ten are light conversational speech phrases, roughly one to one and a half seconds each, with relaxed varied stress and no exaggerated pauses inside a phrase. The next two are warm small greetings, then two soft leave-taking responses, each under a second. The final three are tiny gentle natural cadence endings, around a third to half a second each. Keep the same rounded human voice throughout; do not overact or make animal, robotic or electronic sounds.
 
-Greeting source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz)
-Endpoint: elevenlabs/sound-effects/v3
-Request: 01a20a6b-2073-7fe3-828b-3817734aa519
-Source SHA-256: cc45e3e43608dcb36aeb033f0534bb29eeaaed73c359e78398e9c9188da8e001
-Submitted prompt:
-An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two soft inviting upward-inflected murmurs, like a wordless greeting, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
-Settings: duration_seconds=2, output_format=mp3_44100_192,
-prompt_influence=0.6, loop=false.
+Processing:
+Whole utterances separated using inter-take silence below-38dB for>=600ms.
+Internal pauses remain intact. Frame ranges below are half-open at24000Hz.
+Quiet edge handles10-25ms; end01 approximately13ms on each side.
+Four-millisecond linear anti-click fades only at retained quiet edges.
+The first source take starts at frame0 and receives no onset fade.
+No syllable splicing, looping, pitch shifting, time compression, compressor,
+limiter, synthetic silence padding, or arbitrary phoneme/tail cuts.
+Resampled to48000Hz without speed change; mono Ogg Vorbis, quality5.
+Category common gains match median active RMS against the prior bank,
+preserving natural inter-take dynamics;0.45 sample peak safety cap unused.
+Active RMS:20ms windows, gate=max(-50dBFS,loudest window minus35dB).
+Measured postencoding category median differences+0.12..+0.55dB.
+Four-times oversampled maximum peak0.233107 (~-12.65dBFS); no clipping.
+These objective checks do not claim subjective listening approval.
+This asset update preserves the consumer VOICE gain; target main uses0.4.
+Timing metadata uses final encoded Vorbis granules, rounded upward to ms.
+FFmpeg decoded samples may differ from final granule at codec overlap/padding.
+The li decoder adds930 quiet frames after final granule (RMS-82.35dBFS);
+existing and new clips can also decode128frames shorter. Granules govern timing.
 
-Farewell source: sound_effect.mp3 (49571 bytes, stereo 44100 Hz)
-Endpoint: elevenlabs/sound-effects/v3
-Request: 01a20a6b-20cd-7052-a3e6-57f4e9847e12
-Source SHA-256: 88148cffc9b78a7e1c6c9c4f5ee4201329bc234afc5e7826f34144fee9affa48
-Submitted prompt:
-An actor performing a friendly woodland creature's invented language: warm rounded vowels, clear soft consonants, little breaths and gentle chuckles. Two gentle descending closing murmurs, like a wordless farewell, 0.3-0.5 seconds each, with silence between them. Organic throat voice, cozy and alive. Dry isolated studio recording. No words, music, ambience, reverb, electronic beeps or robot tone.
-Settings: duration_seconds=2, output_format=mp3_44100_192,
-prompt_influence=0.6, loop=false.
+Category gain factors:
+speech: 0.275386613870 (-11.201143dB)
+greeting: 0.312568109362 (-10.101107dB)
+farewell: 0.290391719271 (-10.740315dB)
+ending: 0.280141472834 (-11.052452dB)
 
-Raw first-source bursts (milliseconds): a=265-510, b=865-1300,
-c=1670-2140, d=2400-2610, e=2855-3075, f=3260-3800.
-bwa: b@0.000ms, a@450.023ms, c@683.039ms; duration=1153.039ms
-li: f@0.000ms, e@524.989ms, b@764.989ms; duration=1200.000ms
-bup: c@0.000ms, d@480.000ms, f@680.000ms, a@1235.011ms; duration=1480.023ms
-wee: a@0.000ms, b@265.011ms; duration=700.023ms
-mwa: e@0.000ms, c@235.011ms; duration=705.011ms
-v06: f@0.000ms, d@528.005ms; duration=738.005ms
-v07: b@0.000ms, f@460.000ms; duration=1000.000ms
-v08: c@0.000ms, a@480.000ms; duration=725.011ms
-v09: d@0.000ms, b@225.011ms, e@648.027ms; duration=868.027ms
-v10: f@0.000ms, c@524.989ms, b@1014.989ms; duration=1450.000ms
-hello01: greeting 140-850ms; duration=710.000ms, gain=0.291508406702594
-hello02: greeting 1170-1810ms; duration=640.000ms, gain=0.753258521110573
-bye01: farewell 260-720ms; duration=460.000ms, gain=0.34201154605283
-bye02: farewell 735-1520ms; duration=784.989ms, gain=0.260263066478501
+Clip proof: active/source/export ranges and quiet handles are source frames;
+encoded duration and SHA-256 identify exact shipped OGG bytes.
+bwa (speech), text=Naluma tavé.
+source=main, take=1, active=[0,22472), export=[0,22832), handles=0/360, fades=0/96
+durationMillis=952, granules=45664, activeRms=0.031151485, samplePeak=0.179719627
+SHA-256: 63ba428e6cfb0df435c28a1907b268e249a30de2e5d2f2a5a3c47098d49d49c6
+li (speech), text=Maru vé?
+source=main, take=2, active=[49333,64180), export=[48973,64540), handles=360/360, fades=96/96
+durationMillis=649, granules=31134, activeRms=0.039470336, samplePeak=0.217172995
+SHA-256: 056b3b0f33f7f7135239b6828276015645d352955b6a7ca5a8893854a81acce9
+bup (speech), text=Velora temuna.
+source=main, take=3, active=[91874,123826), export=[91514,124186), handles=360/360, fades=96/96
+durationMillis=1362, granules=65344, activeRms=0.035066005, samplePeak=0.197682858
+SHA-256: 8c9771710b579bd71564929791fdab2818202c53a03fbbd51541716f90a3617a
+wee (speech), text=Hanu vemi.
+source=main, take=4, active=[146394,164414), export=[146034,164774), handles=360/360, fades=96/96
+durationMillis=781, granules=37480, activeRms=0.036565025, samplePeak=0.160374179
+SHA-256: 144527cc828fc26e786fa8f91207188c645fde783d4b6fe55034164a75360a69
+mwa (speech), text=Temu nalora.
+source=main, take=5, active=[188313,213013), export=[187953,213373), handles=360/360, fades=96/96
+durationMillis=1060, granules=50840, activeRms=0.041807938, samplePeak=0.159894094
+SHA-256: 126a81cce3ad23410474cb6c3368565a7a33f172531a0240b8677ff40f609e34
+v06 (speech), text=Eh, lumavé.
+source=main, take=6, active=[234733,258108), export=[234373,258468), handles=360/360, fades=96/96
+durationMillis=1004, granules=48190, activeRms=0.041422841, samplePeak=0.218781576
+SHA-256: 3ee9908408852ab16426422087c9557061ca8d72273aa66f09f217f8951555bd
+v07 (speech), text=Nora tavenu.
+source=main, take=7, active=[278704,302628), export=[278344,302988), handles=360/360, fades=96/96
+durationMillis=1027, granules=49288, activeRms=0.042045796, samplePeak=0.210052192
+SHA-256: 81bfdb8eaf5e68529f9d7560671601f63effe90a4410e3f075b4b4f38fd56b55
+v08 (speech), text=Vemaru nalo.
+source=main, take=8, active=[322602,347822), export=[322242,348182), handles=360/360, fades=96/96
+durationMillis=1081, granules=51880, activeRms=0.032931224, samplePeak=0.176193967
+SHA-256: 697430a64eea94ed293eb3acd4bc7232e3ae8c0c51cfc6b67824ff2f89ff4eae
+v09 (speech), text=Tavé, lunuma?
+source=main, take=9, active=[368180,398881), export=[367820,399241), handles=360/360, fades=96/96
+durationMillis=1310, granules=62842, activeRms=0.031853479, samplePeak=0.177597940
+SHA-256: 56fb754934ae0d550c035872223aefd573d612d95bb350f037f4e284452c50a3
+v10 (speech), text=Mera, hanu vé.
+source=main, take=10, active=[419011,452033), export=[418651,452393), handles=360/360, fades=96/96
+durationMillis=1406, granules=67484, activeRms=0.035235986, samplePeak=0.221067369
+SHA-256: 936e452498870a373dc13a0fdab4d10fa29c66c9c8faea344dfce0bbaf2574f4
+hello01 (greeting), text=Etavé!
+source=main, take=11, active=[470826,486982), export=[470466,487342), handles=360/360, fades=96/96
+durationMillis=704, granules=33752, activeRms=0.035166299, samplePeak=0.209116727
+SHA-256: dd45e14367c92ab08c735043bfd4f99a1d131c7b20c1d1923d59399076baeb00
+hello02 (greeting), text=Ah, nalú!
+source=main, take=12, active=[505247,528625), export=[504887,528985), handles=360/360, fades=96/96
+durationMillis=1005, granules=48196, activeRms=0.040491793, samplePeak=0.201468781
+SHA-256: f1e6e30241b14bf7417451aa828e1d283d32b883b9a743cc10f91864cb3e2820
+bye01 (farewell), text=Vemá.
+source=main, take=13, active=[546931,556585), export=[546331,557185), handles=600/600, fades=96/96
+durationMillis=453, granules=21708, activeRms=0.042383532, samplePeak=0.232211754
+SHA-256: 128e7185876722c9ed385476c0eddbe0e955c75f16f6814f98d3fcd2505a655a
+bye02 (farewell), text=Noro vé.
+source=main, take=14, active=[575737,588815), export=[575137,589415), handles=600/600, fades=96/96
+durationMillis=595, granules=28556, activeRms=0.025215797, samplePeak=0.135926917
+SHA-256: 1a6e008d75ef8d2d6f850c28ef414b0d7660faaabe9b4e78f16a54791a826b62
+end01 (ending), text=Mhm.
+source=main, take=15, active=[608037,614605), export=[607721,614921), handles=316/316, fades=96/96
+durationMillis=300, granules=14400, activeRms=0.036155483, samplePeak=0.122727208
+SHA-256: 8389ffe62cbaf510cc5ce16ba29c4d44cd205429b22b882df2f66aa59e1d5e5a
+end02 (ending), text=Vemi
+source=repair, take=4, active=[156617,166878), export=[156348,167148), handles=269/270, fades=96/96
+durationMillis=450, granules=21600, activeRms=0.032018839, samplePeak=0.144485310
+SHA-256: e31476fd84793af285c5a314705861c5d661c8442a0dc9eca4d922f0fc1c4327
+end03 (ending), text=Hanu
+source=repair, take=6, active=[261920,275785), export=[261653,276053), handles=267/268, fades=96/96
+durationMillis=600, granules=28800, activeRms=0.032832513, samplePeak=0.207497105
+SHA-256: 4c27e8cd30ffa24d823d7c8e3e44ea9a38383e8472dca201da9998d2e4b59257
 
-Events use dialogue:guide/speech, dialogue:guide/greeting and
-dialogue:guide/farewell, with per-clip aliases beneath each event. Physical
-samples live in assets/dialogue/sounds/guide; actual encoded timing lives in
-assets/dialogue/guide/voice-bank.json. All pinned profile files remain in the
-namespace accepted by the published dialogue AssetBundle loader.
-
-Natural closing excerpts, prepared offline 2026-11-24:
-Three endings reuse the already approved AI-derived material above; no new
-voice generation was performed. Existing fourteen OGGs remain byte-identical.
-Source frames below are half-open ranges at 44100 Hz. Excerpts use linear
-resampling to 48000 Hz, mono Vorbis encoding, 12ms linear fade-in and 65ms
-linear fade-out, with gain 1.0. No pitch shifting or time compression is used.
-Encoded granules and decoded frame counts both verify the stated durations.
-A 150ms candidate was rejected because it could not retain a natural contour.
-
-end01.ogg: wee.ogg, frames 17640-30870; duration=300ms, decodedFrames=14400.
-Source SHA-256: 36471d6dabeabce7e0ad818a2908d4ba866afe06d06ad3a617b84458003cd918
-Output SHA-256: 80866da65a97b5e5b93342fc10209f4b5cbd20bfd778ee5fb76a6ed9271807c1
-
-end02.ogg: hello01.ogg, frames 11466-31311; duration=450ms, decodedFrames=21600.
-Source SHA-256: 63ff53377fbb1b80766733e9ce8aeb0d8a95230c864b7881dd1557ebed39b0c2
-Output SHA-256: 920989da31e2134228fa65c0d883b480e4291cbf0875ac94ecc39e891e16f696
-
-end03.ogg: mwa.ogg, frames 4630-31090; duration=600ms, decodedFrames=28800.
-Source SHA-256: 892fbad55fbda42e40c4fbfe0390033748c2306a08b84f739db016adee87887e
-Output SHA-256: 78484a29476d74504ffd029142ddf16b5ed44a6dfd7327e8f28287e821aad522
-
-Ending events: dialogue:guide/ending and dialogue:guide/ending/end01 through
-dialogue:guide/ending/end03. Schema 2 timing metadata adds kind ending.
+Sound IDs/categories/schema2 remain compatible with the existing17-clip bank.
+Importer regenerates assets/dialogue/guide/voice-bank.json, sounds.json,
+manifest file hashes, asset pin and theme pin; no hand-edited generated pins.
+Physical samples: assets/dialogue/sounds/guide/{id}.ogg.
+Per-clip events: dialogue:guide/{speech|greeting|farewell|ending}/{id}.
+Font licenses do not apply to these project audio assets.
