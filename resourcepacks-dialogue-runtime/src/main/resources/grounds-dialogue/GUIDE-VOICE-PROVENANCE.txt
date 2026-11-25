@@ -8,10 +8,16 @@ The replaced bank assembled repeated raw bursts; this bank uses whole takes.
 Main17-take request: 01a213bf-bf79-71b2-855f-3b2ab5c30445
 Source bank-takes.wav SHA-256: 355b2c386001ed2c36d8d78499f03bbdf00040ff3dac2669c24a355a72df0e96
 Source: mono PCM16,24000Hz. First15 takes selected in supplied line order.
+All shipped samples now come from this one primary recording:15 unique
+performances used as17 playback assets. end02/end03 reuse complete farewell
+takes13/14 with different short quiet handles and the existing ending gain.
 Targeted ending repair request: 01a213c2-dc11-75d3-8f45-c2c3c99a82dd
 Source ending-repair.wav SHA-256: dcc30b6ba7cda75bd23efeb3991a2c5cdc53f0269d90b71193264db8c330a004
 Repair lines: Véa, Náru, Mhm-hm, Vemi, Náve, Hanu, Vénu, Nóra.
-Only complete repair take4 Vemi and take6 Hanu replace the final two endings.
+Repair take4 Vemi and take6 Hanu were initially used for end02/end03.
+Both are rejected after direct user hearing reported a different voice in
+Hanu. The repair recording and receipts remain retained but none of its audio
+is shipped. No new generation was run for this timbre consistency correction.
 
 Acting direction:
 An original friendly fantasy village guide speaking its own invented language naturally. Warm rounded human male mid-range voice, slightly nasal and softly breathy, relaxed articulation with a little smile. Deliver the invented words as fluid connected phrases on natural breaths. Lively but restrained pitch contour: warm opening, gently curious rise on the question, softer descending finish. Vary stress, vowel length and timing organically rather than a metronomic syllable rhythm. Keep small consonant attacks soft and linked into vowels. A brief thoughtful hum is allowed. This should feel like unforced conversational acting with a consistent voice and coherent phonetic palette. Dry clean voice only. Speak only the supplied invented text. Record the following as seventeen separate brief conversational takes, in the supplied line order. Every line is one whole fluid utterance on a natural breath. Leave about half a second of clean silence between lines so each complete take can be exported; do not speak line numbers or headings. Within each line keep the syllables connected. The first ten are light conversational speech phrases, roughly one to one and a half seconds each, with relaxed varied stress and no exaggerated pauses inside a phrase. The next two are warm small greetings, then two soft leave-taking responses, each under a second. The final three are tiny gentle natural cadence endings, around a third to half a second each. Keep the same rounded human voice throughout; do not overact or make animal, robotic or electronic sounds.
@@ -19,16 +25,22 @@ An original friendly fantasy village guide speaking its own invented language na
 Processing:
 Whole utterances separated using inter-take silence below-38dB for>=600ms.
 Internal pauses remain intact. Frame ranges below are half-open at24000Hz.
-Quiet edge handles10-25ms; end01 approximately13ms on each side.
+Quiet edge handles10-25ms, except end03 approximately27.54ms on each side.
+end01 uses approximately13ms and end02 approximately23.875ms on each side.
+The slightly longer real quiet handles retain the complete544.917ms Noro vé
+performance while reaching600ms; no inserted silence or phoneme cuts.
 Four-millisecond linear anti-click fades only at retained quiet edges.
 The first source take starts at frame0 and receives no onset fade.
 No syllable splicing, looping, pitch shifting, time compression, compressor,
 limiter, synthetic silence padding, or arbitrary phoneme/tail cuts.
 Resampled to48000Hz without speed change; mono Ogg Vorbis, quality5.
-Category common gains match median active RMS against the prior bank,
-preserving natural inter-take dynamics;0.45 sample peak safety cap unused.
+Category common gains initially matched median active RMS against the prior
+bank. Those gains remain fixed for this two-ending correction, preserving
+the other15 OGGs byte for byte and natural inter-take dynamics. The0.45 sample
+peak safety cap remains unused.
 Active RMS:20ms windows, gate=max(-50dBFS,loudest window minus35dB).
-Measured postencoding category median differences+0.12..+0.55dB.
+Measured postencoding median differences versus the original pre-Puck bank:
+speech+0.227dB, greeting+0.345dB, farewell+0.123dB, ending+1.389dB.
 Four-times oversampled maximum peak0.233107 (~-12.65dBFS); no clipping.
 These objective checks do not claim subjective listening approval.
 This asset update preserves the consumer VOICE gain; target main uses0.4.
@@ -105,14 +117,14 @@ end01 (ending), text=Mhm.
 source=main, take=15, active=[608037,614605), export=[607721,614921), handles=316/316, fades=96/96
 durationMillis=300, granules=14400, activeRms=0.036155483, samplePeak=0.122727208
 SHA-256: 8389ffe62cbaf510cc5ce16ba29c4d44cd205429b22b882df2f66aa59e1d5e5a
-end02 (ending), text=Vemi
-source=repair, take=4, active=[156617,166878), export=[156348,167148), handles=269/270, fades=96/96
-durationMillis=450, granules=21600, activeRms=0.032018839, samplePeak=0.144485310
-SHA-256: e31476fd84793af285c5a314705861c5d661c8442a0dc9eca4d922f0fc1c4327
-end03 (ending), text=Hanu
-source=repair, take=6, active=[261920,275785), export=[261653,276053), handles=267/268, fades=96/96
-durationMillis=600, granules=28800, activeRms=0.032832513, samplePeak=0.207497105
-SHA-256: 4c27e8cd30ffa24d823d7c8e3e44ea9a38383e8472dca201da9998d2e4b59257
+end02 (ending), text=Vemá.
+source=main, take=13, reuses=bye01, active=[546931,556585), export=[546358,557158), handles=573/573, fades=96/96
+durationMillis=450, granules=21600, activeRms=0.040961690, samplePeak=0.216983408
+SHA-256: f4909b24c0f461a64f71a2820d231e86942e768efa5e9a8079c295126b8e92ad
+end03 (ending), text=Noro vé.
+source=main, take=14, reuses=bye02, active=[575737,588815), export=[575076,589476), handles=661/661, fades=96/96
+durationMillis=600, granules=28800, activeRms=0.024765290, samplePeak=0.133202925
+SHA-256: 60055314c381f5fd58832fb945218c391caeec0af271ecfd306cc91dd30e3e03
 
 Sound IDs/categories/schema2 remain compatible with the existing17-clip bank.
 Importer regenerates assets/dialogue/guide/voice-bank.json, sounds.json,
