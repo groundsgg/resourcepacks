@@ -36,7 +36,7 @@ class DialoguePayloadBaselineTest {
                 aggregate.update('\n'.code.toByte())
             }
         assertEquals(
-            "491323f08f188dc277ffecae9c112c2e309dc5387edf89250e2d9a277769cccd",
+            "f7a8495d78343ddc77d2aa38faa015544a4ff6e08f57854e54990910e20c5b17",
             aggregate.digest().joinToString("") { "%02x".format(it) },
             "Existing dialogue payload set changed",
         )

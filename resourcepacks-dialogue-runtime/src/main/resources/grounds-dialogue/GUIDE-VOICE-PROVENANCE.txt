@@ -34,22 +34,28 @@ The first source take starts at frame0 and receives no onset fade.
 No syllable splicing, looping, pitch shifting, time compression, compressor,
 limiter, synthetic silence padding, or arbitrary phoneme/tail cuts.
 Resampled to48000Hz without speed change; mono Ogg Vorbis, quality5.
-Category common gains initially matched median active RMS against the prior
-bank. Those gains remain fixed for this two-ending correction, preserving
-the other15 OGGs byte for byte and natural inter-take dynamics. The0.45 sample
-peak safety cap remains unused.
+The existing category gains are followed by one common amplitude factor
+2.844109445179 (+9.078926dB), calibrated against the median active RMS of five
+licensed Guildfolk hello samples already owned by this project. Their audio
+was used for local measurement only and was never uploaded or redistributed.
+This preserves the same primary performances, complete source frame ranges,
+quiet handles, fades, durations, and natural relative take dynamics. Exports
+are rebuilt from the primary PCM source, not transcoded from previous OGGs.
 Active RMS:20ms windows, gate=max(-50dBFS,loudest window minus35dB).
-Measured postencoding median differences versus the original pre-Puck bank:
-speech+0.227dB, greeting+0.345dB, farewell+0.123dB, ending+1.389dB.
-Four-times oversampled maximum peak0.233107 (~-12.65dBFS); no clipping.
-These objective checks do not claim subjective listening approval.
-This asset update preserves the consumer VOICE gain; target main uses0.4.
+Old Guide median:-28.836862dBFS; NPC reference median:-19.757936dBFS.
+New Guide median:-19.790912dBFS (0.033dB below reference).
+Maximum four-times oversampled peak:-3.815312dBFS; no clipping or limiting.
+The absolute RMS gate can admit extra quiet windows after gain; these checks
+are objective level calibration and do not claim subjective listening approval.
+Consumer gain is calibrated separately; this asset bank contains no runtime gain.
+FFmpeg7.0.2-static, obtained from imageio-ffmpeg0.6.0 PyPI manylinux wheel.
+Binary SHA-256:e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99
 Timing metadata uses final encoded Vorbis granules, rounded upward to ms.
 FFmpeg decoded samples may differ from final granule at codec overlap/padding.
-The li decoder adds930 quiet frames after final granule (RMS-82.35dBFS);
-existing and new clips can also decode128frames shorter. Granules govern timing.
+The li decoder can add quiet frames after its final granule; other clips
+can decode128frames shorter. Encoded granules govern timing.
 
-Category gain factors:
+Original category gain factors (each also receives the common factor above):
 speech: 0.275386613870 (-11.201143dB)
 greeting: 0.312568109362 (-10.101107dB)
 farewell: 0.290391719271 (-10.740315dB)
@@ -59,72 +65,72 @@ Clip proof: active/source/export ranges and quiet handles are source frames;
 encoded duration and SHA-256 identify exact shipped OGG bytes.
 bwa (speech), text=Naluma tavé.
 source=main, take=1, active=[0,22472), export=[0,22832), handles=0/360, fades=0/96
-durationMillis=952, granules=45664, activeRms=0.031151485, samplePeak=0.179719627
-SHA-256: 63ba428e6cfb0df435c28a1907b268e249a30de2e5d2f2a5a3c47098d49d49c6
+durationMillis=952, granules=45664, activeRms=0.087485267, samplePeak=0.497964829
+SHA-256: fe7f800eaef42b5165497c672f41191f09517bebcf0ded64395ee01645784b31
 li (speech), text=Maru vé?
 source=main, take=2, active=[49333,64180), export=[48973,64540), handles=360/360, fades=96/96
-durationMillis=649, granules=31134, activeRms=0.039470336, samplePeak=0.217172995
-SHA-256: 056b3b0f33f7f7135239b6828276015645d352955b6a7ca5a8893854a81acce9
+durationMillis=649, granules=31134, activeRms=0.108643591, samplePeak=0.589011073
+SHA-256: b6249af968be3c5544f64fef198918a0509d090edd82ec1181178766f85a81d7
 bup (speech), text=Velora temuna.
 source=main, take=3, active=[91874,123826), export=[91514,124186), handles=360/360, fades=96/96
-durationMillis=1362, granules=65344, activeRms=0.035066005, samplePeak=0.197682858
-SHA-256: 8c9771710b579bd71564929791fdab2818202c53a03fbbd51541716f90a3617a
+durationMillis=1362, granules=65344, activeRms=0.096588648, samplePeak=0.559632003
+SHA-256: b9feab55be28fbfa3b55b6cb76ef5be1a68cd60ae0a2d45db70b8b7fd17d5ca6
 wee (speech), text=Hanu vemi.
 source=main, take=4, active=[146394,164414), export=[146034,164774), handles=360/360, fades=96/96
-durationMillis=781, granules=37480, activeRms=0.036565025, samplePeak=0.160374179
-SHA-256: 144527cc828fc26e786fa8f91207188c645fde783d4b6fe55034164a75360a69
+durationMillis=781, granules=37480, activeRms=0.102436418, samplePeak=0.470630378
+SHA-256: 0279f81a25b5b04edff3419093134395da2443b05a4285f1dd00d6c8f0886368
 mwa (speech), text=Temu nalora.
 source=main, take=5, active=[188313,213013), export=[187953,213373), handles=360/360, fades=96/96
-durationMillis=1060, granules=50840, activeRms=0.041807938, samplePeak=0.159894094
-SHA-256: 126a81cce3ad23410474cb6c3368565a7a33f172531a0240b8677ff40f609e34
+durationMillis=1060, granules=50840, activeRms=0.116574356, samplePeak=0.449241340
+SHA-256: 7ed20dc1052b709cf58659365db4fe704113c613846b180fe7418aa26823bc0a
 v06 (speech), text=Eh, lumavé.
 source=main, take=6, active=[234733,258108), export=[234373,258468), handles=360/360, fades=96/96
-durationMillis=1004, granules=48190, activeRms=0.041422841, samplePeak=0.218781576
-SHA-256: 3ee9908408852ab16426422087c9557061ca8d72273aa66f09f217f8951555bd
+durationMillis=1004, granules=48190, activeRms=0.116148913, samplePeak=0.610530496
+SHA-256: 36e0473b4402b716a5be6f88a17a7580eeec3cd5a053aa8edd462bb008073dbe
 v07 (speech), text=Nora tavenu.
 source=main, take=7, active=[278704,302628), export=[278344,302988), handles=360/360, fades=96/96
-durationMillis=1027, granules=49288, activeRms=0.042045796, samplePeak=0.210052192
-SHA-256: 81bfdb8eaf5e68529f9d7560671601f63effe90a4410e3f075b4b4f38fd56b55
+durationMillis=1027, granules=49288, activeRms=0.117120499, samplePeak=0.596356392
+SHA-256: 07158e87e96330d4fd383b68277a80f1165b3b1a18c36f7f51a73803fbeb9e02
 v08 (speech), text=Vemaru nalo.
 source=main, take=8, active=[322602,347822), export=[322242,348182), handles=360/360, fades=96/96
-durationMillis=1081, granules=51880, activeRms=0.032931224, samplePeak=0.176193967
-SHA-256: 697430a64eea94ed293eb3acd4bc7232e3ae8c0c51cfc6b67824ff2f89ff4eae
+durationMillis=1081, granules=51880, activeRms=0.092813607, samplePeak=0.510967672
+SHA-256: 2114f37eadd4b875666a29b2e205931286ad4bbadd7ab0afc15ffa3255828955
 v09 (speech), text=Tavé, lunuma?
 source=main, take=9, active=[368180,398881), export=[367820,399241), handles=360/360, fades=96/96
-durationMillis=1310, granules=62842, activeRms=0.031853479, samplePeak=0.177597940
-SHA-256: 56fb754934ae0d550c035872223aefd573d612d95bb350f037f4e284452c50a3
+durationMillis=1310, granules=62842, activeRms=0.087952466, samplePeak=0.496243984
+SHA-256: 7cc583ebc25d66e46fef9845b9acda282b399206497de1eeb41c893d2fe5a5b8
 v10 (speech), text=Mera, hanu vé.
 source=main, take=10, active=[419011,452033), export=[418651,452393), handles=360/360, fades=96/96
-durationMillis=1406, granules=67484, activeRms=0.035235986, samplePeak=0.221067369
-SHA-256: 936e452498870a373dc13a0fdab4d10fa29c66c9c8faea344dfce0bbaf2574f4
+durationMillis=1406, granules=67484, activeRms=0.095363143, samplePeak=0.624613225
+SHA-256: 5f186732a37d7569770e664b86cd6c74763a6cd16978459c72c1cc9b006c60d1
 hello01 (greeting), text=Etavé!
 source=main, take=11, active=[470826,486982), export=[470466,487342), handles=360/360, fades=96/96
-durationMillis=704, granules=33752, activeRms=0.035166299, samplePeak=0.209116727
-SHA-256: dd45e14367c92ab08c735043bfd4f99a1d131c7b20c1d1923d59399076baeb00
+durationMillis=704, granules=33752, activeRms=0.095174826, samplePeak=0.600482225
+SHA-256: 18388e2e5ab998abffc7c0de36ee26d9ba68ada2bb484f5f2989628722cfee00
 hello02 (greeting), text=Ah, nalú!
 source=main, take=12, active=[505247,528625), export=[504887,528985), handles=360/360, fades=96/96
-durationMillis=1005, granules=48196, activeRms=0.040491793, samplePeak=0.201468781
-SHA-256: f1e6e30241b14bf7417451aa828e1d283d32b883b9a743cc10f91864cb3e2820
+durationMillis=1005, granules=48196, activeRms=0.111602897, samplePeak=0.570324302
+SHA-256: ffc8fa887388f7c54e01542db0909dd3d9ab5014e064434dd5cb024b2888cb68
 bye01 (farewell), text=Vemá.
 source=main, take=13, active=[546931,556585), export=[546331,557185), handles=600/600, fades=96/96
-durationMillis=453, granules=21708, activeRms=0.042383532, samplePeak=0.232211754
-SHA-256: 128e7185876722c9ed385476c0eddbe0e955c75f16f6814f98d3fcd2505a655a
+durationMillis=453, granules=21708, activeRms=0.118382200, samplePeak=0.639737546
+SHA-256: 85a89a9ded73ef9aef31b4d2207cc10e746821ba880caa675c42a7dcd23bac40
 bye02 (farewell), text=Noro vé.
 source=main, take=14, active=[575737,588815), export=[575137,589415), handles=600/600, fades=96/96
-durationMillis=595, granules=28556, activeRms=0.025215797, samplePeak=0.135926917
-SHA-256: 1a6e008d75ef8d2d6f850c28ef414b0d7660faaabe9b4e78f16a54791a826b62
+durationMillis=595, granules=28556, activeRms=0.070296128, samplePeak=0.402482986
+SHA-256: d7c6dde2b373fea886e7dcd24bc44290b74331c49889568c19f8bf217ebb02c2
 end01 (ending), text=Mhm.
 source=main, take=15, active=[608037,614605), export=[607721,614921), handles=316/316, fades=96/96
-durationMillis=300, granules=14400, activeRms=0.036155483, samplePeak=0.122727208
-SHA-256: 8389ffe62cbaf510cc5ce16ba29c4d44cd205429b22b882df2f66aa59e1d5e5a
+durationMillis=300, granules=14400, activeRms=0.102716111, samplePeak=0.349767327
+SHA-256: fadc93db4fc8c221fe15cf4ca254076758d48b9ea9683a0bff14bb1b2d29b51c
 end02 (ending), text=Vemá.
 source=main, take=13, reuses=bye01, active=[546931,556585), export=[546358,557158), handles=573/573, fades=96/96
-durationMillis=450, granules=21600, activeRms=0.040961690, samplePeak=0.216983408
-SHA-256: f4909b24c0f461a64f71a2820d231e86942e768efa5e9a8079c295126b8e92ad
+durationMillis=450, granules=21600, activeRms=0.114172584, samplePeak=0.602220058
+SHA-256: 214301a330acbb06a241605c0b62baf6419da9016ef6a7e4692d67038b24b7d5
 end03 (ending), text=Noro vé.
 source=main, take=14, reuses=bye02, active=[575737,588815), export=[575076,589476), handles=661/661, fades=96/96
-durationMillis=600, granules=28800, activeRms=0.024765290, samplePeak=0.133202925
-SHA-256: 60055314c381f5fd58832fb945218c391caeec0af271ecfd306cc91dd30e3e03
+durationMillis=600, granules=28800, activeRms=0.067936411, samplePeak=0.362558872
+SHA-256: 6204a30e1a02a109b6887e88f5ba23c8a227391632306d6491fc36dcbf1fb563
 
 Sound IDs/categories/schema2 remain compatible with the existing17-clip bank.
 Importer regenerates assets/dialogue/guide/voice-bank.json, sounds.json,
