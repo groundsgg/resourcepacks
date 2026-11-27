@@ -116,6 +116,11 @@ class ChatPackTest {
                         assertTrue(tile.pixels().toSet().size > 3)
                         assertEquals(1, (0..15).map { tile.getRGB(143, it) }.toSet().size)
                     }
+                    val friends = atlas.getSubimage(144, 0, 144, 16)
+                    val accent = 0xffa9efe6.toInt()
+                    for (y in 7..11) assertEquals(accent, friends.getRGB(15, y))
+                    for (x in 13..17) assertEquals(accent, friends.getRGB(x, 9))
+
                     val defaultFont =
                         zip.getInputStream(assertNotNull(zip.getEntry(VANILLA_DEFAULT_FONT))).use {
                             mapper.readTree(it)

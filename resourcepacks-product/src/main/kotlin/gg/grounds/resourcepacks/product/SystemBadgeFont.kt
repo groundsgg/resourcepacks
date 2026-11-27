@@ -52,12 +52,15 @@ internal object SystemBadgeFont {
                 translations.forEachIndexed { column, label ->
                     val x = column * WIDTH
                     val y = row * HEIGHT
-                    graphics.setRenderingHint(
-                        RenderingHints.KEY_INTERPOLATION,
-                        if (column == 0) RenderingHints.VALUE_INTERPOLATION_BILINEAR
-                        else RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR,
-                    )
-                    graphics.drawImage(icons[column], x + 4, y + 1, 14, 14, null)
+                    if (column == 0) {
+                        graphics.setRenderingHint(
+                            RenderingHints.KEY_INTERPOLATION,
+                            RenderingHints.VALUE_INTERPOLATION_BILINEAR,
+                        )
+                        graphics.drawImage(icons[column], x + 4, y + 1, 14, 14, null)
+                    } else {
+                        graphics.drawImage(icons[column], x + 3, y, null)
+                    }
                     drawLabel(atlas, x, y, label)
                 }
             }
