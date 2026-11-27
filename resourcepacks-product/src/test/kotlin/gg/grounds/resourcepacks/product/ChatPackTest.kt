@@ -95,7 +95,7 @@ class ChatPackTest {
                         zip.getInputStream(assertNotNull(zip.getEntry(BADGE_FONT))).use {
                             mapper.readTree(it)["providers"]
                         }
-                    assertEquals(3, badges[0]["advances"]["\uE019"].intValue())
+                    assertEquals(4, badges[0]["advances"]["\uE019"].intValue())
                     val bitmap = badges[1]
                     assertEquals("grounds:font/chat/system_badges.png", bitmap["file"].asString())
                     assertEquals(8, bitmap["height"].intValue())
@@ -108,24 +108,43 @@ class ChatPackTest {
                         zip.getInputStream(assertNotNull(zip.getEntry(BADGE_ATLAS))).use {
                             assertNotNull(ImageIO.read(it))
                         }
-                    assertEquals(720, atlas.width)
+                    assertEquals(780, atlas.width)
                     assertEquals(80, atlas.height)
+                    val badgeWidths =
+                        listOf(
+                            listOf(96, 104, 84, 84, 84),
+                            listOf(96, 108, 84, 84, 84),
+                            listOf(96, 92, 84, 104, 112),
+                            listOf(96, 68, 96, 92, 112),
+                            listOf(96, 144, 72, 60, 92),
+                        )
+                    val backgrounds =
+                        listOf(0xff564936, 0xff156457, 0xff57377b, 0xff214d81, 0xff734d1e)
                     for (row in 0..4) for (column in 0..4) {
-                        val tile = atlas.getSubimage(column * 144, row * 16, 144, 16)
-                        assertTrue(tile.pixels().toSet().size > 3)
+                        val tile = atlas.getSubimage(column * 156, row * 16, 156, 16)
+                        val width = badgeWidths[row][column]
+                        val background = backgrounds[column].toInt()
+                        val dot = 0xffa3aab5.toInt()
+                        assertTrue(tile.pixels().toSet().size > 4)
                         val cornerInsets = listOf(4, 2, 1)
                         for (y in 0..15) {
                             val edgeDistance = minOf(y, 15 - y)
                             val inset = cornerInsets.getOrElse(edgeDistance) { 0 }
-                            for (x in 0..143) {
-                                val expected = if (x in inset until 144 - inset) 0xff else 0
-                                assertEquals(expected, tile.getRGB(x, y) ushr 24)
+                            for (x in 0..155) {
+                                val pixel = tile.getRGB(x, y)
+                                when {
+                                    x in inset until width - inset ->
+                                        assertEquals(0xff, pixel ushr 24)
+                                    y in 6..7 && x in width + 10..width + 11 ->
+                                        assertEquals(dot, pixel)
+                                    else -> assertEquals(0, pixel)
+                                }
                             }
                         }
-                        // Minecraft derives the glyph advance from the rightmost opaque pixel.
-                        assertEquals(tile.getRGB(0, 8), tile.getRGB(143, 8))
+                        assertEquals(background, tile.getRGB(0, 8))
+                        assertEquals(background, tile.getRGB(width - 1, 8))
                     }
-                    val friends = atlas.getSubimage(144, 0, 144, 16)
+                    val friends = atlas.getSubimage(156, 0, 156, 16)
                     val accent = 0xffa9efe6.toInt()
                     for (y in 7..11) assertEquals(accent, friends.getRGB(15, y))
                     for (x in 13..17) assertEquals(accent, friends.getRGB(x, 9))
