@@ -148,6 +148,8 @@ internal object TabLabelsFont {
             '/' to listOf("00001", "00010", "00100", "01000", "10000"),
         )
 
+    internal fun pattern(glyph: Char): List<String> = patterns.getValue(glyph)
+
     fun json(): String =
         """{"providers":[{"type":"space","advances":{" ":4}},{"type":"bitmap","file":"grounds:font/tab_labels.png","ascent":7,"height":7,"chars":[${glyphs.chunked(COLUMNS).joinToString(",") { "\"${it.replace("\u0000", "\\u0000")}\"" }}]},{"type":"reference","id":"minecraft:default"}]}"""
 

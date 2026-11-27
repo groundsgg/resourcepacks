@@ -29,6 +29,10 @@ class ThemeAssetContractTest {
         assertImage("tooltips/default_frame.png", 24, 24, hasOpaquePixel = true)
         assertImage("frames/hover.png", 56, 56, hasOpaquePixel = true)
 
+        listOf("friends", "party", "match", "story").forEach { badge ->
+            assertImage("chat/system-badges/$badge.png", 16, 16, hasOpaquePixel = true)
+        }
+
         listOf("close", "back", "next").forEach { icon ->
             val image = readImage("icons/$icon.png")
             val palette = image.pixels().filter { it ushr 24 != 0 }.toSet()
@@ -300,6 +304,10 @@ class ThemeAssetContractTest {
                 "tab/badge_middle.png",
                 "tab/badge_right.png",
                 "chat/logo.png",
+                "chat/system-badges/friends.png",
+                "chat/system-badges/party.png",
+                "chat/system-badges/match.png",
+                "chat/system-badges/story.png",
                 "sidebar/wordmark-source.png",
                 "menu/panel.png",
                 "menu/settings_panel.png",
@@ -402,6 +410,7 @@ class ThemeAssetContractTest {
                 "frames",
                 "tab",
                 "chat",
+                "chat/system-badges",
                 "menu",
                 "sidebar",
                 "welcome",
@@ -463,6 +472,22 @@ class ThemeAssetContractTest {
     "chat/logo.png": {
       "source": "Grounds brand artwork: icon-128x.png",
       "sha256": "319a3bacb127ab5047b0373f86dff54934140b97192fb9d5552209be3fea210a"
+    },
+    "chat/system-badges/friends.png": {
+      "source": "Original Grounds system chat badge artwork",
+      "sha256": "8556ef2a333f8f167af3a6bc85662e910045359caee619e9b6348fb3660487e8"
+    },
+    "chat/system-badges/party.png": {
+      "source": "Original Grounds system chat badge artwork",
+      "sha256": "33de01cc58b334844a633a1898076704c3dc30d9c7165e45705dd67842a08c3d"
+    },
+    "chat/system-badges/match.png": {
+      "source": "Original Grounds system chat badge artwork",
+      "sha256": "025e06e4274387d5825b8ba6109e50c78576e87874e6c296b5eb9c85beec16a5"
+    },
+    "chat/system-badges/story.png": {
+      "source": "Original Grounds system chat badge artwork",
+      "sha256": "235b7dda4fb9ebc094d9d51e33319b1102e4fc2d4de0042dd9a55b78da910734"
     },
     "tab/logo.png": {
       "source": "brand/logo-text-noglow.png"
