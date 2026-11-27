@@ -13,7 +13,8 @@ internal object SystemBadgeFont {
     private const val CATEGORIES = 5
     private const val FIRST_GLYPH = 0xE000
     private const val BACKGROUND = 0x303641
-    private const val LABEL = 0xF4F1E9
+    private const val LABEL = 0xFFF4F1E9.toInt()
+    private val cornerInsets = intArrayOf(4, 2, 1)
 
     private val labels =
         listOf(
@@ -43,15 +44,25 @@ internal object SystemBadgeFont {
         check(icons.drop(1).all { it.width == HEIGHT && it.height == HEIGHT })
 
         val atlas =
-            BufferedImage(WIDTH * CATEGORIES, HEIGHT * labels.size, BufferedImage.TYPE_INT_RGB)
+            BufferedImage(WIDTH * CATEGORIES, HEIGHT * labels.size, BufferedImage.TYPE_INT_ARGB)
         val graphics = atlas.createGraphics()
         try {
             graphics.color = Color(BACKGROUND)
-            graphics.fillRect(0, 0, atlas.width, atlas.height)
             labels.forEachIndexed { row, translations ->
                 translations.forEachIndexed { column, label ->
                     val x = column * WIDTH
                     val y = row * HEIGHT
+                    // Keep the center rows full width for the bitmap glyph advance.
+                    graphics.fillRect(
+                        x,
+                        y + cornerInsets.size,
+                        WIDTH,
+                        HEIGHT - 2 * cornerInsets.size,
+                    )
+                    cornerInsets.forEachIndexed { edge, inset ->
+                        graphics.fillRect(x + inset, y + edge, WIDTH - 2 * inset, 1)
+                        graphics.fillRect(x + inset, y + HEIGHT - 1 - edge, WIDTH - 2 * inset, 1)
+                    }
                     if (column == 0) {
                         graphics.setRenderingHint(
                             RenderingHints.KEY_INTERPOLATION,

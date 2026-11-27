@@ -112,9 +112,18 @@ class ChatPackTest {
                     assertEquals(80, atlas.height)
                     for (row in 0..4) for (column in 0..4) {
                         val tile = atlas.getSubimage(column * 144, row * 16, 144, 16)
-                        assertTrue(tile.pixels().all { it ushr 24 == 0xff })
                         assertTrue(tile.pixels().toSet().size > 3)
-                        assertEquals(1, (0..15).map { tile.getRGB(143, it) }.toSet().size)
+                        val cornerInsets = listOf(4, 2, 1)
+                        for (y in 0..15) {
+                            val edgeDistance = minOf(y, 15 - y)
+                            val inset = cornerInsets.getOrElse(edgeDistance) { 0 }
+                            for (x in 0..143) {
+                                val expected = if (x in inset until 144 - inset) 0xff else 0
+                                assertEquals(expected, tile.getRGB(x, y) ushr 24)
+                            }
+                        }
+                        // Minecraft derives the glyph advance from the rightmost opaque pixel.
+                        assertEquals(tile.getRGB(0, 8), tile.getRGB(143, 8))
                     }
                     val friends = atlas.getSubimage(144, 0, 144, 16)
                     val accent = 0xffa9efe6.toInt()
