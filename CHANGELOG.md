@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.0](https://github.com/groundsgg/resourcepacks/compare/v1.6.0...v1.7.0) (2026-11-27)
+
+
+### Features
+
+* add localized system chat badges to the platform pack ([#83](https://github.com/groundsgg/resourcepacks/issues/83)) ([c1d191d](https://github.com/groundsgg/resourcepacks/commit/c1d191d1e47be3769682133010bf3611971215d3))
+* **dialogue:** add fluent Guide voice pack ([#78](https://github.com/groundsgg/resourcepacks/issues/78)) ([8bd3999](https://github.com/groundsgg/resourcepacks/commit/8bd399940a561f34d4f5f04a170565a9cf7d2a12))
+* **dialogue:** add input glyph icons to theme ([#77](https://github.com/groundsgg/resourcepacks/issues/77)) ([a7401f6](https://github.com/groundsgg/resourcepacks/commit/a7401f6fdc9ecc7933701ed959f80e7cdd7c9afe))
+* **dialogue:** add whole-phrase Guide voice bank ([#80](https://github.com/groundsgg/resourcepacks/issues/80)) ([0b097f7](https://github.com/groundsgg/resourcepacks/commit/0b097f7ec0eb4941274e8c241254dae82547ced4))
+* **dialogue:** import native vignette shader assets ([#75](https://github.com/groundsgg/resourcepacks/issues/75)) ([b05e9c4](https://github.com/groundsgg/resourcepacks/commit/b05e9c42da98040ea105f6cec6d6637d09ed75b7))
+* **dialogue:** import verified NPC effect fade assets ([d017a95](https://github.com/groundsgg/resourcepacks/commit/d017a957a7b768b779f5f18d4c244422c468e3b5))
+* **packs:** add Grounds NPC dialogue theme ([#72](https://github.com/groundsgg/resourcepacks/issues/72)) ([2501966](https://github.com/groundsgg/resourcepacks/commit/25019661bfeea8d22e87a8d8def932e86412bf06))
+
+
+### Bug Fixes
+
+* **dialogue:** add natural speech ending samples ([#79](https://github.com/groundsgg/resourcepacks/issues/79)) ([4d03a5c](https://github.com/groundsgg/resourcepacks/commit/4d03a5c9c91d1d17cab5779e4c54a3a3e436126a))
+* **dialogue:** import corrected bitmap glyph assets ([#73](https://github.com/groundsgg/resourcepacks/issues/73)) ([5c72313](https://github.com/groundsgg/resourcepacks/commit/5c72313357ce25d73e9624a2561787f77894414b))
+* **dialogue:** keep Guide endings in the primary voice ([#81](https://github.com/groundsgg/resourcepacks/issues/81)) ([dec32b3](https://github.com/groundsgg/resourcepacks/commit/dec32b39dfe81bef7094971f73b04ab864f084cc))
+* **dialogue:** match Guide assets to NPC voice levels ([#82](https://github.com/groundsgg/resourcepacks/issues/82)) ([cd709ca](https://github.com/groundsgg/resourcepacks/commit/cd709cad243bdbd800e7611f13d1fc5deb978205))
+* **dialogue:** strengthen Grounds vignette ([#76](https://github.com/groundsgg/resourcepacks/issues/76)) ([9746115](https://github.com/groundsgg/resourcepacks/commit/97461156a25f1135b121215aeca8c58dfd886215))
+* refine system chat badge styling ([#84](https://github.com/groundsgg/resourcepacks/issues/84)) ([443ba6f](https://github.com/groundsgg/resourcepacks/commit/443ba6ff969f21a780d3130b5bf944f6eb49fc1a))
+* retain Guildfolk clip sounds and effective audio duration ([dd294ca](https://github.com/groundsgg/resourcepacks/commit/dd294ca011ef3116ae6a4a5ac9a87c9df95cf4ad))
+
 ## [1.6.0](https://github.com/groundsgg/resourcepacks/compare/v1.5.0...v1.6.0) (2026-11-08)
 
 
