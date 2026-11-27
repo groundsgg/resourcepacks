@@ -63,6 +63,8 @@ class ChatPackTest {
 
                 ZipFile(content.toFile()).use { zip ->
                     assertTrue(zip.getEntry(CHAT_FONT) == null)
+                    assertTrue(zip.getEntry(BADGE_FONT) == null)
+                    assertTrue(zip.getEntry(BADGE_ATLAS) == null)
                     CHAT_TEXTURES.forEach { assertTrue(zip.getEntry(it) == null, it) }
                     assertTrue(
                         zip.entries().asSequence().none {
@@ -89,6 +91,31 @@ class ChatPackTest {
                             )
                         }
                     val mapper = tools.jackson.databind.json.JsonMapper()
+                    val badges =
+                        zip.getInputStream(assertNotNull(zip.getEntry(BADGE_FONT))).use {
+                            mapper.readTree(it)["providers"]
+                        }
+                    assertEquals(3, badges[0]["advances"]["\uE019"].intValue())
+                    val bitmap = badges[1]
+                    assertEquals("grounds:font/chat/system_badges.png", bitmap["file"].asString())
+                    assertEquals(8, bitmap["height"].intValue())
+                    assertEquals(7, bitmap["ascent"].intValue())
+                    assertEquals(
+                        (0xE000..0xE018).map(Int::toChar).joinToString("").chunked(5),
+                        List(5) { bitmap["chars"][it].asString() },
+                    )
+                    val atlas =
+                        zip.getInputStream(assertNotNull(zip.getEntry(BADGE_ATLAS))).use {
+                            assertNotNull(ImageIO.read(it))
+                        }
+                    assertEquals(720, atlas.width)
+                    assertEquals(80, atlas.height)
+                    for (row in 0..4) for (column in 0..4) {
+                        val tile = atlas.getSubimage(column * 144, row * 16, 144, 16)
+                        assertTrue(tile.pixels().all { it ushr 24 == 0xff })
+                        assertTrue(tile.pixels().toSet().size > 3)
+                        assertEquals(1, (0..15).map { tile.getRGB(143, it) }.toSet().size)
+                    }
                     val defaultFont =
                         zip.getInputStream(assertNotNull(zip.getEntry(VANILLA_DEFAULT_FONT))).use {
                             mapper.readTree(it)
@@ -178,6 +205,8 @@ class ChatPackTest {
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     private companion object {
+        const val BADGE_FONT = "assets/grounds/font/system_badges.json"
+        const val BADGE_ATLAS = "assets/grounds/textures/font/chat/system_badges.png"
         const val CHAT_FONT = "assets/grounds/font/chat.json"
         const val VANILLA_DEFAULT_FONT = "assets/minecraft/font/default.json"
         const val APPROVED_LOGO_SHA256 =

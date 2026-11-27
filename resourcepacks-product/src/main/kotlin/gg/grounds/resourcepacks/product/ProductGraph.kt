@@ -76,7 +76,7 @@ internal object ProductGraph {
                 }
                 held[relative] = source
             }
-            CHAT_ARTWORK.forEach { (relative, expected) ->
+            (CHAT_ARTWORK + SYSTEM_BADGE_ARTWORK).forEach { (relative, expected) ->
                 val source = HeldSourceFile.capture(art.resolve(relative), expected.size)
                 if (
                     source.digests.size != expected.size || source.digests.sha256 != expected.sha256
@@ -330,14 +330,21 @@ internal object ProductGraph {
         )
 
     private fun PackContribution.withChatFont(held: Map<String, HeldSourceFile>): PackContribution {
-        val logo = CHAT_ARTWORK.getValue(CHAT_LOGO_SOURCE)
+        val logo =
+            held.getValue(CHAT_LOGO_SOURCE).readBytes(CHAT_ARTWORK.getValue(CHAT_LOGO_SOURCE).size)
+        val badgeSprites =
+            SYSTEM_BADGE_ARTWORK.map { (path, expected) ->
+                held.getValue(path).readBytes(expected.size)
+            }
         val entries =
             listOf(
                 PackEntry.text("assets/grounds/font/chat.json", ChatFont.json()),
+                PackEntry.text("assets/grounds/font/system_badges.json", SystemBadgeFont.json()),
                 PackEntry.bytes(
-                    "assets/grounds/textures/font/chat/logo.png",
-                    held.getValue(CHAT_LOGO_SOURCE).readBytes(logo.size),
+                    "assets/grounds/textures/font/chat/system_badges.png",
+                    SystemBadgeFont.texture(logo, badgeSprites),
                 ),
+                PackEntry.bytes("assets/grounds/textures/font/chat/logo.png", logo),
             ) +
                 ChatFont.emojiTextures().map { (name, bytes) ->
                     PackEntry.bytes("assets/grounds/textures/font/chat/$name.png", bytes)
@@ -517,6 +524,30 @@ internal object ProductGraph {
             "tab/badge_left.png" to "assets/grounds/textures/font/tab_badge_left.png",
             "tab/badge_middle.png" to "assets/grounds/textures/font/tab_badge_middle.png",
             "tab/badge_right.png" to "assets/grounds/textures/font/tab_badge_right.png",
+        )
+
+    private val SYSTEM_BADGE_ARTWORK =
+        linkedMapOf(
+            "chat/system-badges/friends.png" to
+                ArtworkExpectation(
+                    184,
+                    "8556ef2a333f8f167af3a6bc85662e910045359caee619e9b6348fb3660487e8",
+                ),
+            "chat/system-badges/party.png" to
+                ArtworkExpectation(
+                    196,
+                    "33de01cc58b334844a633a1898076704c3dc30d9c7165e45705dd67842a08c3d",
+                ),
+            "chat/system-badges/match.png" to
+                ArtworkExpectation(
+                    274,
+                    "025e06e4274387d5825b8ba6109e50c78576e87874e6c296b5eb9c85beec16a5",
+                ),
+            "chat/system-badges/story.png" to
+                ArtworkExpectation(
+                    227,
+                    "235b7dda4fb9ebc094d9d51e33319b1102e4fc2d4de0042dd9a55b78da910734",
+                ),
         )
 
     private val CHAT_ARTWORK =
