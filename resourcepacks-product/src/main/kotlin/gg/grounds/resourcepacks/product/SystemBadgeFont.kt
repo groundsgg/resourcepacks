@@ -8,21 +8,28 @@ import javax.imageio.ImageIO
 
 /** The atlas order is shared with library-i18n's SystemBadgeGlyphs. */
 internal object SystemBadgeFont {
-    private const val WIDTH = 144
+    private const val MAX_BADGE_WIDTH = 144
+    private const val DOT_OFFSET = 10
+    private const val DOT_SIZE = 2
+    private const val CELL_WIDTH = MAX_BADGE_WIDTH + DOT_OFFSET + DOT_SIZE
     private const val HEIGHT = 16
     private const val CATEGORIES = 5
     private const val FIRST_GLYPH = 0xE000
-    private const val BACKGROUND = 0x303641
+    private const val LABEL_X = 22
+    private const val LETTER_SPACING = 2
+    private const val RIGHT_PADDING = 4
     private const val LABEL = 0xFFF4F1E9.toInt()
+    private val dot = Color(0xA3AAB5)
+    private val backgrounds = listOf(0x564936, 0x156457, 0x57377B, 0x214D81, 0x734D1E).map(::Color)
     private val cornerInsets = intArrayOf(4, 2, 1)
 
     private val labels =
         listOf(
-            listOf("GROUNDS", "FRIENDS", "PARTY", "MATCH", "STORY"),
-            listOf("GROUNDS", "FREUNDE", "PARTY", "MATCH", "STORY"),
-            listOf("GROUNDS", "AMIGOS", "GRUPO", "PARTIDA", "HISTORIA"),
-            listOf("GROUNDS", "AMIS", "GROUPE", "PARTIE", "HISTOIRE"),
-            listOf("GROUNDS", "ARKADAŞLAR", "GRUP", "MAÇ", "HİKÂYE"),
+            listOf("SYSTEM", "FRIENDS", "PARTY", "MATCH", "STORY"),
+            listOf("SYSTEM", "FREUNDE", "PARTY", "MATCH", "STORY"),
+            listOf("SYSTEM", "AMIGOS", "GRUPO", "PARTIDA", "HISTORIA"),
+            listOf("SYSTEM", "AMIS", "GROUPE", "PARTIE", "HISTOIRE"),
+            listOf("SYSTEM", "ARKADAŞLAR", "GRUP", "MAÇ", "HİKÂYE"),
         )
 
     fun json(): String {
@@ -32,7 +39,7 @@ internal object SystemBadgeFont {
                     "\\u%04X".format(FIRST_GLYPH + row * CATEGORIES + column)
                 }
             }
-        return """{"providers":[{"type":"space","advances":{"\uE019":3}},{"type":"bitmap","file":"grounds:font/chat/system_badges.png","ascent":7,"height":8,"chars":[$chars]}]}"""
+        return """{"providers":[{"type":"space","advances":{"\uE019":4}},{"type":"bitmap","file":"grounds:font/chat/system_badges.png","ascent":7,"height":8,"chars":[$chars]}]}"""
     }
 
     fun texture(logo: ByteArray, sprites: List<ByteArray>): ByteArray {
@@ -44,24 +51,33 @@ internal object SystemBadgeFont {
         check(icons.drop(1).all { it.width == HEIGHT && it.height == HEIGHT })
 
         val atlas =
-            BufferedImage(WIDTH * CATEGORIES, HEIGHT * labels.size, BufferedImage.TYPE_INT_ARGB)
+            BufferedImage(
+                CELL_WIDTH * CATEGORIES,
+                HEIGHT * labels.size,
+                BufferedImage.TYPE_INT_ARGB,
+            )
         val graphics = atlas.createGraphics()
         try {
-            graphics.color = Color(BACKGROUND)
             labels.forEachIndexed { row, translations ->
                 translations.forEachIndexed { column, label ->
-                    val x = column * WIDTH
+                    val x = column * CELL_WIDTH
                     val y = row * HEIGHT
-                    // Keep the center rows full width for the bitmap glyph advance.
+                    val labelWidth =
+                        label.sumOf { letterRows(it).first().length * 2 + LETTER_SPACING } -
+                            LETTER_SPACING
+                    val width = LABEL_X + labelWidth + RIGHT_PADDING
+                    check(width <= MAX_BADGE_WIDTH) { "System badge label is too wide: $label" }
+
+                    graphics.color = backgrounds[column]
                     graphics.fillRect(
                         x,
                         y + cornerInsets.size,
-                        WIDTH,
+                        width,
                         HEIGHT - 2 * cornerInsets.size,
                     )
                     cornerInsets.forEachIndexed { edge, inset ->
-                        graphics.fillRect(x + inset, y + edge, WIDTH - 2 * inset, 1)
-                        graphics.fillRect(x + inset, y + HEIGHT - 1 - edge, WIDTH - 2 * inset, 1)
+                        graphics.fillRect(x + inset, y + edge, width - 2 * inset, 1)
+                        graphics.fillRect(x + inset, y + HEIGHT - 1 - edge, width - 2 * inset, 1)
                     }
                     if (column == 0) {
                         graphics.setRenderingHint(
@@ -73,6 +89,13 @@ internal object SystemBadgeFont {
                         graphics.drawImage(icons[column], x + 3, y, null)
                     }
                     drawLabel(atlas, x, y, label)
+
+                    // The separator sits five GUI pixels after the badge (glyph advance + one
+                    // space).
+                    // U+E019 supplies the trailing space so older clients of this font keep the
+                    // same glyphs.
+                    graphics.color = dot
+                    graphics.fillRect(x + width + DOT_OFFSET, y + 6, DOT_SIZE, DOT_SIZE)
                 }
             }
         } finally {
@@ -84,20 +107,21 @@ internal object SystemBadgeFont {
         }
     }
 
+    private fun letterRows(glyph: Char): List<String> =
+        TabLabelsFont.pattern(
+            when (glyph) {
+                'Â' -> 'A'
+                'Ç' -> 'C'
+                'İ' -> 'I'
+                'Ş' -> 'S'
+                else -> glyph
+            }
+        )
+
     private fun drawLabel(atlas: BufferedImage, x: Int, y: Int, label: String) {
-        var cursor = x + 22
+        var cursor = x + LABEL_X
         label.forEach { glyph ->
-            val base =
-                when (glyph) {
-                    'Â' -> 'A'
-                    'Ç' -> 'C'
-                    'İ' -> 'I'
-                    'Ş' -> 'S'
-                    else -> glyph
-                }
-            val rows = TabLabelsFont.pattern(base)
-            val width = rows.first().length
-            check(cursor + width * 2 <= x + WIDTH - 4) { "System badge label is too wide: $label" }
+            val rows = letterRows(glyph)
 
             rows.forEachIndexed { row, bits ->
                 bits.forEachIndexed { column, bit ->
@@ -128,7 +152,7 @@ internal object SystemBadgeFont {
                     atlas.setRGB(cursor + 4, y + 14, LABEL)
                 }
             }
-            cursor += width * 2 + 2
+            cursor += rows.first().length * 2 + LETTER_SPACING
         }
     }
 }
