@@ -1,23 +1,21 @@
 package gg.grounds.resourcepacks.product
 
 import java.awt.Color
-import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
 /** The atlas order is shared with library-i18n's SystemBadgeGlyphs. */
 internal object SystemBadgeFont {
-    private const val MAX_BADGE_WIDTH = 144
+    private const val MAX_BADGE_WIDTH = 130
     private const val DOT_OFFSET = 10
     private const val DOT_SIZE = 2
     private const val CELL_WIDTH = MAX_BADGE_WIDTH + DOT_OFFSET + DOT_SIZE
     private const val HEIGHT = 16
     private const val CATEGORIES = 5
     private const val FIRST_GLYPH = 0xE000
-    private const val LABEL_X = 22
+    private const val LABEL_PADDING = 6
     private const val LETTER_SPACING = 2
-    private const val RIGHT_PADDING = 4
     private const val LABEL = 0xFFF4F1E9.toInt()
     private val dot = Color(0xA3AAB5)
     private val backgrounds = listOf(0x564936, 0x156457, 0x57377B, 0x214D81, 0x734D1E).map(::Color)
@@ -42,14 +40,7 @@ internal object SystemBadgeFont {
         return """{"providers":[{"type":"space","advances":{"\uE019":4}},{"type":"bitmap","file":"grounds:font/chat/system_badges.png","ascent":7,"height":8,"chars":[$chars]}]}"""
     }
 
-    fun texture(logo: ByteArray, sprites: List<ByteArray>): ByteArray {
-        val icons =
-            (listOf(logo) + sprites).map { bytes ->
-                checkNotNull(ImageIO.read(bytes.inputStream())) { "Invalid system badge icon PNG" }
-            }
-        check(icons.size == CATEGORIES)
-        check(icons.drop(1).all { it.width == HEIGHT && it.height == HEIGHT })
-
+    fun texture(): ByteArray {
         val atlas =
             BufferedImage(
                 CELL_WIDTH * CATEGORIES,
@@ -65,7 +56,7 @@ internal object SystemBadgeFont {
                     val labelWidth =
                         label.sumOf { letterRows(it).first().length * 2 + LETTER_SPACING } -
                             LETTER_SPACING
-                    val width = LABEL_X + labelWidth + RIGHT_PADDING
+                    val width = labelWidth + 2 * LABEL_PADDING
                     check(width <= MAX_BADGE_WIDTH) { "System badge label is too wide: $label" }
 
                     graphics.color = backgrounds[column]
@@ -78,15 +69,6 @@ internal object SystemBadgeFont {
                     cornerInsets.forEachIndexed { edge, inset ->
                         graphics.fillRect(x + inset, y + edge, width - 2 * inset, 1)
                         graphics.fillRect(x + inset, y + HEIGHT - 1 - edge, width - 2 * inset, 1)
-                    }
-                    if (column == 0) {
-                        graphics.setRenderingHint(
-                            RenderingHints.KEY_INTERPOLATION,
-                            RenderingHints.VALUE_INTERPOLATION_BILINEAR,
-                        )
-                        graphics.drawImage(icons[column], x + 4, y + 1, 14, 14, null)
-                    } else {
-                        graphics.drawImage(icons[column], x + 3, y, null)
                     }
                     drawLabel(atlas, x, y, label)
 
@@ -119,7 +101,7 @@ internal object SystemBadgeFont {
         )
 
     private fun drawLabel(atlas: BufferedImage, x: Int, y: Int, label: String) {
-        var cursor = x + LABEL_X
+        var cursor = x + LABEL_PADDING
         label.forEach { glyph ->
             val rows = letterRows(glyph)
 

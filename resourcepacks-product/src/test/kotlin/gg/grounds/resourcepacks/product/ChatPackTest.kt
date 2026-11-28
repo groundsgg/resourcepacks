@@ -108,33 +108,37 @@ class ChatPackTest {
                         zip.getInputStream(assertNotNull(zip.getEntry(BADGE_ATLAS))).use {
                             assertNotNull(ImageIO.read(it))
                         }
-                    assertEquals(780, atlas.width)
+                    assertEquals(710, atlas.width)
                     assertEquals(80, atlas.height)
                     val badgeWidths =
                         listOf(
-                            listOf(96, 104, 84, 84, 84),
-                            listOf(96, 108, 84, 84, 84),
-                            listOf(96, 92, 84, 104, 112),
-                            listOf(96, 68, 96, 92, 112),
-                            listOf(96, 144, 72, 60, 92),
+                            listOf(82, 90, 70, 70, 70),
+                            listOf(82, 94, 70, 70, 70),
+                            listOf(82, 78, 70, 90, 98),
+                            listOf(82, 54, 82, 78, 98),
+                            listOf(82, 130, 58, 46, 78),
                         )
                     val backgrounds =
                         listOf(0xff564936, 0xff156457, 0xff57377b, 0xff214d81, 0xff734d1e)
                     for (row in 0..4) for (column in 0..4) {
-                        val tile = atlas.getSubimage(column * 156, row * 16, 156, 16)
+                        val tile = atlas.getSubimage(column * 142, row * 16, 142, 16)
                         val width = badgeWidths[row][column]
                         val background = backgrounds[column].toInt()
                         val dot = 0xffa3aab5.toInt()
-                        assertTrue(tile.pixels().toSet().size > 4)
+                        assertEquals(
+                            setOf(0, background, dot, 0xfff4f1e9.toInt()),
+                            tile.pixels().toSet(),
+                        )
                         val cornerInsets = listOf(4, 2, 1)
                         for (y in 0..15) {
                             val edgeDistance = minOf(y, 15 - y)
                             val inset = cornerInsets.getOrElse(edgeDistance) { 0 }
-                            for (x in 0..155) {
+                            for (x in 0..141) {
                                 val pixel = tile.getRGB(x, y)
                                 when {
-                                    x in inset until width - inset ->
-                                        assertEquals(0xff, pixel ushr 24)
+                                    x in inset until 6 || x in width - 6 until width - inset ->
+                                        assertEquals(background, pixel)
+                                    x in 6 until width - 6 -> assertEquals(0xff, pixel ushr 24)
                                     y in 6..7 && x in width + 10..width + 11 ->
                                         assertEquals(dot, pixel)
                                     else -> assertEquals(0, pixel)
@@ -144,11 +148,6 @@ class ChatPackTest {
                         assertEquals(background, tile.getRGB(0, 8))
                         assertEquals(background, tile.getRGB(width - 1, 8))
                     }
-                    val friends = atlas.getSubimage(156, 0, 156, 16)
-                    val accent = 0xffa9efe6.toInt()
-                    for (y in 7..11) assertEquals(accent, friends.getRGB(15, y))
-                    for (x in 13..17) assertEquals(accent, friends.getRGB(x, 9))
-
                     val defaultFont =
                         zip.getInputStream(assertNotNull(zip.getEntry(VANILLA_DEFAULT_FONT))).use {
                             mapper.readTree(it)
